@@ -197,23 +197,20 @@
 ;; TCP/IP connections (this is not the default). For more information about
 ;; PostgreSQL see <https://www.PostgreSQL.org/>.
 ;;
-;; Thanks to Eric Ludlam <zappo@gnu.org> for discovering a bug in the
-;; date parsing routines, to Hartmut Pilch and Yoshio Katayama for
-;; adding multibyte support, and to Doug McNaught and Pavel Janik for
-;; bug fixes.
+;; Thanks to Eric Ludlam for discovering a bug in the date parsing routines, to
+;; Hartmut Pilch and Yoshio Katayama for adding multibyte support, and to Doug
+;; McNaught and Pavel Janik for bug fixes.
 
 
-;; SECURITY NOTE: setting up PostgreSQL to accept TCP/IP connections
-;; has security implications; please consult the documentation for
-;; details. pg.el supports neither the crypt authentication method,
-;; nor Kerberos (support for these can't be added to Emacs due to
-;; silly US crypto export regulations). However, it is possible to use
-;; the port forwarding capabilities of ssh to establish a connection
-;; to the backend over TCP/IP, which provides both a secure
-;; authentication mechanism and encryption (and optionally
-;; compression) of data passing through the tunnel. Here's how to do
-;; it (thanks to Gene Selkov, Jr. <selkovjr@mcs.anl.gov> for the
-;; description):
+;; SECURITY NOTE: setting up PostgreSQL to accept TCP/IP connections has
+;; security implications; please consult the documentation for details. pg.el
+;; supports neither the crypt authentication method, nor Kerberos (support for
+;; these can't be added to Emacs due to silly US crypto export regulations).
+;; However, it is possible to use the port forwarding capabilities of ssh to
+;; establish a connection to the backend over TCP/IP, which provides both a
+;; secure authentication mechanism and encryption (and optionally compression)
+;; of data passing through the tunnel. Here's how to do it (thanks to Gene
+;; Selkov, Jr. for the description):
 ;;
 ;; 1. Establish a tunnel to the backend machine, like this:
 ;;
@@ -278,29 +275,20 @@ session (not per connection to the backend).")
 (defvar pg:coding-system 'utf-8
   "*The coding system that PostgreSQL was compiled to use.")
 
-(defconst pg:NAMEDATALEN 32)              ; postgres_ext.h
-(defconst pg:PG_PROTOCOL_LATEST_MAJOR 2)  ; libpq/pgcomm.h
-(defconst pg:PG_PROTOCOL_63_MAJOR     1)
-(defconst pg:PG_PROTOCOL_LATEST_MINOR 0)
-(defconst pg:SM_DATABASE 64)
-(defconst pg:SM_USER     32)
-(defconst pg:SM_OPTIONS  64)
-(defconst pg:SM_UNUSED   64)
-(defconst pg:SM_TTY      64)
+(defconst pg:PG_PROTOCOL_MAJOR 3)
+(defconst pg:PG_PROTOCOL_MINOR 0)
 
 (defconst pg:AUTH_REQ_OK       0)
 (defconst pg:AUTH_REQ_KRB4     1)
 (defconst pg:AUTH_REQ_KRB5     2)
-(defconst pg:AUTH_REQ_PASSWORD 3)
+(defconst pg:AUTH_REQ_PASSWORD 3)   ; AuthenticationCleartextPassword
+(defconst pg:AUTH_REQ_MD5      5)   ; AuthenticationMD5Password
 (defconst pg:AUTH_REQ_CRYPT    4)
 
 (defconst pg:STARTUP_MSG            7)
 (defconst pg:STARTUP_KRB4_MSG      10)
 (defconst pg:STARTUP_KRB5_MSG      11)
 (defconst pg:STARTUP_PASSWORD_MSG  14)
-
-(defconst pg:StartupPacketSize
-  (+ 4 4 pg:SM_DATABASE pg:SM_USER pg:SM_OPTIONS pg:SM_UNUSED pg:SM_TTY))
 
 (defconst pg:MAX_MESSAGE_LEN    8192)   ; libpq-fe.h
 
@@ -329,10 +317,12 @@ session (not per connection to the backend).")
 
 (cl-defstruct pgcon
   process pid secret position (binaryp nil))
-(cl-defstruct pgresult connection status attributes tuples portal)
+
+(cl-defstruct pgresult
+  connection status attributes tuples portal)
 
 (defsubst pg:flush (connection)
-  (accept-process-output (pgcon-process connection)))
+  (accept-process-output (pgcon-process connection) 1))
 
 ;; this is ugly because lambda lists don't do destructuring
 (defmacro with-pg-connection (con open-args &rest body)
@@ -392,25 +382,52 @@ HOST, providing PASSWORD if necessary. Return a connection to the
 database (as an opaque type). PORT defaults to 5432, HOST to
 \"localhost\", and PASSWORD to an empty string."
   (let* ((buf (generate-new-buffer " *PostgreSQL*"))
-         process connection
-         (user-packet-length (+ pg:SM_USER pg:SM_OPTIONS pg:SM_UNUSED pg:SM_TTY)))
-    (setq process (open-network-stream "postgres" buf host port))
+         (process (open-network-stream "postgres" buf host port :coding nil))
+         (connection (make-pgcon :process process :position 1)))
     (with-current-buffer buf
       (set-process-coding-system process 'binary 'binary)
       (set-buffer-multibyte nil))
-    (setq connection (make-pgcon :process process :position 1))
-    ;; send the startup packet
-    (pg:send-int connection pg:StartupPacketSize 4)
-    (pg:send-int connection pg:PG_PROTOCOL_63_MAJOR 2)
-    (pg:send-int connection pg:PG_PROTOCOL_LATEST_MINOR 2)
-    (pg:send connection dbname pg:SM_DATABASE)
-    (pg:send connection user user-packet-length)
-    (pg:flush connection)
+    ;; send the StartupMessage, as per https://www.postgresql.org/docs/current/protocol-message-formats.html
+    (let ((packet-octets (+ 4 2 2
+                            (1+ (length "user"))
+                            (1+ (length user))
+                            (1+ (length "database"))
+                            (1+ (length dbname))
+                            1)))
+      (pg:send-int connection packet-octets 4)
+      (pg:send-int connection pg:PG_PROTOCOL_MAJOR 2)
+      (pg:send-int connection pg:PG_PROTOCOL_MINOR 2)
+      (pg:send-string connection "user")
+      (pg:send-string connection user)
+      (pg:send-string connection "database")
+      (pg:send-string connection dbname)
+      ;; A zero byte is required as a terminator after the last name/value pair.
+      (pg:send-int connection 0 1)
+      (pg:flush connection))
     (cl-loop for c = (pg:read-char connection) do
-      (cond ((eq ?E c) (error "Backend error: %s" (pg:read-string connection 4096)))
-            ((eq ?R c)
-             (let ((areq (pg:read-net-int connection 4)))
+     (cond ((eq ?E c)
+            ;; an ErrorResponse message
+            (let ((err (pg:read-error-response connection)))
+              (error "Backend error: %s" err)))
+
+           ;; NegotiateProtocolVersion
+           ((eq ?v c)
+            (let ((msglen (pg:read-net-int connection 4))
+                  (protocol-supported (pg:read-net-int connection 4))
+                  (unrec-options (pg:read-net-int connection 4))
+                  (unrec (list)))
+              ;; read the list of protocol options not supported by the server
+              (dotimes (_i unrec-options)
+                (push (pg:read-string connection 4096) unrec))
+              (error "Server only supports protocol minor version <= %s" protocol-supported)))
+
+           ;; an authentication request
+           ((eq ?R c)
+             (let ((msglen (pg:read-net-int connection 4))
+                   (areq (pg:read-net-int connection 4)))
+               (message "In startup auth type requested is %d" areq)
                (cond
+                ;; AuthenticationOk message
                 ((= areq pg:AUTH_REQ_OK)
                  (and (not pg:disable-type-coercion)
                      (null pg:parsers)
@@ -418,10 +435,16 @@ database (as an opaque type). PORT defaults to 5432, HOST to
                  (pg:exec connection "SET datestyle = 'ISO'")
                  (cl-return-from pg:connect connection))
                 ((= areq pg:AUTH_REQ_PASSWORD)
-                 (pg:send-int connection (+ 5 (length password)) 4)
-                 (pg:send connection password)
-                 (pg:send-int connection 0 1)
+                 ;; send a PasswordMessage
+                 (pg:send-char connection ?p)
+                 (pg:send-int connection (+ 6 (length password)) 4)
+                 (pg:send-string connection password)
                  (pg:flush connection))
+                ;; AuthenticationSASL request
+                ((= areq 10)
+                 (pg:do-sasl-authentication connection user password))
+                ((= areq pg:AUTH_REQ_MD5)
+                 (error "MD5 authentication not supported"))
                 ((= areq pg:AUTH_REQ_CRYPT)
                  (error "Crypt authentication not supported"))
                 ((= areq pg:AUTH_REQ_KRB4)
@@ -431,7 +454,7 @@ database (as an opaque type). PORT defaults to 5432, HOST to
                 (t
                  (error "Can't do that type of authentication: %s" areq)))))
             (t
-             (error "Problem connecting: expected an authentication response"))))))
+             (error "Problem connecting: expected an authentication response, got %s" c))))))
 
 (cl-defun pg:exec (connection &rest args)
   "Execute the SQL command given by the concatenation of ARGS
@@ -441,8 +464,8 @@ a result structure which can be decoded using `pg:result'."
         (tuples '())
         (attributes '())
         (result (make-pgresult :connection connection)))
-    (if (> (length sql) pg:MAX_MESSAGE_LEN)
-        (error "SQL statement too long: %s" sql))
+    (when (> (length sql) pg:MAX_MESSAGE_LEN)
+      (error "SQL statement too long: %s" sql))
     (pg:send connection (format "%c%s%c" ?Q sql 0))
     (pg:flush connection)
     (cl-loop for c = (pg:read-char connection) do
@@ -499,10 +522,24 @@ a result structure which can be decoded using `pg:result'."
              (let ((portal (pg:read-string connection pg:MAX_MESSAGE_LEN)))
                (setf (pgresult-portal result) portal)))
 
+            ;; ParameterStatus
+            (?S
+             (let* ((msglen (pg:read-net-int connection 4))
+                    (msg (pg:read-chars connection (- msglen 4)))
+                    (items (split-string msg (string 0))))
+               (message "Got ParameterStatus %s=%s" (cl-first items) (cl-second items))))
+
             ;; RowDescription
             (?T
-             (and attributes (error "Cannot handle multiple result group"))
+             (when attributes
+               (error "Cannot handle multiple result group"))
              (setq attributes (pg:read-attributes connection)))
+
+            ;; CopyFail
+            (?f
+             (let* ((msglen (pg:read-net-int connection 4))
+                    (msg (pg:read-chars connection (- msglen 4))))
+               (message "Got CopyFail message %s" msg)))
 
             ;; ReadyForQuery
             (?Z t)
@@ -663,6 +700,156 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
     (if (consp parser)
         (funcall (cdr parser) str)
       str)))
+
+
+;; PBKDF2 is a key derivation function used to reduce vulnerability to brute-force password guessing
+;; attempts <https://en.wikipedia.org/wiki/PBKDF2>. There is no implementation built into Emacs, and
+;; implementing it in Emacs Lisp would be very slow. We call out to the nettle-pbkdf2 application
+;; (typically available in the "nettle-bin" package) as a subprocess.
+;;
+;; TODO: could use gnutls builtin if Emacs bound to it
+;; https://gnutls.org/reference/gnutls-crypto.html#gnutls-pbkdf2
+(defun pg:pbkdf2-hash-sha256 (password salt iterations)
+  ;; ITERATIONS is a integer
+  ;; the hash function in nettle-pbkdf2 is hard coded to HMAC-SHA256
+  (require 'hex-util)
+  (with-temp-buffer
+    (insert password)
+    (call-process-region
+     (point-min) (point-max)
+     "nettle-pbkdf2"
+     t t
+     "--raw" "-i" (format "%d" iterations) "-l" "32" salt)
+    ;; delete trailing newline character
+    (goto-char (point-max))
+    (backward-char 1)
+    (when (eql ?\n (char-after))
+      (delete-char 1))
+    ;; out is in the format 55234f50f7f54f13 9e7f13d4becff1d6 aee3ab80a08cc034 c75e8ba21e43e01b
+    (let ((out (delete ?\s (buffer-string))))
+      (decode-hex-string out))))
+
+;; python3:
+;; >>> from hashlib import pbkdf2_hmac
+;; >>> pbkdf2_hmac("sha256", b"foobles", b"1122334455667788", 4096).hex()
+;; '2ca90af934eee8297925368eb2a618efba9508861d93e1a7f224f7b52a0051aa'
+
+
+;; Elementwise XOR of each character of s1 and s2
+(defun pg:logxor-string (s1 s2)
+  ;; S1 and S2 are strings
+  (let ((len (length s1)))
+    (cl-assert (eql len (length s2)))
+    (let ((out (make-string len 0 nil)))
+      (dotimes (i len)
+        (setf (aref out i) (logxor (aref s1 i) (aref s2 i))))
+      out)))
+
+
+;; use NIL to generate a new client nonce on each authentication attempt (normal practice)
+;; or specify a string here to force a particular value for test purposes (compare test vectors)
+(defvar pg:*force-client-nonce* "rOprNGfwEbeRWgbNEkqO")
+
+
+;; https://www.postgresql.org/docs/15/sasl-authentication.html
+;; https://www.rfc-editor.org/rfc/rfc7677
+;;
+;; SCRAM authentication methods use a password as a shared secret, which can then be used for mutual
+;; authentication in a way that doesn't expose the secret directly to an attacker who might be
+;; sniffing the communication.
+(defun pg:do-scram-sha256-authentication (connection user password)
+  (message "Doing SCRAM-SHA-256 authentication with PostgreSQL")
+  (let* ((mechanism "SCRAM-SHA-256")
+         (client-nonce (or pg:*force-client-nonce*
+                           (apply #'string (cl-loop for i below 32 collect (+ ?A (random 25))))))
+         (client-first (format "n,,n=%s,r=%s" user client-nonce))
+         (len-cf (length client-first))
+         ;; note that the packet length doesn't include the initial ?p message type indicator
+         (len-packet (+ 4 (1+ (length mechanism)) 4 len-cf)))
+    ;; send the SASLInitialResponse message
+    (pg:send-char connection ?p)
+    (pg:send-int connection len-packet 4)
+    (pg:send-string connection mechanism)
+    (pg:send-int connection len-cf 4)
+    (pg:send-octets connection client-first)
+    (pg:flush connection)
+    (let ((c (pg:read-char connection)))
+      (cond ((eq ?E c)
+             ;; an ErrorResponse message
+             (error "Backend error during SASL auth: %s" (pg:read-error-response connection)))
+
+            ;; AuthenticationSASLContinue message, what we are hoping for
+            ((eq ?R c)
+             (let* ((len (pg:read-net-int connection 4))
+                    (type (pg:read-net-int connection 4))
+                    (server-first-msg (pg:read-chars connection (- len 8))))
+               (unless (eql type 11)
+                 (error "Unexpected AuthenticationSASLContinue type %d" type))
+               (message "SASL server-first-msg is %s" server-first-msg)
+               (let* ((components (split-string server-first-msg ","))
+                      (r= (cl-find "r=" components :key #'(lambda (s) (substring s 0 2)) :test #'string=))
+                      (r (substring r= 2))
+                      (server-nonce (substring r (length client-nonce)))
+                      (s= (cl-find "s=" components :key #'(lambda (s) (substring s 0 2)) :test #'string=))
+                      (s (substring s= 2))
+                      (salt (base64-decode-string s))
+                      (i= (cl-find "i=" components :key #'(lambda (s) (substring s 0 2)) :test #'string=))
+                      (iterations (string-to-number (substring i= 2)))
+                      (_check (when (zerop iterations)
+                                (error "SCRAM-SHA-256: server supplied invalid iteration count %s" i=)))
+                      (salted-password (pg:pbkdf2-hash-sha256 password salt iterations))
+                      (client-key (gnutls-hash-mac 'SHA256 salted-password "Client Key"))
+                      (_foo (message "Using client-key %s" (encode-hex-string client-key)))
+                      (stored-key (secure-hash 'sha256 client-key nil nil t))
+                      (client-first-bare (concat "n=" user ",r=" client-nonce))
+                      (client-final-bare (concat "c=biws,r=" r))
+                      (auth-message (concat client-first-bare "," server-first-msg "," client-final-bare))
+                      (_foo (message "SASL auth-message is %s" auth-message))
+                      (client-sig (gnutls-hash-mac 'SHA256 stored-key auth-message))
+                      (client-proof (pg:logxor-string client-key client-sig))
+                      (server-key (gnutls-hash-mac 'SHA256 salted-password "Server Key"))
+                      (foo (message "Using server-key %s" (encode-hex-string server-key)))
+                      (server-sig (gnutls-hash-mac 'SHA256 server-key auth-message))
+                      (client-final-msg (concat client-final-bare ",p=" (base64-encode-string client-proof t))))
+                 (unless (string= client-nonce (substring r 0 (length client-nonce)))
+                   (error "SASL response doesn't include correct client nonce"))
+                 (message "client-final-msg is %s" client-final-msg)
+                 ;; we send a SASLResponse message with SCRAM client-final-message as content
+                 (pg:send-char connection ?p)
+                 (pg:send-int connection (+ 4 (length client-final-msg)) 4)
+                 (pg:send-octets connection client-final-msg)
+                 (pg:flush connection)
+                 (let ((c (pg:read-char connection)))
+                   (cond ((eq ?E c)
+                          ;; an ErrorResponse message
+                          (error "Backend error after SASLResponse: %s" (pg:read-error-response connection)))
+
+                         ((eq ?R c)
+                          ;; an AuthenticationSASLFinal message
+                          (let* ((len (pg:read-net-int connection 4))
+                                 (type (pg:read-net-int connection 4))
+                                 (server-final-msg (pg:read-chars connection (- len 8))))
+                            (message "Got server-final-msg %s" server-final-msg)
+                            ;; TODO check for e=<server-error-value> error response
+                            ;; TODO authenticate the server by comparing server-sig with the
+                            ;; value sent by the server (v=base64encoded)
+                            (unless (eql type 12)
+                              (error "Expecting AuthenticationSASLFinal, got type %d" type))
+                            ;; followed immediately by an AuthenticationOk message.
+                            )))))))
+            (t
+             (error "Unexpected response to SASLInitialResponse message: %s" c))))))
+
+(defun pg:do-sasl-authentication (connection user password)
+  ;; read server's list of preferered authentication mechanisms
+  (let ((mechanisms (list)))
+    (cl-loop for mech = (pg:read-string connection 4096)
+             while (not (zerop (length mech)))
+             do (push mech mechanisms))
+    (if (member "SCRAM-SHA-256" mechanisms)
+        (pg:do-scram-sha256-authentication connection user password)
+      (error "Can't handle any of SASL mechanisms %s" mechanisms))))
+ 
 
 
 ;; large object support ================================================
@@ -917,14 +1104,13 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
                     (parsed (pg:parse raw (car type-ids))))
                (push parsed tuples)))))))
 
-;; blech
 (defun pg:read-char (connection)
   (let ((process (pgcon-process connection))
         (position (pgcon-position connection)))
     (with-current-buffer (process-buffer process)
       (cl-incf (pgcon-position connection))
-      (if (null (char-after position))
-          (accept-process-output (pgcon-process connection)))
+      (when (null (char-after position))
+        (accept-process-output process 20))
       (char-after position))))
 
 ;; FIXME should be more careful here; the integer could overflow. I
@@ -955,6 +1141,13 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
         until (= ch ?\0)
         concat (char-to-string ch)))
 
+;; Int32 len + sequence of fields + zero terminating byte
+(defun pg:read-error-response (connection)
+  (let* ((msglen (pg:read-net-int connection 4))
+         (msg (pg:read-chars connection (- msglen 4))))
+    ;; FIXME should decode the content
+    msg))
+
 ;; higher order bits first
 (defun pg:send-int (connection num bytes)
   (let ((process (pgcon-process connection))
@@ -970,6 +1163,18 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
   (let ((process (pgcon-process connection)))
     (process-send-string process (char-to-string char))))
 
+(defun pg:send-string (connection str)
+  (let ((process (pgcon-process connection))
+        (data (if pg:coding-system
+                  (encode-coding-string str pg:coding-system)
+                str)))
+    ;; the string with the null-terminator octet
+    (process-send-string process (concat data (string 0)))))
+
+(defun pg:send-octets (connection octets)
+  (let ((process (pgcon-process connection)))
+    (process-send-string process octets)))
+
 (defun pg:send (connection str &optional bytes)
   (let ((process (pgcon-process connection))
         (padding (if (and (numberp bytes) (> bytes (length str)))
@@ -979,6 +1184,17 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
                   (encode-coding-string str pg:coding-system)
                 str)))
     (process-send-string process (concat data padding))))
+
+
+;; Mostly for debugging use. Doesn't kill lo buffers.
+(defun pg:kill-all-buffers ()
+  "Kill all buffers used for network connections with PostgreSQL."
+  (interactive)
+  (cl-loop for buffer in (buffer-list)
+	   for name = (buffer-name buffer)
+	   when (and (> (length name) 12)
+		     (string= " *PostgreSQL*" (substring (buffer-name buffer) 0 13)))
+	   do (kill-buffer buffer)))
 
 
 (provide 'pg)
