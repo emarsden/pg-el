@@ -25,5 +25,5 @@ jobs:
         version: ${{ matrix.emacs_version }}
     - uses: leotaku/elisp-check@master
       with:
-        file: ipp.el
+        file: pg.el
         ignore_warnings: ${{ matrix.ignore_warnings }}
