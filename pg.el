@@ -1,9 +1,12 @@
 ;;; pg.el --- Emacs Lisp socket-level interface to the PostgreSQL RDBMS  -*- lexical-binding: t -*-
 ;;;
 ;;; Author: Eric Marsden <eric.marsden@risk-engineering.org>
+;;; Copyright: (C) 1999-2002, 2022  Eric Marsden
 ;;; Version: 0.15
 ;;; Keywords: data comm database postgresql
-;;; Copyright: (C) 1999-2002, 2022  Eric Marsden
+;;; URL: https://github.com/emarsden/pg-el
+;;; Package-Requires: ((cl-lib "0.5") (emacs "24.1"))
+
 ;;
 ;;     This program is free software; you can redistribute it and/or
 ;;     modify it under the terms of the GNU General Public License as
@@ -258,6 +261,8 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'hex-util)
+
 
 (defvar pg:disable-type-coercion nil
   "*Non-nil disables the type coercion mechanism.
