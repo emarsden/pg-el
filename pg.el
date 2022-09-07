@@ -39,7 +39,7 @@
 ;;
 ;; (with-pg-connection con (dbname user [password host port]) &body body)
 ;;     A macro which opens a connection to database DBNAME, executes the
-;;     BODY forms then disconnects. See function `pg:connect' for details
+;;     BODY forms then disconnects. See function `pg-connect' for details
 ;;     of the connection arguments.
 ;;
 ;; (with-pg-transaction con &body body)
@@ -47,19 +47,19 @@
 ;;     CON is a connection to the database. If an error occurs during the
 ;;     execution of the forms, a ROLLBACK instruction is executed.
 ;;
-;; (pg:connect dbname user [password host port]) -> connection
+;; (pg-connect dbname user [password host port]) -> connection
 ;;     Connect to the database DBNAME on HOST (defaults to localhost)
 ;;     at PORT (defaults to 5432) via TCP/IP and log in as USER. If
 ;;     the database requires a password, send PASSWORD as clear text.
 ;;     Set the output date type to 'ISO', and initialize our type
 ;;     parser tables.
 ;;
-;; (pg:exec connection &rest sql) -> pgresult
+;; (pg-exec connection &rest sql) -> pgresult
 ;;     Concatenate the SQL strings and send to the backend. Retrieve
 ;;     all the information returned by the database and return it in
 ;;     an opaque record PGRESULT.
 ;;
-;; (pg:result pgresult what &rest args) -> info
+;; (pg-result pgresult what &rest args) -> info
 ;;     Extract information from the PGRESULT. The WHAT keyword can be
 ;;     one of
 ;;          * :connection
@@ -85,10 +85,10 @@
 ;;     database (this is PostgreSQL-specific, please refer to the
 ;;     documentation for more details).
 ;;
-;; (pg:disconnect connection) -> nil
+;; (pg-disconnect connection) -> nil
 ;;     Close the database connection.
 ;;
-;; (pg:for-each connection select-form callback)
+;; (pg-for-each connection select-form callback)
 ;;     Calls CALLBACK on each tuple returned by SELECT-FORM. Declares
 ;;     a cursor for SELECT-FORM, then fetches tuples using repeated
 ;;     executions of FETCH 1, until no results are left. The cursor is
@@ -102,24 +102,24 @@
 ;;     ibuffer's "/ n" to list/visit/delete all buffers whose names
 ;;     match myprefix.
 ;;
-;; (pg:databases connection) -> list of strings
+;; (pg-databases connection) -> list of strings
 ;;     Return a list of the databases available at this site (a
 ;;     database is a set of tables; in a virgin PostgreSQL
 ;;     installation there is a single database named "template1").
 ;;
-;; (pg:tables connection) -> list of strings
+;; (pg-tables connection) -> list of strings
 ;;     Return a list of the tables present in the database to which we
 ;;     are currently connected. Only include user tables: system
 ;;     tables are excluded.
 ;;
-;; (pg:columns connection table) -> list of strings
+;; (pg-columns connection table) -> list of strings
 ;;     Return a list of the columns (or attributes) in TABLE, which
 ;;     must be a table in the database to which we are currently
 ;;     connected. We only include the column names; if you want more
 ;;     detailed information (attribute types, for example), it can be
-;;     obtained from `pg:result' on a SELECT statement for that table.
+;;     obtained from `pg-result' on a SELECT statement for that table.
 ;;
-;; (pg:lo-create conn . args) -> oid
+;; (pg-lo-create conn . args) -> oid
 ;;     Create a new large object (BLOB, or binary large object in
 ;;     other DBMSes parlance) in the database to which we are
 ;;     connected via CONN. Returns an OID (which is represented as an
@@ -132,29 +132,29 @@
 ;;     Large-object functions MUST be used within a transaction (see
 ;;     the macro `with-pg-transaction').
 ;;
-;; (pg:lo-open conn oid . args) -> fd
+;; (pg-lo-open conn oid . args) -> fd
 ;;     Open a large object whose unique identifier is OID (an elisp
 ;;     integer) in the database to which we are connected via CONN.
-;;     Optional ARGS is a Unix-style mode string as for pg:lo-create;
+;;     Optional ARGS is a Unix-style mode string as for pg-lo-create;
 ;;     which defaults to "r" read-only permissions. Returns a file
 ;;     descriptor (an elisp integer) which can be used in other
 ;;     large-object functions.
 ;;
-;; (pg:lo-close conn fd)
+;; (pg-lo-close conn fd)
 ;;     Close the file descriptor FD which was associated with a large
 ;;     object. Note that this does not delete the large object; use
-;;     `pg:lo-unlink' for that.
+;;     `pg-lo-unlink' for that.
 ;;
-;; (pg:lo-read conn fd bytes) -> string
+;; (pg-lo-read conn fd bytes) -> string
 ;;     Read BYTES from the file descriptor FD which is associated with
 ;;     a large object. Return an elisp string which should be BYTES
 ;;     characters long.
 ;;
-;; (pg:lo-write connection fd buf)
+;; (pg-lo-write connection fd buf)
 ;;     Write the bytes contained in the elisp string BUF to the
 ;;     large object associated with the file descriptor FD.
 ;;
-;; (pg:lo-lseek conn fd offset whence)
+;; (pg-lo-lseek conn fd offset whence)
 ;;     Do the equivalent of a lseek(2) on the file descriptor FD which
 ;;     is associated with a large object; ie reposition the read/write
 ;;     file offset for that large object to OFFSET (an elisp
@@ -166,31 +166,31 @@
 ;;     obtained from the header file <unistd.h> (probably 0, 1 and 2
 ;;     respectively).
 ;;
-;; (pg:lo-tell conn oid) -> integer
+;; (pg-lo-tell conn oid) -> integer
 ;;     Do the equivalent of an ftell(3) on the file associated with
 ;;     the large object whose unique identifier is OID. Returns the
 ;;     current position of the file offset for the object's associated
 ;;     file descriptor, as an elisp integer.
 ;;
-;; (pg:lo-unlink conn oid)
+;; (pg-lo-unlink conn oid)
 ;;     Remove the large object whose unique identifier is OID from the
 ;;     system (in the current implementation of large objects in
 ;;     PostgreSQL, each large object is associated with an object in
 ;;     the filesystem).
 ;;
-;; (pg:lo-import conn filename) -> oid
+;; (pg-lo-import conn filename) -> oid
 ;;     Create a new large object and initialize it to the data
 ;;     contained in the file whose name is FILENAME. Returns an OID
 ;;     (as an elisp integer). Note that is operation is only syntactic
 ;;     sugar around the basic large-object operations listed above.
 ;;
-;; (pg:lo-export conn oid filename)
+;; (pg-lo-export conn oid filename)
 ;;     Create a new file named FILENAME and fill it with the contents
 ;;     of the large object whose unique identifier is OID. This
 ;;     operation is also syntactic sugar.
 ;;
 ;;
-;; Boolean variable `pg:disable-type-coercion' which can be set to
+;; Boolean variable `pg-disable-type-coercion' which can be set to
 ;; non-nil (before initiating a connection) to disable the library's
 ;; type coercion facility. Default is t.
 ;;
@@ -233,7 +233,7 @@
 ;;    the local host at the port number which you specified in step 1.
 ;;    For example,
 ;;
-;;         (pg:connect "dbname" "user" "password" "localhost" 3333)
+;;         (pg-connect "dbname" "user" "password" "localhost" 3333)
 ;;
 ;;    You can omit the port argument if you chose 5432 as the local
 ;;    end of the tunnel, since pg.el defaults to this value.
@@ -251,7 +251,7 @@
 ;; * add a mechanism for parsing user-defined types. The user should
 ;;   be able to define a parse function and a type-name; we query
 ;;   pg_type to get the type's OID and add the information to
-;;   pg:parsers.
+;;   pg-parsers.
 ;;
 ;; * in a future release I will probably modify the numeric conversion
 ;;   routines to return elisp floating point values instead of elisp
@@ -264,7 +264,7 @@
 (require 'hex-util)
 
 
-(defvar pg:disable-type-coercion nil
+(defvar pg-disable-type-coercion nil
   "*Non-nil disables the type coercion mechanism.
 The default is nil, which means that data recovered from the database
 is coerced to the corresponding Emacs Lisp type before being returned;
@@ -277,39 +277,39 @@ option is provided mainly in case you wish to avoid the overhead of
 this initial query. The overhead is only incurred once per Emacs
 session (not per connection to the backend).")
 
-(defvar pg:coding-system 'utf-8
+(defvar pg-coding-system 'utf-8
   "*The coding system that PostgreSQL was compiled to use.")
 
-(defconst pg:PG_PROTOCOL_MAJOR 3)
-(defconst pg:PG_PROTOCOL_MINOR 0)
+(defconst pg-PG_PROTOCOL_MAJOR 3)
+(defconst pg-PG_PROTOCOL_MINOR 0)
 
-(defconst pg:AUTH_REQ_OK       0)
-(defconst pg:AUTH_REQ_KRB4     1)
-(defconst pg:AUTH_REQ_KRB5     2)
-(defconst pg:AUTH_REQ_PASSWORD 3)   ; AuthenticationCleartextPassword
-(defconst pg:AUTH_REQ_MD5      5)   ; AuthenticationMD5Password
-(defconst pg:AUTH_REQ_CRYPT    4)
+(defconst pg-AUTH_REQ_OK       0)
+(defconst pg-AUTH_REQ_KRB4     1)
+(defconst pg-AUTH_REQ_KRB5     2)
+(defconst pg-AUTH_REQ_PASSWORD 3)   ; AuthenticationCleartextPassword
+(defconst pg-AUTH_REQ_MD5      5)   ; AuthenticationMD5Password
+(defconst pg-AUTH_REQ_CRYPT    4)
 
-(defconst pg:STARTUP_MSG            7)
-(defconst pg:STARTUP_KRB4_MSG      10)
-(defconst pg:STARTUP_KRB5_MSG      11)
-(defconst pg:STARTUP_PASSWORD_MSG  14)
+(defconst pg-STARTUP_MSG            7)
+(defconst pg-STARTUP_KRB4_MSG      10)
+(defconst pg-STARTUP_KRB5_MSG      11)
+(defconst pg-STARTUP_PASSWORD_MSG  14)
 
-(defconst pg:MAX_MESSAGE_LEN    8192)   ; libpq-fe.h
+(defconst pg-MAX_MESSAGE_LEN    8192)   ; libpq-fe.h
 
-(defconst pg:INV_ARCHIVE 65536)         ; fe-lobj.c
-(defconst pg:INV_WRITE   131072)
-(defconst pg:INV_READ    262144)
-(defconst pg:LO_BUFIZE   1024)
+(defconst pg-INV_ARCHIVE 65536)         ; fe-lobj.c
+(defconst pg-INV_WRITE   131072)
+(defconst pg-INV_READ    262144)
+(defconst pg-LO_BUFIZE   1024)
 
 ;; this regular expression works in Emacs 21 and XEmacs, but not Emacs
 ;; 20.x (no match-exactly-n-times facility)
-;; (defconst pg:ISODATE_REGEX (concat
+;; (defconst pg-ISODATE_REGEX (concat
 ;; "\\([0-9]\\{4\\}\\)-\\([0-9]\\{2\\}\\)-\\([0-9]\\{2\\}\\) " ; Y-M-D
 ;; "\\([0-9]\\{2\\}\\):\\([0-9]\\{2\\}\\):\\([.0-9]+\\)" ; H:M:S.S
 ;; "\\([-+][0-9]+\\)")) ; TZ
 
-(defconst pg:ISODATE_REGEX
+(defconst pg-ISODATE_REGEX
   (concat "\\([0-9]+\\)-\\([0-9][0-9]\\)-\\([0-9][0-9]\\) " ; Y-M-D
 	  "\\([0-9][0-9]\\):\\([0-9][0-9]\\):\\([.0-9]+\\)" ; H:M:S.S
 	  "\\([-+][0-9]+\\)?")) ; TZ
@@ -317,7 +317,7 @@ session (not per connection to the backend).")
 ;; alist of (oid . parser) pairs. This is built dynamically at
 ;; initialization of the connection with the database (once generated,
 ;; the information is shared between connections).
-(defvar pg:parsers '())
+(defvar pg-parsers '())
 
 
 (cl-defstruct pgcon
@@ -326,20 +326,20 @@ session (not per connection to the backend).")
 (cl-defstruct pgresult
   connection status attributes tuples portal)
 
-(defsubst pg:flush (connection)
+(defsubst pg-flush (connection)
   (accept-process-output (pgcon-process connection) 1))
 
 ;; this is ugly because lambda lists don't do destructuring
 (defmacro with-pg-connection (con open-args &rest body)
   "Bindspec is of the form (connection open-args), where OPEN-ARGS are
-as for PG:CONNECT. The database connection is bound to the variable
+as for PG-CONNECT. The database connection is bound to the variable
 CONNECTION. If the connection is unsuccessful, the forms are not
 evaluated. Otherwise, the BODY forms are executed, and upon
 termination, normal or otherwise, the database connection is closed."
-  `(let ((,con (pg:connect ,@open-args)))
+  `(let ((,con (pg-connect ,@open-args)))
      (unwind-protect
          (progn ,@body)
-       (when ,con (pg:disconnect ,con)))))
+       (when ,con (pg-disconnect ,con)))))
 
 (defmacro with-pg-transaction (con &rest body)
   "Execute BODY forms in a BEGIN..END block.
@@ -350,15 +350,15 @@ the large object descriptors are only valid within the context of a
 transaction."
   (let ((exc-sym (gensym)))
     `(progn
-       (pg:exec ,con "BEGIN WORK")
+       (pg-exec ,con "BEGIN WORK")
        (condition-case ,exc-sym
            (prog1 (progn ,@body)
-             (pg:exec ,con "COMMIT WORK"))
+             (pg-exec ,con "COMMIT WORK"))
          (error
           (message "PostgreSQL error %s" ,exc-sym)
-          (pg:exec ,con "ROLLBACK WORK"))))))
+          (pg-exec ,con "ROLLBACK WORK"))))))
 
-(defun pg:for-each (conn select-form callback)
+(defun pg-for-each (conn select-form callback)
   "Create a cursor for SELECT-FORM, and call CALLBACK for each result.
 Uses the PostgreSQL database connection CONN. SELECT-FORM must be an
 SQL SELECT statement. The cursor is created using an SQL DECLARE
@@ -371,15 +371,15 @@ called 'pg-finished."
   (let ((cursor (symbol-name (gensym "pgelcursor"))))
     (catch 'pg-finished
       (with-pg-transaction conn
-         (pg:exec conn "DECLARE " cursor " CURSOR FOR " select-form)
+         (pg-exec conn "DECLARE " cursor " CURSOR FOR " select-form)
          (unwind-protect
-             (cl-loop for res = (pg:result (pg:exec conn "FETCH 1 FROM " cursor) :tuples)
+             (cl-loop for res = (pg-result (pg-exec conn "FETCH 1 FROM " cursor) :tuples)
                    until (zerop (length res))
                    do (funcall callback res))
-           (pg:exec conn "CLOSE " cursor))))))
+           (pg-exec conn "CLOSE " cursor))))))
 
 
-(cl-defun pg:connect (dbname user
+(cl-defun pg-connect (dbname user
                    &optional (password "") (host "localhost") (port 5432))
   "Initiate a connection with the PostgreSQL backend.
 Connect to the database DBNAME with the username USER, on PORT of
@@ -399,138 +399,138 @@ database (as an opaque type). PORT defaults to 5432, HOST to
                             (1+ (length "database"))
                             (1+ (length dbname))
                             1)))
-      (pg:send-int connection packet-octets 4)
-      (pg:send-int connection pg:PG_PROTOCOL_MAJOR 2)
-      (pg:send-int connection pg:PG_PROTOCOL_MINOR 2)
-      (pg:send-string connection "user")
-      (pg:send-string connection user)
-      (pg:send-string connection "database")
-      (pg:send-string connection dbname)
+      (pg-send-int connection packet-octets 4)
+      (pg-send-int connection pg-PG_PROTOCOL_MAJOR 2)
+      (pg-send-int connection pg-PG_PROTOCOL_MINOR 2)
+      (pg-send-string connection "user")
+      (pg-send-string connection user)
+      (pg-send-string connection "database")
+      (pg-send-string connection dbname)
       ;; A zero byte is required as a terminator after the last name/value pair.
-      (pg:send-int connection 0 1)
-      (pg:flush connection))
-    (cl-loop for c = (pg:read-char connection) do
+      (pg-send-int connection 0 1)
+      (pg-flush connection))
+    (cl-loop for c = (pg-read-char connection) do
      (cond ((eq ?E c)
             ;; an ErrorResponse message
-            (let ((err (pg:read-error-response connection)))
+            (let ((err (pg-read-error-response connection)))
               (error "Backend error: %s" err)))
 
            ;; NegotiateProtocolVersion
            ((eq ?v c)
-            (let ((msglen (pg:read-net-int connection 4))
-                  (protocol-supported (pg:read-net-int connection 4))
-                  (unrec-options (pg:read-net-int connection 4))
+            (let ((msglen (pg-read-net-int connection 4))
+                  (protocol-supported (pg-read-net-int connection 4))
+                  (unrec-options (pg-read-net-int connection 4))
                   (unrec (list)))
               ;; read the list of protocol options not supported by the server
               (dotimes (_i unrec-options)
-                (push (pg:read-string connection 4096) unrec))
+                (push (pg-read-string connection 4096) unrec))
               (error "Server only supports protocol minor version <= %s" protocol-supported)))
 
            ;; an authentication request
            ((eq ?R c)
-             (let ((msglen (pg:read-net-int connection 4))
-                   (areq (pg:read-net-int connection 4)))
+             (let ((msglen (pg-read-net-int connection 4))
+                   (areq (pg-read-net-int connection 4)))
                (message "In startup auth type requested is %d" areq)
                (cond
                 ;; AuthenticationOk message
-                ((= areq pg:AUTH_REQ_OK)
-                 (and (not pg:disable-type-coercion)
-                     (null pg:parsers)
-                     (pg:initialize-parsers connection))
-                 (pg:exec connection "SET datestyle = 'ISO'")
-                 (cl-return-from pg:connect connection))
-                ((= areq pg:AUTH_REQ_PASSWORD)
+                ((= areq pg-AUTH_REQ_OK)
+                 (and (not pg-disable-type-coercion)
+                     (null pg-parsers)
+                     (pg-initialize-parsers connection))
+                 (pg-exec connection "SET datestyle = 'ISO'")
+                 (cl-return-from pg-connect connection))
+                ((= areq pg-AUTH_REQ_PASSWORD)
                  ;; send a PasswordMessage
-                 (pg:send-char connection ?p)
-                 (pg:send-int connection (+ 6 (length password)) 4)
-                 (pg:send-string connection password)
-                 (pg:flush connection))
+                 (pg-send-char connection ?p)
+                 (pg-send-int connection (+ 6 (length password)) 4)
+                 (pg-send-string connection password)
+                 (pg-flush connection))
                 ;; AuthenticationSASL request
                 ((= areq 10)
-                 (pg:do-sasl-authentication connection user password))
-                ((= areq pg:AUTH_REQ_MD5)
+                 (pg-do-sasl-authentication connection user password))
+                ((= areq pg-AUTH_REQ_MD5)
                  (error "MD5 authentication not supported"))
-                ((= areq pg:AUTH_REQ_CRYPT)
+                ((= areq pg-AUTH_REQ_CRYPT)
                  (error "Crypt authentication not supported"))
-                ((= areq pg:AUTH_REQ_KRB4)
+                ((= areq pg-AUTH_REQ_KRB4)
                  (error "Kerberos4 authentication not supported"))
-                ((= areq pg:AUTH_REQ_KRB5)
+                ((= areq pg-AUTH_REQ_KRB5)
                  (error "Kerberos5 authentication not supported"))
                 (t
                  (error "Can't do that type of authentication: %s" areq)))))
             (t
              (error "Problem connecting: expected an authentication response, got %s" c))))))
 
-(cl-defun pg:exec (connection &rest args)
+(cl-defun pg-exec (connection &rest args)
   "Execute the SQL command given by the concatenation of ARGS
 on the database to which we are connected via CONNECTION. Return
-a result structure which can be decoded using `pg:result'."
+a result structure which can be decoded using `pg-result'."
   (let ((sql (apply #'concat args))
         (tuples '())
         (attributes '())
         (result (make-pgresult :connection connection)))
-    (when (> (length sql) pg:MAX_MESSAGE_LEN)
+    (when (> (length sql) pg-MAX_MESSAGE_LEN)
       (error "SQL statement too long: %s" sql))
-    (pg:send connection (format "%c%s%c" ?Q sql 0))
-    (pg:flush connection)
-    (cl-loop for c = (pg:read-char connection) do
+    (pg-send connection (format "%c%s%c" ?Q sql 0))
+    (pg-flush connection)
+    (cl-loop for c = (pg-read-char connection) do
           (cl-case c
             ;; AsynchronousNotify
             (?A
-             (let ((_pid (pg:read-int connection 4))
-                   (msg (pg:read-string connection pg:MAX_MESSAGE_LEN)))
+             (let ((_pid (pg-read-int connection 4))
+                   (msg (pg-read-string connection pg-MAX_MESSAGE_LEN)))
                (message "Asynchronous notify %s" msg)))
 
             ;; BinaryRow
             (?B
              (setf (pgcon-binaryp connection) t)
              (unless attributes (error "Tuple received before metadata"))
-             (push (pg:read-tuple connection attributes) tuples))
+             (push (pg-read-tuple connection attributes) tuples))
 
             ;; CompletedResponse
             (?C
-             (let ((status (pg:read-string connection pg:MAX_MESSAGE_LEN)))
+             (let ((status (pg-read-string connection pg-MAX_MESSAGE_LEN)))
                (setf (pgresult-status result) status)
                (setf (pgresult-tuples result) (nreverse tuples))
                (setf (pgresult-attributes result) attributes)
-               (cl-return-from pg:exec result)))
+               (cl-return-from pg-exec result)))
 
             ;; TextDataTransfer
             (?D
              (setf (pgcon-binaryp connection) nil)
              (unless attributes (error "Tuple received before metadata"))
-             (push (pg:read-tuple connection attributes) tuples))
+             (push (pg-read-tuple connection attributes) tuples))
 
             ;; ErrorResponse
             (?E
-             (let ((msg (pg:read-string connection pg:MAX_MESSAGE_LEN)))
+             (let ((msg (pg-read-string connection pg-MAX_MESSAGE_LEN)))
                (error "Backend error: %s" msg)))
 
             ;; EmptyQueryResponse
             (?I
-             (let ((_c (pg:read-char connection)))
+             (let ((_c (pg-read-char connection)))
                nil))
 
             ;; BackendKeyData
             (?K
-             (setf (pgcon-pid connection) (pg:read-net-int connection 4))
-             (setf (pgcon-secret connection) (pg:read-net-int connection 4)))
+             (setf (pgcon-pid connection) (pg-read-net-int connection 4))
+             (setf (pgcon-secret connection) (pg-read-net-int connection 4)))
 
 
             ;; NoticeResponse
             (?N
-             (let ((notice (pg:read-string connection pg:MAX_MESSAGE_LEN)))
+             (let ((notice (pg-read-string connection pg-MAX_MESSAGE_LEN)))
                (message "NOTICE: N%s" notice)))
 
             ;; CursorResponse
             (?P
-             (let ((portal (pg:read-string connection pg:MAX_MESSAGE_LEN)))
+             (let ((portal (pg-read-string connection pg-MAX_MESSAGE_LEN)))
                (setf (pgresult-portal result) portal)))
 
             ;; ParameterStatus
             (?S
-             (let* ((msglen (pg:read-net-int connection 4))
-                    (msg (pg:read-chars connection (- msglen 4)))
+             (let* ((msglen (pg-read-net-int connection 4))
+                    (msg (pg-read-chars connection (- msglen 4)))
                     (items (split-string msg (string 0))))
                (message "Got ParameterStatus %s=%s" (cl-first items) (cl-second items))))
 
@@ -538,12 +538,12 @@ a result structure which can be decoded using `pg:result'."
             (?T
              (when attributes
                (error "Cannot handle multiple result group"))
-             (setq attributes (pg:read-attributes connection)))
+             (setq attributes (pg-read-attributes connection)))
 
             ;; CopyFail
             (?f
-             (let* ((msglen (pg:read-net-int connection 4))
-                    (msg (pg:read-chars connection (- msglen 4))))
+             (let* ((msglen (pg-read-net-int connection 4))
+                    (msg (pg-read-chars connection (- msglen 4))))
                (message "Got CopyFail message %s" msg)))
 
             ;; ReadyForQuery
@@ -551,9 +551,9 @@ a result structure which can be decoded using `pg:result'."
 
             (t (error "Unknown response type from backend: %s" c))))))
 
-(defun pg:result (result what &rest arg)
+(defun pg-result (result what &rest arg)
   "Extract WHAT component of RESULT.
-RESULT should be a structure obtained from a call to `pg:exec',
+RESULT should be a structure obtained from a call to `pg-exec',
 and the keyword WHAT should be one of
    :connection -> return the connection object
    :status -> return the status string provided by the database
@@ -579,13 +579,13 @@ and the keyword WHAT should be one of
         (t
          (error "Unknown result request %s" what))))
 
-(defun pg:disconnect (connection)
+(defun pg-disconnect (connection)
   "Close the database connection.
 This command should be used when you have finished with the database.
 It will release memory used to buffer the data transfered between
 PostgreSQL and Emacs. CONNECTION should no longer be used."
-  (pg:send connection "X")
-  (pg:flush connection)
+  (pg-send connection "X")
+  (pg-flush connection)
   (delete-process (pgcon-process connection))
   (kill-buffer (process-buffer (pgcon-process connection))))
 
@@ -594,7 +594,7 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
 ;;
 ;; When returning data from a SELECT statement, PostgreSQL starts by
 ;; sending some metadata describing the attributes. This information
-;; is read by `pg:read-attributes', and consists of each attribute's
+;; is read by `pg-read-attributes', and consists of each attribute's
 ;; name (as a string), its size (in bytes), and its type (as an oid
 ;; which identifies a row in the PostgreSQL system table pg_type). Each
 ;; row in pg_type includes the type's name (as a string).
@@ -607,61 +607,61 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
 ;; installations, so we need to build a table mapping OIDs to parser
 ;; functions.
 ;;
-;; This is done by the procedure `pg:initialize-parsers', which is run
+;; This is done by the procedure `pg-initialize-parsers', which is run
 ;; the first time a connection is initiated with the database from
 ;; this invocation of Emacs, and which issues a SELECT statement to
 ;; extract the required information from pg_type. This initialization
 ;; imposes a slight overhead on the first request, which you can avoid
-;; by setting `pg:disable-type-coercion' to non-nil if it bothers you.
+;; by setting `pg-disable-type-coercion' to non-nil if it bothers you.
 ;; ====================================================================
 
 
 ;; this is a var not a const to allow user-defined types (a PostgreSQL
 ;; feature not present in ANSI SQL). The user can add a (type-name .
-;; type-parser) pair and call `pg:initialize-parsers', after which the
-;; user-defined type should be returned parsed from `pg:result'.
+;; type-parser) pair and call `pg-initialize-parsers', after which the
+;; user-defined type should be returned parsed from `pg-result'.
 ;; Untested.
-(defvar pg:type-parsers
-  `(("bool"      . ,'pg:bool-parser)
-    ("char"      . ,'pg:text-parser)
-    ("char2"     . ,'pg:text-parser)
-    ("char4"     . ,'pg:text-parser)
-    ("char8"     . ,'pg:text-parser)
-    ("char16"    . ,'pg:text-parser)
-    ("text"      . ,'pg:text-parser)
-    ("varchar"   . ,'pg:text-parser)
-    ("numeric"   . ,'pg:number-parser)
-    ("int2"      . ,'pg:number-parser)
-    ("int28"     . ,'pg:number-parser)
-    ("int4"      . ,'pg:number-parser)
-    ("oid"       . ,'pg:number-parser)
-    ("float4"    . ,'pg:number-parser)
-    ("float8"    . ,'pg:number-parser)
-    ("money"     . ,'pg:number-parser)
-    ("abstime"   . ,'pg:isodate-parser)
-    ("date"      . ,'pg:date-parser)
-    ("timestamp" . ,'pg:isodate-parser)
-    ("datetime"  . ,'pg:isodate-parser)
-    ("time"      . ,'pg:text-parser)     ; preparsed "15:32:45"
-    ("reltime"   . ,'pg:text-parser)     ; don't know how to parse these
-    ("timespan"  . ,'pg:text-parser)
-    ("tinterval" . ,'pg:text-parser)))
+(defvar pg-type-parsers
+  `(("bool"      . ,'pg-bool-parser)
+    ("char"      . ,'pg-text-parser)
+    ("char2"     . ,'pg-text-parser)
+    ("char4"     . ,'pg-text-parser)
+    ("char8"     . ,'pg-text-parser)
+    ("char16"    . ,'pg-text-parser)
+    ("text"      . ,'pg-text-parser)
+    ("varchar"   . ,'pg-text-parser)
+    ("numeric"   . ,'pg-number-parser)
+    ("int2"      . ,'pg-number-parser)
+    ("int28"     . ,'pg-number-parser)
+    ("int4"      . ,'pg-number-parser)
+    ("oid"       . ,'pg-number-parser)
+    ("float4"    . ,'pg-number-parser)
+    ("float8"    . ,'pg-number-parser)
+    ("money"     . ,'pg-number-parser)
+    ("abstime"   . ,'pg-isodate-parser)
+    ("date"      . ,'pg-date-parser)
+    ("timestamp" . ,'pg-isodate-parser)
+    ("datetime"  . ,'pg-isodate-parser)
+    ("time"      . ,'pg-text-parser)     ; preparsed "15:32:45"
+    ("reltime"   . ,'pg-text-parser)     ; don't know how to parse these
+    ("timespan"  . ,'pg-text-parser)
+    ("tinterval" . ,'pg-text-parser)))
 
 ;; see `man pgbuiltin' for details on PostgreSQL builtin types
-(defun pg:number-parser (str) (string-to-number str))
+(defun pg-number-parser (str) (string-to-number str))
 
-(defsubst pg:text-parser (str)
-  (if pg:coding-system
-      (decode-coding-string str pg:coding-system)
+(defsubst pg-text-parser (str)
+  (if pg-coding-system
+      (decode-coding-string str pg-coding-system)
     str))
 
-(defun pg:bool-parser (str)
+(defun pg-bool-parser (str)
   (cond ((string= "t" str) t)
         ((string= "f" str) nil)
         (t (error "Badly formed boolean from backend: %s" str))))
 
 ;; format for ISO dates is "1999-10-24"
-(defun pg:date-parser (str)
+(defun pg-date-parser (str)
   (let ((year  (string-to-number (substring str 0 4)))
         (month (string-to-number (substring str 5 7)))
         (day   (string-to-number (substring str 8 10))))
@@ -672,8 +672,8 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
 ;; which we convert to the internal Emacs date/time representation
 ;; (there may be a fractional seconds quantity as well, which the regex
 ;; handles)
-(defun pg:isodate-parser (str)
-  (if (string-match pg:ISODATE_REGEX str)  ; is non-null
+(defun pg-isodate-parser (str)
+  (if (string-match pg-ISODATE_REGEX str)  ; is non-null
       (let ((year    (string-to-number (match-string 1 str)))
 	    (month   (string-to-number (match-string 2 str)))
 	    (day     (string-to-number (match-string 3 str)))
@@ -687,21 +687,21 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
 ;; 2009-12-23 14:56:44
 
 
-(defun pg:initialize-parsers (connection)
-  (let* ((pgtypes (pg:exec connection "SELECT typname,oid FROM pg_type"))
-         (tuples (pg:result pgtypes :tuples)))
-    (setq pg:parsers '())
+(defun pg-initialize-parsers (connection)
+  (let* ((pgtypes (pg-exec connection "SELECT typname,oid FROM pg_type"))
+         (tuples (pg-result pgtypes :tuples)))
+    (setq pg-parsers '())
     (mapcar
      #'(lambda (tuple)
        (let* ((typname (cl-first tuple))
               (oid (string-to-number (cl-second tuple)))
-              (type (cl-assoc typname pg:type-parsers :test #'string=)))
+              (type (cl-assoc typname pg-type-parsers :test #'string=)))
          (if (consp type)
-             (push (cons oid (cdr type)) pg:parsers))))
+             (push (cons oid (cdr type)) pg-parsers))))
      tuples)))
 
-(defun pg:parse (str oid)
-  (let ((parser (cl-assoc oid pg:parsers :test #'eq)))
+(defun pg-parse (str oid)
+  (let ((parser (cl-assoc oid pg-parsers :test #'eq)))
     (if (consp parser)
         (funcall (cdr parser) str)
       str)))
@@ -714,7 +714,7 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
 ;;
 ;; TODO: could use gnutls builtin if Emacs bound to it
 ;; https://gnutls.org/reference/gnutls-crypto.html#gnutls-pbkdf2
-(defun pg:pbkdf2-hash-sha256 (password salt iterations)
+(defun pg-pbkdf2-hash-sha256 (password salt iterations)
   ;; ITERATIONS is a integer
   ;; the hash function in nettle-pbkdf2 is hard coded to HMAC-SHA256
   (require 'hex-util)
@@ -741,7 +741,7 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
 
 
 ;; Elementwise XOR of each character of s1 and s2
-(defun pg:logxor-string (s1 s2)
+(defun pg-logxor-string (s1 s2)
   ;; S1 and S2 are strings
   (let ((len (length s1)))
     (cl-assert (eql len (length s2)))
@@ -753,7 +753,7 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
 
 ;; use NIL to generate a new client nonce on each authentication attempt (normal practice)
 ;; or specify a string here to force a particular value for test purposes (compare test vectors)
-(defvar pg:*force-client-nonce* "rOprNGfwEbeRWgbNEkqO")
+(defvar pg-*force-client-nonce* "rOprNGfwEbeRWgbNEkqO")
 
 
 ;; https://www.postgresql.org/docs/15/sasl-authentication.html
@@ -762,32 +762,32 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
 ;; SCRAM authentication methods use a password as a shared secret, which can then be used for mutual
 ;; authentication in a way that doesn't expose the secret directly to an attacker who might be
 ;; sniffing the communication.
-(defun pg:do-scram-sha256-authentication (connection user password)
+(defun pg-do-scram-sha256-authentication (connection user password)
   (message "Doing SCRAM-SHA-256 authentication with PostgreSQL")
   (let* ((mechanism "SCRAM-SHA-256")
-         (client-nonce (or pg:*force-client-nonce*
+         (client-nonce (or pg-*force-client-nonce*
                            (apply #'string (cl-loop for i below 32 collect (+ ?A (random 25))))))
          (client-first (format "n,,n=%s,r=%s" user client-nonce))
          (len-cf (length client-first))
          ;; note that the packet length doesn't include the initial ?p message type indicator
          (len-packet (+ 4 (1+ (length mechanism)) 4 len-cf)))
     ;; send the SASLInitialResponse message
-    (pg:send-char connection ?p)
-    (pg:send-int connection len-packet 4)
-    (pg:send-string connection mechanism)
-    (pg:send-int connection len-cf 4)
-    (pg:send-octets connection client-first)
-    (pg:flush connection)
-    (let ((c (pg:read-char connection)))
+    (pg-send-char connection ?p)
+    (pg-send-int connection len-packet 4)
+    (pg-send-string connection mechanism)
+    (pg-send-int connection len-cf 4)
+    (pg-send-octets connection client-first)
+    (pg-flush connection)
+    (let ((c (pg-read-char connection)))
       (cond ((eq ?E c)
              ;; an ErrorResponse message
-             (error "Backend error during SASL auth: %s" (pg:read-error-response connection)))
+             (error "Backend error during SASL auth: %s" (pg-read-error-response connection)))
 
             ;; AuthenticationSASLContinue message, what we are hoping for
             ((eq ?R c)
-             (let* ((len (pg:read-net-int connection 4))
-                    (type (pg:read-net-int connection 4))
-                    (server-first-msg (pg:read-chars connection (- len 8))))
+             (let* ((len (pg-read-net-int connection 4))
+                    (type (pg-read-net-int connection 4))
+                    (server-first-msg (pg-read-chars connection (- len 8))))
                (unless (eql type 11)
                  (error "Unexpected AuthenticationSASLContinue type %d" type))
                (message "SASL server-first-msg is %s" server-first-msg)
@@ -802,7 +802,7 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
                       (iterations (string-to-number (substring i= 2)))
                       (_check (when (zerop iterations)
                                 (error "SCRAM-SHA-256: server supplied invalid iteration count %s" i=)))
-                      (salted-password (pg:pbkdf2-hash-sha256 password salt iterations))
+                      (salted-password (pg-pbkdf2-hash-sha256 password salt iterations))
                       (client-key (gnutls-hash-mac 'SHA256 salted-password "Client Key"))
                       (_foo (message "Using client-key %s" (encode-hex-string client-key)))
                       (stored-key (secure-hash 'sha256 client-key nil nil t))
@@ -811,7 +811,7 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
                       (auth-message (concat client-first-bare "," server-first-msg "," client-final-bare))
                       (_foo (message "SASL auth-message is %s" auth-message))
                       (client-sig (gnutls-hash-mac 'SHA256 stored-key auth-message))
-                      (client-proof (pg:logxor-string client-key client-sig))
+                      (client-proof (pg-logxor-string client-key client-sig))
                       (server-key (gnutls-hash-mac 'SHA256 salted-password "Server Key"))
                       (foo (message "Using server-key %s" (encode-hex-string server-key)))
                       (server-sig (gnutls-hash-mac 'SHA256 server-key auth-message))
@@ -820,20 +820,20 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
                    (error "SASL response doesn't include correct client nonce"))
                  (message "client-final-msg is %s" client-final-msg)
                  ;; we send a SASLResponse message with SCRAM client-final-message as content
-                 (pg:send-char connection ?p)
-                 (pg:send-int connection (+ 4 (length client-final-msg)) 4)
-                 (pg:send-octets connection client-final-msg)
-                 (pg:flush connection)
-                 (let ((c (pg:read-char connection)))
+                 (pg-send-char connection ?p)
+                 (pg-send-int connection (+ 4 (length client-final-msg)) 4)
+                 (pg-send-octets connection client-final-msg)
+                 (pg-flush connection)
+                 (let ((c (pg-read-char connection)))
                    (cond ((eq ?E c)
                           ;; an ErrorResponse message
-                          (error "Backend error after SASLResponse: %s" (pg:read-error-response connection)))
+                          (error "Backend error after SASLResponse: %s" (pg-read-error-response connection)))
 
                          ((eq ?R c)
                           ;; an AuthenticationSASLFinal message
-                          (let* ((len (pg:read-net-int connection 4))
-                                 (type (pg:read-net-int connection 4))
-                                 (server-final-msg (pg:read-chars connection (- len 8))))
+                          (let* ((len (pg-read-net-int connection 4))
+                                 (type (pg-read-net-int connection 4))
+                                 (server-final-msg (pg-read-chars connection (- len 8))))
                             (message "Got server-final-msg %s" server-final-msg)
                             ;; TODO check for e=<server-error-value> error response
                             ;; TODO authenticate the server by comparing server-sig with the
@@ -845,14 +845,14 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
             (t
              (error "Unexpected response to SASLInitialResponse message: %s" c))))))
 
-(defun pg:do-sasl-authentication (connection user password)
+(defun pg-do-sasl-authentication (connection user password)
   ;; read server's list of preferered authentication mechanisms
   (let ((mechanisms (list)))
-    (cl-loop for mech = (pg:read-string connection 4096)
+    (cl-loop for mech = (pg-read-string connection 4096)
              while (not (zerop (length mech)))
              do (push mech mechanisms))
     (if (member "SCRAM-SHA-256" mechanisms)
-        (pg:do-scram-sha256-authentication connection user password)
+        (pg-do-scram-sha256-authentication connection user password)
       (error "Can't handle any of SASL mechanisms %s" mechanisms))))
  
 
@@ -872,11 +872,11 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
 ;; circles. There is also an inheritance mechanism in PostgreSQL.
 ;;
 ;;======================================================================
-(defvar pg:lo-initialized nil)
-(defvar pg:lo-functions '())
+(defvar pg-lo-initialized nil)
+(defvar pg-lo-functions '())
 
-(defun pg:lo-init (connection)
-  (let* ((res (pg:exec connection
+(defun pg-lo-init (connection)
+  (let* ((res (pg-exec connection
                        "SELECT proname, oid from pg_proc WHERE "
                        "proname = 'lo_open' OR "
                        "proname = 'lo_close' OR "
@@ -886,60 +886,60 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
                        "proname = 'lo_tell' OR "
                        "proname = 'loread' OR "
                        "proname = 'lowrite'")))
-    (setq pg:lo-functions '())
+    (setq pg-lo-functions '())
     (mapc
      #'(lambda (tuple)
-         (push (cons (car tuple) (cadr tuple)) pg:lo-functions))
-     (pg:result res :tuples))
-    (setq pg:lo-initialized t)))
+         (push (cons (car tuple) (cadr tuple)) pg-lo-functions))
+     (pg-result res :tuples))
+    (setq pg-lo-initialized t)))
 
 ;; fn is either an integer, in which case it is the OID of an element
 ;; in the pg_proc table, and otherwise it is a string which we look up
-;; in the alist `pg:lo-functions' to find the corresponding OID.
-(defun pg:fn (connection fn integer-result &rest args)
-  (or pg:lo-initialized (pg:lo-init connection))
+;; in the alist `pg-lo-functions' to find the corresponding OID.
+(defun pg-fn (connection fn integer-result &rest args)
+  (or pg-lo-initialized (pg-lo-init connection))
   (let ((fnid (cond ((integerp fn) fn)
                     ((not (stringp fn))
                      (error "Expecting a string or an integer: %s" fn))
-                    ((assoc fn pg:lo-functions) ; blech
-                     (cdr (assoc fn pg:lo-functions)))
+                    ((assoc fn pg-lo-functions) ; blech
+                     (cdr (assoc fn pg-lo-functions)))
                     (t
                      (error "Unknown builtin function %s" fn)))))
-    (pg:send-char connection ?F)
-    (pg:send-char connection 0)
-    (pg:send-int connection fnid 4)
-    (pg:send-int connection (length args) 4)
+    (pg-send-char connection ?F)
+    (pg-send-char connection 0)
+    (pg-send-int connection fnid 4)
+    (pg-send-int connection (length args) 4)
     (mapc #'(lambda (arg)
               (cond ((integerp arg)
-                     (pg:send-int connection 4 4)
-                     (pg:send-int connection arg 4))
+                     (pg-send-int connection 4 4)
+                     (pg-send-int connection arg 4))
                     ((stringp arg)
-                     (pg:send-int connection (length arg) 4)
-                     (pg:send connection arg))
+                     (pg-send-int connection (length arg) 4)
+                     (pg-send connection arg))
                     (t
                      (error "Unknown fastpath type %s" arg))))
           args)
-    (pg:flush connection)
+    (pg-flush connection)
     (cl-loop with result = '()
-          for c = (pg:read-char connection) do
+          for c = (pg-read-char connection) do
           (cl-case c
              ;; ErrorResponse
-            (?E (error (pg:read-string connection 4096)))
+            (?E (error (pg-read-string connection 4096)))
 
             ;; FunctionResultResponse
             (?V (setq result t))
 
             ;; Nonempty response
             (?G
-             (let* ((len (pg:read-net-int connection 4))
+             (let* ((len (pg-read-net-int connection 4))
                     (res (if integer-result
-                             (pg:read-net-int connection len)
-                           (pg:read-chars connection len))))
+                             (pg-read-net-int connection len)
+                           (pg-read-chars connection len))))
                (setq result res)))
 
             ;; NoticeResponse
             (?N
-             (let ((notice (pg:read-string connection pg:MAX_MESSAGE_LEN)))
+             (let ((notice (pg-read-string connection pg-MAX_MESSAGE_LEN)))
                (message "NOTICE: %s" notice))
              (unix-sync))
 
@@ -949,18 +949,18 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
             ;; end of FunctionResult
             (?0 (cl-return result))
 
-            (t (error "Unexpected character in pg:fn: %s" c))))))
+            (t (error "Unexpected character in pg-fn: %s" c))))))
 
 ;; returns an OID
-(defun pg:lo-create (connection &optional args)
+(defun pg-lo-create (connection &optional args)
   (let* ((modestr (or args "r"))
          (mode (cond ((integerp modestr) modestr)
-		     ((string= "r" modestr) pg:INV_READ)
-                     ((string= "w" modestr) pg:INV_WRITE)
+		     ((string= "r" modestr) pg-INV_READ)
+                     ((string= "w" modestr) pg-INV_WRITE)
                      ((string= "rw" modestr)
-                      (logior pg:INV_READ pg:INV_WRITE))
-                     (t (error "pg:lo-create: bad mode %s" modestr))))
-         (oid (pg:fn connection "lo_creat" t mode)))
+                      (logior pg-INV_READ pg-INV_WRITE))
+                     (t (error "pg-lo-create: bad mode %s" modestr))))
+         (oid (pg-fn connection "lo_creat" t mode)))
     (cond ((not (integerp oid))
            (error "Returned value not an OID: %s" oid))
           ((zerop oid)
@@ -968,65 +968,65 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
           (t oid))))
 
 ;; args = modestring (default "r", or "w" or "rw")
-;; returns a file descriptor for use in later pg:lo-* procedures
-(defun pg:lo-open (connection oid &optional args)
+;; returns a file descriptor for use in later pg-lo-* procedures
+(defun pg-lo-open (connection oid &optional args)
   (let* ((modestr (or args "r"))
          (mode (cond ((integerp modestr) modestr)
-		     ((string= "r" modestr) pg:INV_READ)
-                     ((string= "w" modestr) pg:INV_WRITE)
+		     ((string= "r" modestr) pg-INV_READ)
+                     ((string= "w" modestr) pg-INV_WRITE)
                      ((string= "rw" modestr)
-                      (logior pg:INV_READ pg:INV_WRITE))
-                     (t (error "pg:lo-open: bad mode %s" modestr))))
-         (fd (pg:fn connection "lo_open" t oid mode)))
+                      (logior pg-INV_READ pg-INV_WRITE))
+                     (t (error "pg-lo-open: bad mode %s" modestr))))
+         (fd (pg-fn connection "lo_open" t oid mode)))
     (unless (integerp fd)
       (error "Couldn't open large object"))
     fd))
 
-(defsubst pg:lo-close (connection fd)
-  (pg:fn connection "lo_close" t fd))
+(defsubst pg-lo-close (connection fd)
+  (pg-fn connection "lo_close" t fd))
 
-(defsubst pg:lo-read (connection fd bytes)
-  (pg:fn connection "loread" nil fd bytes))
+(defsubst pg-lo-read (connection fd bytes)
+  (pg-fn connection "loread" nil fd bytes))
 
-(defsubst pg:lo-write (connection fd buf)
-  (pg:fn connection "lowrite" t fd buf))
+(defsubst pg-lo-write (connection fd buf)
+  (pg-fn connection "lowrite" t fd buf))
 
-(defsubst pg:lo-lseek (connection fd offset whence)
-  (pg:fn connection "lo_lseek" t fd offset whence))
+(defsubst pg-lo-lseek (connection fd offset whence)
+  (pg-fn connection "lo_lseek" t fd offset whence))
 
-(defsubst pg:lo-tell (connection oid)
-  (pg:fn connection "lo_tell" t oid))
+(defsubst pg-lo-tell (connection oid)
+  (pg-fn connection "lo_tell" t oid))
 
-(defsubst pg:lo-unlink (connection oid)
-  (pg:fn connection "lo_unlink" t oid))
+(defsubst pg-lo-unlink (connection oid)
+  (pg-fn connection "lo_unlink" t oid))
 
 ;; returns an OID
 ;; FIXME should use unwind-protect here
-(defun pg:lo-import (connection filename)
+(defun pg-lo-import (connection filename)
   (let* ((buf (get-buffer-create (format " *pg-%s" filename)))
-         (oid (pg:lo-create connection "rw"))
-         (fdout (pg:lo-open connection oid "w"))
+         (oid (pg-lo-create connection "rw"))
+         (fdout (pg-lo-open connection oid "w"))
          (pos (point-min)))
     (with-current-buffer buf
       (insert-file-contents-literally filename)
       (while (< pos (point-max))
-        (pg:lo-write
+        (pg-lo-write
          connection fdout
          (buffer-substring-no-properties pos (min (point-max) (cl-incf pos 1024)))))
-      (pg:lo-close connection fdout))
+      (pg-lo-close connection fdout))
     (kill-buffer buf)
     oid))
 
-(defun pg:lo-export (connection oid filename)
+(defun pg-lo-export (connection oid filename)
   (let* ((buf (get-buffer-create (format " *pg-%d" oid)))
-         (fdin (pg:lo-open connection oid "r")))
+         (fdin (pg-lo-open connection oid "r")))
     (with-current-buffer buf
-      (cl-do ((str (pg:lo-read connection fdin 1024)
-                   (pg:lo-read connection fdin 1024)))
+      (cl-do ((str (pg-lo-read connection fdin 1024)
+                   (pg-lo-read connection fdin 1024)))
           ((or (not str)
                (zerop (length str))))
         (insert str))
-      (pg:lo-close connection fdin)
+      (pg-lo-close connection fdin)
       (write-file filename))
     (kill-buffer buf)))
 
@@ -1043,28 +1043,28 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
 ;; `\d' and `\d tablename'; see file
 ;; /usr/local/src/pgsql/src/bin/psql/psql.c
 ;; =====================================================================
-(defun pg:databases (conn)
+(defun pg-databases (conn)
   "Return a list of the databases available at this site."
-  (let ((res (pg:exec conn "SELECT datname FROM pg_database")))
-    (apply #'append (pg:result res :tuples))))
+  (let ((res (pg-exec conn "SELECT datname FROM pg_database")))
+    (apply #'append (pg-result res :tuples))))
 
-(defun pg:tables (conn)
+(defun pg-tables (conn)
   "Return a list of the tables present in this database."
-  (let ((res (pg:exec conn "SELECT relname FROM pg_class, pg_user WHERE "
+  (let ((res (pg-exec conn "SELECT relname FROM pg_class, pg_user WHERE "
                       "(relkind = 'r' OR relkind = 'i' OR relkind = 'S') AND "
                       "relname !~ '^pg_' AND usesysid = relowner ORDER BY relname")))
-    (apply #'append (pg:result res :tuples))))
+    (apply #'append (pg-result res :tuples))))
 
-(defun pg:columns (conn table)
+(defun pg-columns (conn table)
   "Return a list of the columns present in TABLE."
   (let* ((sql (format "SELECT * FROM %s WHERE 0 = 1" table))
-         (res (pg:exec conn sql)))
-    (mapcar #'car (pg:result res :attributes))))
+         (res (pg-exec conn sql)))
+    (mapcar #'car (pg-result res :attributes))))
 
-(defun pg:backend-version (conn)
+(defun pg-backend-version (conn)
   "Version an operating environment of the backend as a string."
-  (let ((res (pg:exec conn "SELECT version()")))
-    (cl-first (pg:result res :tuple 0))))
+  (let ((res (pg-exec conn "SELECT version()")))
+    (cl-first (pg-result res :tuple 0))))
 
 
 ;; support routines ============================================================
@@ -1073,18 +1073,18 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
 ;;    attribute-name (string)
 ;;    attribute-type as an oid from table pg_type
 ;;    attribute-size (in bytes?)
-(defun pg:read-attributes (connection)
-  (let ((attribute-count (pg:read-net-int connection 2))
+(defun pg-read-attributes (connection)
+  (let ((attribute-count (pg-read-net-int connection 2))
         (attributes '()))
     (cl-do ((i attribute-count (- i 1)))
         ((zerop i) (nreverse attributes))
-      (let ((type-name (pg:read-string connection pg:MAX_MESSAGE_LEN))
-            (type-id   (pg:read-net-int connection 4))
-            (type-len  (pg:read-net-int connection 2)))
+      (let ((type-name (pg-read-string connection pg-MAX_MESSAGE_LEN))
+            (type-id   (pg-read-net-int connection 4))
+            (type-len  (pg-read-net-int connection 2)))
         (push (list type-name type-id type-len) attributes)))))
 
 ;; a bitmap is a string, which we interpret as a sequence of bytes
-(defun pg:bitmap-ref (bitmap ref)
+(defun pg-bitmap-ref (bitmap ref)
 ;;   (multiple-value-bind (char-ref bit-ref)
 ;;       (floor* ref 8)
     (let ((int (aref bitmap (floor ref 8))))
@@ -1092,24 +1092,24 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
 
 ;; the backend starts by sending a bitmap indicating which tuples are
 ;; NULL
-(defun pg:read-tuple (connection attributes)
+(defun pg-read-tuple (connection attributes)
   (let* ((num-attributes (length attributes))
          (num-bytes (ceiling num-attributes 8))
-         (bitmap (pg:read-chars connection num-bytes))
+         (bitmap (pg-read-chars connection num-bytes))
          (correction (if (pgcon-binaryp connection) 0 -4))
          (tuples '()))
     (cl-do ((i 0 (+ i 1))
             (type-ids (mapcar #'cl-second attributes) (cdr type-ids)))
         ((= i num-attributes) (nreverse tuples))
-      (cond ((zerop (pg:bitmap-ref bitmap i))
+      (cond ((zerop (pg-bitmap-ref bitmap i))
              (push nil tuples))
             (t
-             (let* ((len (+ (pg:read-net-int connection 4) correction))
-                    (raw (pg:read-chars connection (max 0 len)))
-                    (parsed (pg:parse raw (car type-ids))))
+             (let* ((len (+ (pg-read-net-int connection 4) correction))
+                    (raw (pg-read-chars connection (max 0 len)))
+                    (parsed (pg-parse raw (car type-ids))))
                (push parsed tuples)))))))
 
-(defun pg:read-char (connection)
+(defun pg-read-char (connection)
   (let ((process (pgcon-process connection))
         (position (pgcon-position connection)))
     (with-current-buffer (process-buffer process)
@@ -1120,41 +1120,41 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
 
 ;; FIXME should be more careful here; the integer could overflow. I
 ;; wanna real Lisp!
-(defun pg:read-net-int (connection bytes)
+(defun pg-read-net-int (connection bytes)
   (cl-do ((i bytes (- i 1))
           (accum 0))
       ((zerop i) accum)
-    (setq accum (+ (* 256 accum) (pg:read-char connection)))))
+    (setq accum (+ (* 256 accum) (pg-read-char connection)))))
 
-(defun pg:read-int (connection bytes)
+(defun pg-read-int (connection bytes)
   (cl-do ((i bytes (- i 1))
           (multiplier 1 (* multiplier 256))
           (accum 0))
       ((zerop i) accum)
-    (cl-incf accum (* multiplier (pg:read-char connection)))))
+    (cl-incf accum (* multiplier (pg-read-char connection)))))
 
-(defun pg:read-chars (connection howmany)
+(defun pg-read-chars (connection howmany)
   (cl-do ((i 0 (+ i 1))
           (chars (make-string howmany ?.)))
       ((= i howmany) chars)
-    (aset chars i (pg:read-char connection))))
+    (aset chars i (pg-read-char connection))))
 
 ;; read a null-terminated string
-(defun pg:read-string (connection maxbytes)
+(defun pg-read-string (connection maxbytes)
   (cl-loop for i from 1 to maxbytes
-        for ch = (pg:read-char connection)
+        for ch = (pg-read-char connection)
         until (= ch ?\0)
         concat (char-to-string ch)))
 
 ;; Int32 len + sequence of fields + zero terminating byte
-(defun pg:read-error-response (connection)
-  (let* ((msglen (pg:read-net-int connection 4))
-         (msg (pg:read-chars connection (- msglen 4))))
+(defun pg-read-error-response (connection)
+  (let* ((msglen (pg-read-net-int connection 4))
+         (msg (pg-read-chars connection (- msglen 4))))
     ;; FIXME should decode the content
     msg))
 
 ;; higher order bits first
-(defun pg:send-int (connection num bytes)
+(defun pg-send-int (connection num bytes)
   (let ((process (pgcon-process connection))
         (str (make-string bytes 0))
         (i (- bytes 1)))
@@ -1164,35 +1164,35 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
       (cl-decf i))
     (process-send-string process str)))
 
-(defun pg:send-char (connection char)
+(defun pg-send-char (connection char)
   (let ((process (pgcon-process connection)))
     (process-send-string process (char-to-string char))))
 
-(defun pg:send-string (connection str)
+(defun pg-send-string (connection str)
   (let ((process (pgcon-process connection))
-        (data (if pg:coding-system
-                  (encode-coding-string str pg:coding-system)
+        (data (if pg-coding-system
+                  (encode-coding-string str pg-coding-system)
                 str)))
     ;; the string with the null-terminator octet
     (process-send-string process (concat data (string 0)))))
 
-(defun pg:send-octets (connection octets)
+(defun pg-send-octets (connection octets)
   (let ((process (pgcon-process connection)))
     (process-send-string process octets)))
 
-(defun pg:send (connection str &optional bytes)
+(defun pg-send (connection str &optional bytes)
   (let ((process (pgcon-process connection))
         (padding (if (and (numberp bytes) (> bytes (length str)))
                      (make-string (- bytes (length str)) 0)
                    (make-string 0 0)))
-        (data (if pg:coding-system
-                  (encode-coding-string str pg:coding-system)
+        (data (if pg-coding-system
+                  (encode-coding-string str pg-coding-system)
                 str)))
     (process-send-string process (concat data padding))))
 
 
 ;; Mostly for debugging use. Doesn't kill lo buffers.
-(defun pg:kill-all-buffers ()
+(defun pg-kill-all-buffers ()
   "Kill all buffers used for network connections with PostgreSQL."
   (interactive)
   (cl-loop for buffer in (buffer-list)
