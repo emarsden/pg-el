@@ -5,7 +5,7 @@
 ;;; Version: 0.15
 ;;; Keywords: data comm database postgresql
 ;;; URL: https://github.com/emarsden/pg-el
-;;; Package-Requires: ((cl-lib "0.5") (emacs "24.1"))
+;;; Package-Requires: ((cl-lib "0.5") (emacs "26.1"))
 
 ;;
 ;;     This program is free software; you can redistribute it and/or
@@ -367,7 +367,7 @@ are left. The cursor is then closed.
 
 The work is performed within a transaction. The work can be
 interrupted before all tuples have been handled by THROWing to a tag
-called 'pg-finished."
+called pg-finished."
   (let ((cursor (symbol-name (gensym "pgelcursor"))))
     (catch 'pg-finished
       (with-pg-transaction conn
