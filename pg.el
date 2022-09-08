@@ -417,7 +417,7 @@ database (as an opaque type). PORT defaults to 5432, HOST to
 
            ;; NegotiateProtocolVersion
            ((eq ?v c)
-            (let ((msglen (pg-read-net-int connection 4))
+            (let ((_msglen (pg-read-net-int connection 4))
                   (protocol-supported (pg-read-net-int connection 4))
                   (unrec-options (pg-read-net-int connection 4))
                   (unrec (list)))
@@ -426,19 +426,29 @@ database (as an opaque type). PORT defaults to 5432, HOST to
                 (push (pg-read-string connection 4096) unrec))
               (error "Server only supports protocol minor version <= %s" protocol-supported)))
 
+           ;; ReadyForQuery message
+           ((eq ?Z c)
+            (let ((_msglen (pg-read-net-int connection 4))
+                  (status (pg-read-char connection)))
+              ;; status is 'I' or 'T' or 'E'
+              (message "Got ReadyForQuery with status %c" status)
+              (and (not pg-disable-type-coercion)
+                   (null pg-parsers)
+                   (pg-initialize-parsers connection))
+              (pg-exec connection "SET datestyle = 'ISO'")
+              (cl-return-from pg-connect connection)))
+
            ;; an authentication request
            ((eq ?R c)
-             (let ((msglen (pg-read-net-int connection 4))
+             (let ((_msglen (pg-read-net-int connection 4))
                    (areq (pg-read-net-int connection 4)))
-               (message "In startup auth type requested is %d" areq)
                (cond
-                ;; AuthenticationOk message
+                ;; AuthenticationOK message
                 ((= areq pg-AUTH_REQ_OK)
-                 (and (not pg-disable-type-coercion)
-                     (null pg-parsers)
-                     (pg-initialize-parsers connection))
-                 (pg-exec connection "SET datestyle = 'ISO'")
-                 (cl-return-from pg-connect connection))
+                 ;; we need to continue processing server messages and wait for the ReadyForQuery
+                 ;; message
+                 nil)
+
                 ((= areq pg-AUTH_REQ_PASSWORD)
                  ;; send a PasswordMessage
                  (pg-send-char connection ?p)
@@ -458,6 +468,14 @@ database (as an opaque type). PORT defaults to 5432, HOST to
                  (error "Kerberos5 authentication not supported"))
                 (t
                  (error "Can't do that type of authentication: %s" areq)))))
+
+           ;; ParameterStatus
+           (?S
+            (let* ((msglen (pg-read-net-int connection 4))
+                   (msg (pg-read-chars connection (- msglen 4)))
+                   (items (split-string msg (string 0))))
+              (message "Got ParameterStatus %s=%s" (cl-first items) (cl-second items))))
+
             (t
              (error "Problem connecting: expected an authentication response, got %s" c))))))
 
@@ -469,42 +487,54 @@ a result structure which can be decoded using `pg-result'."
         (tuples '())
         (attributes '())
         (result (make-pgresult :connection connection)))
+    (message "pg-exec: %s" sql)
     (when (> (length sql) pg-MAX_MESSAGE_LEN)
       (error "SQL statement too long: %s" sql))
-    (pg-send connection (format "%c%s%c" ?Q sql 0))
+    (pg-send-char connection ?Q)
+    (pg-send-int connection (+ 4 (length sql) 1) 4)
+    (pg-send-string connection sql)
     (pg-flush connection)
     (cl-loop for c = (pg-read-char connection) do
-          (cl-case c
+       (message "In pg-exec read msg-char %c" c)
+       (cl-case c
             ;; AsynchronousNotify
             (?A
              (let ((_pid (pg-read-int connection 4))
                    (msg (pg-read-string connection pg-MAX_MESSAGE_LEN)))
                (message "Asynchronous notify %s" msg)))
 
-            ;; BinaryRow
+            ;; BinaryRow  FIXME this is not a Bind message
             (?B
              (setf (pgcon-binaryp connection) t)
-             (unless attributes (error "Tuple received before metadata"))
+             (unless attributes
+               (error "Tuple received before metadata"))
              (push (pg-read-tuple connection attributes) tuples))
 
-            ;; CompletedResponse
+            ;; Close (to close prepared statement or portal)
             (?C
-             (let ((status (pg-read-string connection pg-MAX_MESSAGE_LEN)))
-               (setf (pgresult-status result) status)
+             (let* ((msglen (pg-read-net-int connection 4))
+                    ;; S=prepared statement, P=portal
+                    (type (pg-read-char connection))
+                    ;; the name of the portal
+                    (name (pg-read-string connection pg-MAX_MESSAGE_LEN)))
                (setf (pgresult-tuples result) (nreverse tuples))
                (setf (pgresult-attributes result) attributes)
-               (cl-return-from pg-exec result)))
+               ;; nope, wait for the ReadyForQery message
+               ;; (cl-return-from pg-exec result)
+               ))
 
-            ;; TextDataTransfer
+            ;; DataRow
             (?D
              (setf (pgcon-binaryp connection) nil)
-             (unless attributes (error "Tuple received before metadata"))
-             (push (pg-read-tuple connection attributes) tuples))
+             (unless attributes
+               (error "Tuple received before metadata"))
+             (let ((_msglen (pg-read-net-int connection 4)))
+               (push (pg-read-tuple connection attributes) tuples)))
 
             ;; ErrorResponse
             (?E
-             (let ((msg (pg-read-string connection pg-MAX_MESSAGE_LEN)))
-               (error "Backend error: %s" msg)))
+             (let ((err (pg-read-error-response connection)))
+               (error "Backend error: %s" err)))
 
             ;; EmptyQueryResponse
             (?I
@@ -547,7 +577,12 @@ a result structure which can be decoded using `pg-result'."
                (message "Got CopyFail message %s" msg)))
 
             ;; ReadyForQuery
-            (?Z t)
+            (?Z
+             (let ((_msglen (pg-read-net-int connection 4))
+                   (status (pg-read-char connection)))
+               ;; status is 'I' or 'T' or 'E'
+               (message "Got ReadyForQuery with status %c" status)
+               (cl-return-from pg-exec result)))
 
             (t (error "Unknown response type from backend: %s" c))))))
 
@@ -794,7 +829,7 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
                (let* ((components (split-string server-first-msg ","))
                       (r= (cl-find "r=" components :key #'(lambda (s) (substring s 0 2)) :test #'string=))
                       (r (substring r= 2))
-                      (server-nonce (substring r (length client-nonce)))
+                      ;; (server-nonce (substring r (length client-nonce)))
                       (s= (cl-find "s=" components :key #'(lambda (s) (substring s 0 2)) :test #'string=))
                       (s (substring s= 2))
                       (salt (base64-decode-string s))
@@ -813,7 +848,7 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
                       (client-sig (gnutls-hash-mac 'SHA256 stored-key auth-message))
                       (client-proof (pg-logxor-string client-key client-sig))
                       (server-key (gnutls-hash-mac 'SHA256 salted-password "Server Key"))
-                      (foo (message "Using server-key %s" (encode-hex-string server-key)))
+                      (_foo (message "Using server-key %s" (encode-hex-string server-key)))
                       (server-sig (gnutls-hash-mac 'SHA256 server-key auth-message))
                       (client-final-msg (concat client-final-bare ",p=" (base64-encode-string client-proof t))))
                  (unless (string= client-nonce (substring r 0 (length client-nonce)))
@@ -834,12 +869,18 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
                           (let* ((len (pg-read-net-int connection 4))
                                  (type (pg-read-net-int connection 4))
                                  (server-final-msg (pg-read-chars connection (- len 8))))
-                            (message "Got server-final-msg %s" server-final-msg)
-                            ;; TODO check for e=<server-error-value> error response
-                            ;; TODO authenticate the server by comparing server-sig with the
-                            ;; value sent by the server (v=base64encoded)
                             (unless (eql type 12)
                               (error "Expecting AuthenticationSASLFinal, got type %d" type))
+                            (message "Got server-final-msg %s" server-final-msg)
+                            (when (string= "e=" (substring server-final-msg 0 2))
+                              (error "Server error during SASL authentication: %s" (substring server-final-msg 2)))
+                            (unless (string= "v=" (substring server-final-msg 0 2))
+                              (error "Unable to verify PostgreSQL server"))
+                            (let ((v (base64-decode-string (substring server-final-msg 2))))
+                              (unless (string= server-sig v)
+                                (message "Server validation mismatch: v=%s / %s"
+                                         (base64-encode-string v)
+                                         (base64-encode-string server-sig))))
                             ;; followed immediately by an AuthenticationOk message.
                             )))))))
             (t
@@ -1074,14 +1115,19 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
 ;;    attribute-type as an oid from table pg_type
 ;;    attribute-size (in bytes?)
 (defun pg-read-attributes (connection)
-  (let ((attribute-count (pg-read-net-int connection 2))
-        (attributes '()))
+  (let* ((_msglen (pg-read-net-int connection 4))
+         (attribute-count (pg-read-net-int connection 2))
+         (attributes '()))
     (cl-do ((i attribute-count (- i 1)))
         ((zerop i) (nreverse attributes))
       (let ((type-name (pg-read-string connection pg-MAX_MESSAGE_LEN))
-            (type-id   (pg-read-net-int connection 4))
-            (type-len  (pg-read-net-int connection 2)))
-        (push (list type-name type-id type-len) attributes)))))
+            (table-oid (pg-read-net-int connection 4))
+            (col       (pg-read-net-int connection 2))
+            (type-oid  (pg-read-net-int connection 4))
+            (type-len  (pg-read-net-int connection 2))
+            (type-mod  (pg-read-net-int connection 4))
+            (format-code (pg-read-net-int connection 2)))
+        (push (list type-name type-oid type-len) attributes)))))
 
 ;; a bitmap is a string, which we interpret as a sequence of bytes
 (defun pg-bitmap-ref (bitmap ref)
@@ -1090,9 +1136,20 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
     (let ((int (aref bitmap (floor ref 8))))
       (logand 128 (ash int (mod ref 8)))))
 
-;; the backend starts by sending a bitmap indicating which tuples are
-;; NULL
 (defun pg-read-tuple (connection attributes)
+  (let* ((num-attributes (length attributes))
+         (count (pg-read-net-int connection 2))
+         (tuples (list)))
+    (cl-loop for i below count do
+             ;; col-octets=-1 indicates a NULL column value 
+             (let* ((col-octets (pg-read-net-int connection 4))
+                    (col-value (when (> col-octets 0)
+                                 (pg-read-chars connection col-octets))))
+               (push col-value tuples)))
+    tuples))
+
+;; The backend starts by sending a bitmap indicating which tuples are NULL.
+(defun pg-read-tuple-old (connection attributes)
   (let* ((num-attributes (length attributes))
          (num-bytes (ceiling num-attributes 8))
          (bitmap (pg-read-chars connection num-bytes))
@@ -1115,7 +1172,7 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
     (with-current-buffer (process-buffer process)
       (cl-incf (pgcon-position connection))
       (when (null (char-after position))
-        (accept-process-output process 20))
+        (accept-process-output process 5))
       (char-after position))))
 
 ;; FIXME should be more careful here; the integer could overflow. I
@@ -1162,6 +1219,14 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
       (aset str i (% num 256))
       (setq num (floor num 256))
       (cl-decf i))
+    (process-send-string process str)))
+
+(defun pg-send-net-int (connection num bytes)
+  (let ((process (pgcon-process connection))
+        (str (make-string bytes 0)))
+    (dotimes (i bytes)
+      (aset str i (% num 256))
+      (setq num (floor num 256)))
     (process-send-string process str)))
 
 (defun pg-send-char (connection char)
