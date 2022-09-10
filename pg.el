@@ -412,8 +412,7 @@ database (as an opaque type). PORT defaults to 5432, HOST to
     (cl-loop for c = (pg-read-char connection) do
      (cond ((eq ?E c)
             ;; an ErrorResponse message
-            (let ((err (pg-read-error-response connection)))
-              (error "Backend error: %s" err)))
+            (pg-handle-error-response connection "after StartupMessage"))
 
            ;; NegotiateProtocolVersion
            ((eq ?v c)
@@ -533,8 +532,7 @@ a result structure which can be decoded using `pg-result'."
 
             ;; ErrorResponse
             (?E
-             (let ((err (pg-read-error-response connection)))
-               (error "Backend error: %s" err)))
+             (pg-handle-error-response connection))
 
             ;; EmptyQueryResponse
             (?I
@@ -816,7 +814,7 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
     (let ((c (pg-read-char connection)))
       (cond ((eq ?E c)
              ;; an ErrorResponse message
-             (error "Backend error during SASL auth: %s" (pg-read-error-response connection)))
+             (pg-handle-error-response connection "during SASL auth"))
 
             ;; AuthenticationSASLContinue message, what we are hoping for
             ((eq ?R c)
@@ -1203,12 +1201,66 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
         until (= ch ?\0)
         concat (char-to-string ch)))
 
-;; Int32 len + sequence of fields + zero terminating byte
+(cl-defstruct pgerror
+  severity sqlstate message detail hint table column dtype)
+
 (defun pg-read-error-response (connection)
-  (let* ((msglen (pg-read-net-int connection 4))
-         (msg (pg-read-chars connection (- msglen 4))))
-    ;; FIXME should decode the content
-    msg))
+  (let* ((response-len (pg-read-net-int connection 4))
+         (msglen (- response-len 4))
+         (msg (pg-read-chars connection msglen))
+         (msgpos 0)
+         (err (make-pgerror)))
+    (cl-loop while (< msgpos (1- msglen))
+             for field = (aref msg msgpos)
+             for val = (let* ((start (cl-incf msgpos))
+                              (end (cl-position #x0 msg :start start :end msglen)))
+                         (prog1
+                             (substring msg start end)
+                           (setf msgpos (1+ end))))
+             do (cond ((eq field ?S)
+                       (setf (pgerror-severity err) val))
+                      ((eq field ?C)
+                       (setf (pgerror-sqlstate err) val))
+                      ((eq field ?M)
+                       (setf (pgerror-message err) val))
+                      ((eq field ?D)
+                       (setf (pgerror-detail err) val))
+                      ((eq field ?H)
+                       (setf (pgerror-hint err) val))
+                      ((eq field ?t)
+                       (setf (pgerror-table err) val))
+                      ((eq field ?c)
+                       (setf (pgerror-column err) val))
+                      ((eq field ?d)
+                       (setf (pgerror-dtype err) val))))
+    err))
+
+;; Read and signal an ErrorMessage from the backend
+(defun pg-handle-error-response (connection &optional context)
+  (let ((e (pg-read-error-response connection))
+        (extra (list)))
+    (when (pgerror-detail e)
+      (push ", " extra)
+      (push (pgerror-detail e) extra))
+    (when (pgerror-hint e)
+      (push ", " extra)
+      (push (format "hint: %s" (pgerror-hint e)) extra))
+    (when (pgerror-table e)
+      (push ", " extra)
+      (push (format "table: %s" (pgerror-table e)) extra))
+    (when (pgerror-column e)
+      (push ", " extra)
+      (push (format "column: %s" (pgerror-column e)) extra))
+    (setf extra (nreverse extra))
+    (pop extra)
+    (setf extra (butlast extra))
+    (when extra
+      (setf extra (append (list " (") extra (list ")"))))
+    (error "PostgreSQL %s%s: %s%s"
+           (pgerror-severity e)
+           (if context (concat " while " context) "")
+           (pgerror-message e)
+           (apply #'concat extra))))
 
 ;; higher order bits first
 (defun pg-send-int (connection num bytes)
