@@ -5,7 +5,7 @@
 ;;; Version: 0.15
 ;;; Keywords: data comm database postgresql
 ;;; URL: https://github.com/emarsden/pg-el
-;;; Package-Requires: ((cl-lib "0.5") (emacs "26.1"))
+;;; Package-Requires: ((emacs "26.1"))
 
 ;;
 ;;     This program is free software; you can redistribute it and/or
@@ -287,7 +287,6 @@ session (not per connection to the backend).")
 (defconst pg-AUTH_REQ_KRB4     1)
 (defconst pg-AUTH_REQ_KRB5     2)
 (defconst pg-AUTH_REQ_PASSWORD 3)   ; AuthenticationCleartextPassword
-(defconst pg-AUTH_REQ_MD5      5)   ; AuthenticationMD5Password
 (defconst pg-AUTH_REQ_CRYPT    4)
 
 (defconst pg-STARTUP_MSG            7)
@@ -380,14 +379,19 @@ called pg-finished."
 
 
 (cl-defun pg-connect (dbname user
-                   &optional (password "") (host "localhost") (port 5432))
+                             &optional
+                             (password "")
+                             (host "localhost")
+                             (port 5432)
+                             (tls nil))
   "Initiate a connection with the PostgreSQL backend.
 Connect to the database DBNAME with the username USER, on PORT of
 HOST, providing PASSWORD if necessary. Return a connection to the
 database (as an opaque type). PORT defaults to 5432, HOST to
 \"localhost\", and PASSWORD to an empty string."
   (let* ((buf (generate-new-buffer " *PostgreSQL*"))
-         (process (open-network-stream "postgres" buf host port :coding nil))
+         (type (if tls 'tls nil))
+         (process (open-network-stream "postgres" buf host port :type type :coding nil))
          (connection (make-pgcon :process process :position 1)))
     (with-current-buffer buf
       (set-process-coding-system process 'binary 'binary)
@@ -451,14 +455,14 @@ database (as an opaque type). PORT defaults to 5432, HOST to
                 ((= areq pg-AUTH_REQ_PASSWORD)
                  ;; send a PasswordMessage
                  (pg-send-char connection ?p)
-                 (pg-send-int connection (+ 6 (length password)) 4)
+                 (pg-send-int connection (+ 5 (length password)) 4)
                  (pg-send-string connection password)
                  (pg-flush connection))
                 ;; AuthenticationSASL request
                 ((= areq 10)
                  (pg-do-sasl-authentication connection user password))
-                ((= areq pg-AUTH_REQ_MD5)
-                 (error "MD5 authentication not supported"))
+                ((= areq 5)
+                 (pg-do-md5-authentication connection user password))
                 ((= areq pg-AUTH_REQ_CRYPT)
                  (error "Crypt authentication not supported"))
                 ((= areq pg-AUTH_REQ_KRB4)
@@ -617,7 +621,9 @@ and the keyword WHAT should be one of
 This command should be used when you have finished with the database.
 It will release memory used to buffer the data transfered between
 PostgreSQL and Emacs. CONNECTION should no longer be used."
+  ;; send a Terminate message
   (pg-send connection "X")
+  (pg-send-int connection 4 4)
   (pg-flush connection)
   (delete-process (pgcon-process connection))
   (kill-buffer (process-buffer (pgcon-process connection))))
@@ -739,6 +745,21 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
         (funcall (cdr parser) str)
       str)))
 
+;; pwdhash = md5(password + username).hexdigest()
+;; hash = ′md5′ + md5(pwdhash + salt).hexdigest()
+(defun pg-do-md5-authentication (connection user password)
+  (let* ((salt (pg-read-chars connection 4))
+         (pwdhash (encode-hex-string (md5 (concat password user))))
+         (hash (concat "md5" (encode-hex-string (md5 (concat pwdhash salt))))))
+    (pg-send-char connection ?p)
+    (pg-send-int connection (+ 5 (length hash)) 4)
+    (pg-send-string connection hash)
+    (pg-flush connection)))
+
+(defun pg-create-md5-password (user password)
+  (concat "md5" (encode-hex-string (md5 (concat password user)))))
+
+
 
 ;; PBKDF2 is a key derivation function used to reduce vulnerability to brute-force password guessing
 ;; attempts <https://en.wikipedia.org/wiki/PBKDF2>. There is no implementation built into Emacs, and
@@ -789,12 +810,12 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
 (defvar pg-*force-client-nonce* "rOprNGfwEbeRWgbNEkqO")
 
 
-;; https://www.postgresql.org/docs/15/sasl-authentication.html
-;; https://www.rfc-editor.org/rfc/rfc7677
-;;
 ;; SCRAM authentication methods use a password as a shared secret, which can then be used for mutual
 ;; authentication in a way that doesn't expose the secret directly to an attacker who might be
 ;; sniffing the communication.
+;;
+;; https://www.postgresql.org/docs/15/sasl-authentication.html
+;; https://www.rfc-editor.org/rfc/rfc7677
 (defun pg-do-scram-sha256-authentication (connection user password)
   (message "Doing SCRAM-SHA-256 authentication with PostgreSQL")
   (let* ((mechanism "SCRAM-SHA-256")
@@ -802,7 +823,7 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
                            (apply #'string (cl-loop for i below 32 collect (+ ?A (random 25))))))
          (client-first (format "n,,n=%s,r=%s" user client-nonce))
          (len-cf (length client-first))
-         ;; note that the packet length doesn't include the initial ?p message type indicator
+         ;; packet length doesn't include the initial ?p message type indicator
          (len-packet (+ 4 (1+ (length mechanism)) 4 len-cf)))
     ;; send the SASLInitialResponse message
     (pg-send-char connection ?p)
@@ -860,7 +881,7 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
                  (let ((c (pg-read-char connection)))
                    (cond ((eq ?E c)
                           ;; an ErrorResponse message
-                          (error "Backend error after SASLResponse: %s" (pg-read-error-response connection)))
+                          (pg-handle-error-response connection "after SASLResponse"))
 
                          ((eq ?R c)
                           ;; an AuthenticationSASLFinal message
