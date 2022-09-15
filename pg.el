@@ -24,7 +24,7 @@
 
 ;;; Commentary:
 
-;;; Overview ==========================================================
+;;;; Overview =========================================================
 ;;
 ;; This module lets you access the PostgreSQL object-relational DBMS from Emacs, using its
 ;; socket-level frontend/backend protocol. The module is capable of automatic type coercions from a
@@ -35,7 +35,7 @@
 ;; 14) and MD5 authentication are implemented. Encrypted (TLS) connections are supported.
 
 
-;;; Entry points =======================================================
+;;;; Entry points ======================================================
 ;;
 ;; (with-pg-connection con (dbname user [password host port]) &body body)
 ;;     A macro which opens a connection to database DBNAME, executes the
@@ -199,7 +199,6 @@
 ;; Thanks to Eric Ludlam for discovering a bug in the date parsing routines, to
 ;; Hartmut Pilch and Yoshio Katayama for adding multibyte support, and to Doug
 ;; McNaught and Pavel Janik for bug fixes.
-
 
 
 ;;; INSTALL =========================================================
