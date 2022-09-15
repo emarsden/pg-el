@@ -243,7 +243,7 @@
 ;;
 ;; Place this file in a directory somewhere in the load-path, then
 ;; byte-compile it (do a `B' on it in dired, for example). Place a
-;; line such as `(require 'pg)' in your emacs initialization file.
+;; line such as `(require 'pg)' in your Emacs initialization file.
 
 
 ;;; TODO ============================================================
@@ -1003,7 +1003,8 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
 ;; in the pg_proc table, and otherwise it is a string which we look up
 ;; in the alist `pg-lo-functions' to find the corresponding OID.
 (defun pg-fn (connection fn integer-result &rest args)
-  (or pg-lo-initialized (pg-lo-init connection))
+  (unless pg-lo-initialized
+    (pg-lo-init connection))
   (let ((fnid (cond ((integerp fn) fn)
                     ((not (stringp fn))
                      (error "Expecting a string or an integer: %s" fn))
@@ -1168,7 +1169,7 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
     (mapcar #'car (pg-result res :attributes))))
 
 (defun pg-backend-version (conn)
-  "Version an operating environment of the backend as a string."
+  "Version and operating environment of the backend that we are connected to by CONN as a string."
   (let ((res (pg-exec conn "SELECT version()")))
     (cl-first (pg-result res :tuple 0))))
 
