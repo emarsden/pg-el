@@ -205,39 +205,6 @@
 ;; McNaught and Pavel Janik for bug fixes.
 
 
-;; SECURITY NOTE: setting up PostgreSQL to accept TCP/IP connections has
-;; security implications; please consult the documentation for details. pg.el
-;; supports neither the crypt authentication method, nor Kerberos (support for
-;; these can't be added to Emacs due to silly US crypto export regulations).
-;; However, it is possible to use the port forwarding capabilities of ssh to
-;; establish a connection to the backend over TCP/IP, which provides both a
-;; secure authentication mechanism and encryption (and optionally compression)
-;; of data passing through the tunnel. Here's how to do it (thanks to Gene
-;; Selkov, Jr. for the description):
-;;
-;; 1. Establish a tunnel to the backend machine, like this:
-;;
-;; 	ssh -L 3333:backend.dom:5432 postgres@backend.dom
-;;
-;;    The first number in the -L argument, 3333, is the port number of
-;;    your end of the tunnel. The second number, 5432, is the remote
-;;    end of the tunnel -- the port number your backend is using. The
-;;    name or the address in between the port numbers belongs to the
-;;    server machine, as does the last argument to ssh that also includes
-;;    the optional user name. Without the user name, ssh will try the
-;;    name you are currently logged on as on the client machine. You can
-;;    use any user name the server machine will accept, not necessarily
-;;    those related to postgres.
-;;
-;; 2. Now that you have a running ssh session, you can point pg.el to
-;;    the local host at the port number which you specified in step 1.
-;;    For example,
-;;
-;;         (pg-connect "dbname" "user" "password" "localhost" 3333)
-;;
-;;    You can omit the port argument if you chose 5432 as the local
-;;    end of the tunnel, since pg.el defaults to this value.
-
 
 ;;; INSTALL =========================================================
 ;;
@@ -753,7 +720,7 @@ PostgreSQL and Emacs. CONNECTION should no longer be used."
       str)))
 
 ;; Map between PostgreSQL names for encodings and their Emacs name.
-;; For Emacs, see coding-system-alist. 
+;; For Emacs, see coding-system-alist.
 (defconst pg-encoding-names
   '(("UTF8"    . utf-8)
     ("UTF16"   . utf-16)
