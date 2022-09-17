@@ -8,6 +8,13 @@ This module lets you access the PostgreSQL object-relational DBMS from Emacs, us
 frontend/backend protocol. The module is capable of automatic type coercions from a range of SQL
 types to the equivalent Emacs Lisp type. This is a low level API, and won't be useful to end users.
 
+The code has been tested with PostgreSQL versions 15 beta, 13.8, 11.17, and 10.22. It also works
+against other databases that implement the PostgreSQL wire protocol:
+
+- [CockroachDB](https://github.com/cockroachdb/cockroach): tested with CockroachDB CCL v22.1.7. Note
+  that this database does not implement the large object functionality.
+
+- [CrateDB](https://crate.io/): tested with version 5.0.1.
 
 
 ## Installation
@@ -16,6 +23,10 @@ To install manually, place the file `pg.el` in a directory on your `load-path`, 
 (using for example `B` in dired) and add the following to your Emacs initialization file:
 
     (require 'pg)
+
+SCRAM-SHA-256 authentication (which is the default authentication method since PostgreSQL version
+14) is implemented by calling out to the `nettle-pbkdf2` application, which must be installed
+(typically available in the `nettle-bin` package of your distribution).
 
 
 
@@ -74,7 +85,7 @@ one of
   refer to the documentation for more details).
 
 
-      (pg-disconnect con) -> nil
+     (pg-disconnect con) -> nil
     
 Close the database connection `CON`.
 
@@ -195,7 +206,7 @@ TCP/IP connections (this is not the default). For more information about Postgre
 <http://www.PostgreSQL.org/>.
 
 
-*Security note*: setting up PostgreSQL to accept TCP/IP connections has security implications;
+**Security note**: setting up PostgreSQL to accept TCP/IP connections has security implications;
 please consult the documentation for details. It is possible to use the port forwarding capabilities
 of ssh to establish a connection to the backend over TCP/IP, which provides both a secure
 authentication mechanism and encryption (and optionally compression) of data passing through the
