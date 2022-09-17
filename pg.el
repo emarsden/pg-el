@@ -34,6 +34,12 @@
 ;; module is capable of automatic type coercions from a range of SQL
 ;; types to the equivalent Emacs Lisp type. This is a low level API,
 ;; and won't be useful to end users.
+;;
+;; Requirements: SCRAM-SHA-256 authentication (which is the default
+;; authentication method since PostgreSQL version 14) is implemented by calling
+;; out to the nettle-pbkdf2 application, which must be installed (typically
+;; available in the "nettle-bin" package of your distribution).
+
 
 ;;; Entry points =======================================================
 ;;
@@ -309,13 +315,13 @@ the large object descriptors are only valid within the context of a
 transaction."
   (let ((exc-sym (gensym)))
     `(progn
-       (pg-exec ,con "BEGIN WORK")
+       (pg-exec ,con "BEGIN")
        (condition-case ,exc-sym
            (prog1 (progn ,@body)
-             (pg-exec ,con "COMMIT WORK"))
+             (pg-exec ,con "COMMIT"))
          (error
           (message "PostgreSQL error %s" ,exc-sym)
-          (pg-exec ,con "ROLLBACK WORK"))))))
+          (pg-exec ,con "ROLLBACK"))))))
 
 (defun pg-for-each (con select-form callback)
   "Create a cursor for SELECT-FORM and call CALLBACK for each result.
@@ -838,7 +844,8 @@ Authenticate as USER with PASSWORD."
 ;; https://www.postgresql.org/docs/15/sasl-authentication.html
 ;; https://www.rfc-editor.org/rfc/rfc7677
 (defun pg-do-scram-sha256-authentication (con user password)
-  "Attempt SCRAM-SHA-256 authentication with PostgreSQL database over connection CON."
+  "Attempt SCRAM-SHA-256 authentication with PostgreSQL over connection CON.
+Authenticate as USER with PASSWORD."
   (let* ((mechanism "SCRAM-SHA-256")
          (client-nonce (or pg-*force-client-nonce*
                            (apply #'string (cl-loop for i below 32 collect (+ ?A (random 25))))))
@@ -1143,7 +1150,7 @@ Authenticate as USER with PASSWORD."
 
 (defun pg-backend-version (con)
   "Version and operating environment of backend that we are connected to by CON.
-The result is returned as a string."
+PostgreSQL returns the version as a string. CrateDB returns it as an integer."
   (let ((res (pg-exec con "SELECT version()")))
     (cl-first (pg-result res :tuple 0))))
 
