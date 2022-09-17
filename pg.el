@@ -194,10 +194,7 @@
 ;; Default is t.
 ;;
 ;;
-;; The interface is pretty slow (byte compiling helps a lot). Please note that
-;; your PostgreSQL backend has to be started with the `-i' option in order to
-;; accept TCP/IP connections (this is not the default). For more information
-;; about PostgreSQL see <https://www.PostgreSQL.org/>.
+;; For more information about PostgreSQL see <https://www.PostgreSQL.org/>.
 ;;
 ;; Thanks to Eric Ludlam for discovering a bug in the date parsing routines, to
 ;; Hartmut Pilch and Yoshio Katayama for adding multibyte support, and to Doug
@@ -392,6 +389,12 @@ database (as an opaque type). PORT defaults to 5432, HOST to
                 (push (pg-read-string connection 4096) unrec))
               (error "Server only supports protocol minor version <= %s" protocol-supported)))
 
+           ;; BackendKeyData
+           ((eq ?K c)
+            (let ((_msglen (pg-read-net-int connection 4)))
+              (setf (pgcon-pid connection) (pg-read-net-int connection 4))
+              (setf (pgcon-secret connection) (pg-read-net-int connection 4))))
+
            ;; ReadyForQuery message
            ((eq ?Z c)
             (let ((_msglen (pg-read-net-int connection 4))
@@ -435,7 +438,7 @@ database (as an opaque type). PORT defaults to 5432, HOST to
                  (error "Can't do that type of authentication: %s" areq)))))
 
            ;; ParameterStatus
-           (?S
+           ((eq ?S c)
             (let* ((msglen (pg-read-net-int connection 4))
                    (msg (pg-read-chars connection (- msglen 4)))
                    (items (split-string msg (string 0))))
@@ -522,6 +525,19 @@ Return a result structure which can be decoded using `pg-result'."
             (?P
              (let ((portal (pg-read-string connection pg-MAX_MESSAGE_LEN)))
                (setf (pgresult-portal result) portal)))
+
+            ;; ParameterStatus
+            (?S
+             (let* ((msglen (pg-read-net-int connection 4))
+                    (msg (pg-read-chars connection (- msglen 4)))
+                    (items (split-string msg (string 0))))
+               (when (string= "client_encoding" (cl-first items))
+                 (let ((ce (pg-normalize-encoding-name (cl-second items))))
+                   (if ce
+                       (setf (pgcon-client-encoding connection) ce)
+                     (error "Don't know the Emacs equivalent for client encoding %s" (cl-second items)))))
+               (when (> (length (cl-first items)) 0)
+                 (message "Got ParameterStatus %s=%s" (cl-first items) (cl-second items)))))
 
             ;; RowDescription
             (?T
@@ -756,18 +772,15 @@ PostgreSQL and Emacs. CON should no longer be used."
 ;; pwdhash = md5(password + username).hexdigest()
 ;; hash = ′md5′ + md5(pwdhash + salt).hexdigest()
 (defun pg-do-md5-authentication (con user password)
-  "Attempt MD5 authentication with PostgreSQL database over connection CON."
+  "Attempt MD5 authentication with PostgreSQL database over connection CON.
+Authenticate as USER with PASSWORD."
   (let* ((salt (pg-read-chars con 4))
-         (pwdhash (encode-hex-string (md5 (concat password user))))
-         (hash (concat "md5" (encode-hex-string (md5 (concat pwdhash salt))))))
+         (pwdhash (md5 (concat password user)))
+         (hash (concat "md5" (md5 (concat pwdhash salt)))))
     (pg-send-char con ?p)
     (pg-send-int con (+ 5 (length hash)) 4)
     (pg-send-string con hash)
     (pg-flush con)))
-
-(defun pg-create-md5-password (user password)
-  (concat "md5" (encode-hex-string (md5 (concat password user)))))
-
 
 
 ;; PBKDF2 is a key derivation function used to reduce vulnerability to brute-force password guessing
