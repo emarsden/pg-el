@@ -16,9 +16,9 @@
   `(with-pg-connection ,conn ("doc" "pgeltestuser" "pgeltest")
                        ,@body))
 
-;; For PostgreSQL
+;; For PostgreSQL, including for GitHub CI "test" workflow
 (defmacro with-pgtest-connection (conn &rest body)
-  `(with-pg-connection ,conn ("pgeltestdb" "pgeltestuser" "pgel")
+  `(with-pg-connection ,conn ("pgeltestdb" "pgeltestuser" "pgeltest")
                        ,@body))
 
 
