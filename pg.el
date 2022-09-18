@@ -2,7 +2,7 @@
 ;;;
 ;;; Author: Eric Marsden <eric.marsden@risk-engineering.org>
 ;;; Copyright: (C) 1999-2002, 2022  Eric Marsden
-;;; Version: 0.15
+;;; Version: 0.16
 ;;; Keywords: data comm database postgresql
 ;;; URL: https://github.com/emarsden/pg-el
 ;;; Package-Requires: ((emacs "26.1"))
