@@ -286,7 +286,7 @@ session (not per connection to the backend).")
 
 
 (cl-defstruct pgcon
-  process pid secret position client-encoding (binaryp nil))
+  process pid secret position (client-encoding 'utf-8) (binaryp nil))
 
 (cl-defstruct pgresult
   connection status attributes tuples portal)
@@ -453,8 +453,11 @@ database (as an opaque type). PORT defaults to 5432, HOST to
                   (if ce
                       (setf (pgcon-client-encoding connection) ce)
                     (error "Don't know the Emacs equivalent for client encoding %s" (cl-second items)))))
-              (when (> (length (cl-first items)) 0)
-                (message "Got ParameterStatus %s=%s" (cl-first items) (cl-second items)))))
+              ;; We currently ignore the other ParameterStatus items (application_name,
+              ;; DateStyle, in_hot_standby, integer_datetimes, etc.)
+              ; (when (> (length (cl-first items)) 0)
+              ;   (message "Got ParameterStatus %s=%s" (cl-first items) (cl-second items)))
+              ))
 
             (t
              (error "Problem connecting: expected an authentication response, got %s" c))))))
@@ -789,6 +792,10 @@ Authenticate as USER with PASSWORD."
     (pg-flush con)))
 
 
+;; TODO: implement stringprep for user names and passwords, as per RFC4013.
+(defun pg-sasl-prep (string)
+  string)
+
 ;; PBKDF2 is a key derivation function used to reduce vulnerability to brute-force password guessing
 ;; attempts <https://en.wikipedia.org/wiki/PBKDF2>. There is no implementation built into Emacs, and
 ;; implementing it in Emacs Lisp would be very slow. We call out to the nettle-pbkdf2 application
@@ -801,7 +808,7 @@ Authenticate as USER with PASSWORD."
   ;; the hash function in nettle-pbkdf2 is hard coded to HMAC-SHA256
   (require 'hex-util)
   (with-temp-buffer
-    (insert password)
+    (insert (pg-sasl-prep password))
     (call-process-region
      (point-min) (point-max)
      "nettle-pbkdf2"
@@ -875,31 +882,27 @@ Authenticate as USER with PASSWORD."
                (let* ((components (split-string server-first-msg ","))
                       (r= (cl-find "r=" components :key #'(lambda (s) (substring s 0 2)) :test #'string=))
                       (r (substring r= 2))
-                      ;; (server-nonce (substring r (length client-nonce)))
                       (s= (cl-find "s=" components :key #'(lambda (s) (substring s 0 2)) :test #'string=))
                       (s (substring s= 2))
                       (salt (base64-decode-string s))
                       (i= (cl-find "i=" components :key #'(lambda (s) (substring s 0 2)) :test #'string=))
                       (iterations (string-to-number (substring i= 2)))
-                      (_check (when (zerop iterations)
-                                (error "SCRAM-SHA-256: server supplied invalid iteration count %s" i=)))
                       (salted-password (pg-pbkdf2-hash-sha256 password salt iterations))
-                      (client-key (gnutls-hash-mac 'SHA256 salted-password "Client Key"))
-                      (_foo (message "Using client-key %s" (encode-hex-string client-key)))
+                      ;; beware: gnutls-hash-mac will zero out its first argument (the "secret")!
+                      (client-key (gnutls-hash-mac 'SHA256 (cl-copy-seq salted-password) "Client Key"))
+                      (server-key (gnutls-hash-mac 'SHA256 (cl-copy-seq salted-password) "Server Key"))
                       (stored-key (secure-hash 'sha256 client-key nil nil t))
-                      (client-first-bare (concat "n=" user ",r=" client-nonce))
+                      (client-first-bare (concat "n=" (pg-sasl-prep user) ",r=" client-nonce))
                       (client-final-bare (concat "c=biws,r=" r))
                       (auth-message (concat client-first-bare "," server-first-msg "," client-final-bare))
-                      (_foo (message "SASL auth-message is %s" auth-message))
                       (client-sig (gnutls-hash-mac 'SHA256 stored-key auth-message))
                       (client-proof (pg-logxor-string client-key client-sig))
-                      (server-key (gnutls-hash-mac 'SHA256 salted-password "Server Key"))
-                      (_foo (message "Using server-key %s" (encode-hex-string server-key)))
                       (server-sig (gnutls-hash-mac 'SHA256 server-key auth-message))
                       (client-final-msg (concat client-final-bare ",p=" (base64-encode-string client-proof t))))
+                 (when (zerop iterations)
+                   (error "SCRAM-SHA-256: server supplied invalid iteration count %s" i=))
                  (unless (string= client-nonce (substring r 0 (length client-nonce)))
                    (error "SASL response doesn't include correct client nonce"))
-                 (message "client-final-msg is %s" client-final-msg)
                  ;; we send a SASLResponse message with SCRAM client-final-message as content
                  (pg-send-char con ?p)
                  (pg-send-int con (+ 4 (length client-final-msg)) 4)
@@ -917,23 +920,24 @@ Authenticate as USER with PASSWORD."
                                  (server-final-msg (pg-read-chars con (- len 8))))
                             (unless (eql type 12)
                               (error "Expecting AuthenticationSASLFinal, got type %d" type))
-                            (message "Got server-final-msg %s" server-final-msg)
                             (when (string= "e=" (substring server-final-msg 0 2))
-                              (error "Server error during SASL authentication: %s" (substring server-final-msg 2)))
+                              (error "PostgreSQL server error during SASL authentication: %s"
+                                     (substring server-final-msg 2)))
                             (unless (string= "v=" (substring server-final-msg 0 2))
-                              (error "Unable to verify PostgreSQL server"))
-                            (let ((v (base64-decode-string (substring server-final-msg 2))))
-                              (unless (string= server-sig v)
-                                (message "Server validation mismatch: v=%s / %s"
-                                         (base64-encode-string v)
-                                         (base64-encode-string server-sig))))
-                            ;; followed immediately by an AuthenticationOk message.
+                              (error "Unable to verify PostgreSQL server during SASL auth"))
+                            (unless (string= (substring server-final-msg 2)
+                                             (base64-encode-string server-sig t))
+                              (error "SASL server validation failure: v=%s / %s"
+                                       (substring server-final-msg 2)
+                                       (base64-encode-string server-sig t)))
+                            ;; should be followed immediately by an AuthenticationOK message
                             )))))))
             (t
              (error "Unexpected response to SASLInitialResponse message: %s" c))))))
 
 (defun pg-do-sasl-authentication (con user password)
-  "Attempt SASL authentication with PostgreSQL database over connection CON."
+  "Attempt SASL authentication with PostgreSQL database over connection CON.
+Authenticate as USER with PASSWORD."
   (let ((mechanisms (list)))
     ;; read server's list of preferered authentication mechanisms
     (cl-loop for mech = (pg-read-string con 4096)
@@ -942,7 +946,7 @@ Authenticate as USER with PASSWORD."
     (if (member "SCRAM-SHA-256" mechanisms)
         (pg-do-scram-sha256-authentication con user password)
       (error "Can't handle any of SASL mechanisms %s" mechanisms))))
- 
+
 
 
 ;; large object support ================================================
@@ -984,9 +988,9 @@ Authenticate as USER with PASSWORD."
 ;; fn is either an integer, in which case it is the OID of an element
 ;; in the pg_proc table, and otherwise it is a string which we look up
 ;; in the alist `pg-lo-functions' to find the corresponding OID.
-(defun pg-fn (connection fn integer-result &rest args)
+(defun pg-fn (con fn integer-result &rest args)
   (unless pg-lo-initialized
-    (pg-lo-init connection))
+    (pg-lo-init con))
   (let ((fnid (cond ((integerp fn) fn)
                     ((not (stringp fn))
                      (error "Expecting a string or an integer: %s" fn))
@@ -994,41 +998,41 @@ Authenticate as USER with PASSWORD."
                      (cdr (assoc fn pg-lo-functions)))
                     (t
                      (error "Unknown builtin function %s" fn)))))
-    (pg-send-char connection ?F)
-    (pg-send-char connection 0)
-    (pg-send-int connection fnid 4)
-    (pg-send-int connection (length args) 4)
+    (pg-send-char con ?F)
+    (pg-send-char con 0)
+    (pg-send-int con fnid 4)
+    (pg-send-int con (length args) 4)
     (mapc #'(lambda (arg)
               (cond ((integerp arg)
-                     (pg-send-int connection 4 4)
-                     (pg-send-int connection arg 4))
+                     (pg-send-int con 4 4)
+                     (pg-send-int con arg 4))
                     ((stringp arg)
-                     (pg-send-int connection (length arg) 4)
-                     (pg-send connection arg))
+                     (pg-send-int con (length arg) 4)
+                     (pg-send con arg))
                     (t
                      (error "Unknown fastpath type %s" arg))))
           args)
-    (pg-flush connection)
+    (pg-flush con)
     (cl-loop with result = '()
-          for c = (pg-read-char connection) do
+          for c = (pg-read-char con) do
           (cl-case c
              ;; ErrorResponse
-            (?E (error (pg-read-string connection 4096)))
+            (?E (pg-handle-error-response con "in pg-fn"))
 
             ;; FunctionResultResponse
             (?V (setq result t))
 
             ;; Nonempty response
             (?G
-             (let* ((len (pg-read-net-int connection 4))
+             (let* ((len (pg-read-net-int con 4))
                     (res (if integer-result
-                             (pg-read-net-int connection len)
-                           (pg-read-chars connection len))))
+                             (pg-read-net-int con len)
+                           (pg-read-chars con len))))
                (setq result res)))
 
             ;; NoticeResponse
             (?N
-             (let ((notice (pg-read-string connection pg-MAX_MESSAGE_LEN)))
+             (let ((notice (pg-read-string con pg-MAX_MESSAGE_LEN)))
                (message "NOTICE: %s" notice))
              (unix-sync))
 
@@ -1348,7 +1352,10 @@ presented to the user."
 	   for name = (buffer-name buffer)
 	   when (and (> (length name) 12)
 		     (string= " *PostgreSQL*" (substring (buffer-name buffer) 0 13)))
-	   do (kill-buffer buffer)))
+	   do (let ((p (get-buffer-process buffer)))
+                (when p
+                  (kill-process p)))
+           (kill-buffer buffer)))
 
 
 (provide 'pg)
