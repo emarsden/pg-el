@@ -1,4 +1,4 @@
-name: Test communication with PostgreSQL server version 12
+name: test-pgv12
 on: push
 
 jobs:

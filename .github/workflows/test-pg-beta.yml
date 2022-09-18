@@ -1,4 +1,4 @@
-name: Test communication with PostgreSQL server, version 15 beta
+name: test-pgv15b
 on: push
 
 jobs:
