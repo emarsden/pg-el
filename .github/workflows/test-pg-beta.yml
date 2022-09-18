@@ -9,7 +9,7 @@ jobs:
       - name: Install Emacs
         run: |
           sudo apt-get update
-          sudo apt-get install emacs
+          sudo apt-get install emacs nettle-bin
 
       - name: Set up PostgreSQL user and database
         uses: Daniel-Marynicz/postgresql-action@master

@@ -1,4 +1,4 @@
-name: Test communication with PostgreSQL server
+name: Test communication with PostgreSQL server version 12
 on: push
 
 jobs:
@@ -9,7 +9,7 @@ jobs:
       - name: Install Emacs
         run: |
           sudo apt-get update
-          sudo apt-get install emacs
+          sudo apt-get install emacs nettle-bin
 
       - name: Set up PostgreSQL user and database
         uses: Daniel-Marynicz/postgresql-action@master
