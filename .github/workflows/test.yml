@@ -1,0 +1,26 @@
+name: Test communication with PostgreSQL server
+on: push
+
+jobs:
+  runner-job:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install Emacs
+        run: |
+          sudo apt-get update
+          sudo apt-get install emacs
+
+      - name: Set up PostgreSQL user and database
+        uses: Daniel-Marynicz/postgresql-action@master
+        with:
+           postgres_image_tag: 12-alpine
+           app_user: pgeltestuser
+           app_user_password: pgeltest
+           app_db: pgeltestdb
+
+      - name: Check out repository code
+        uses: actions/checkout@v3
+
+      - name: Run connection tests
+        run: make -C test
