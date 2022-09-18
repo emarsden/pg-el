@@ -833,7 +833,7 @@ Authenticate as USER with PASSWORD."
   "Elementwise XOR of each character of strings S1 and S2."
   (let ((len (length s1)))
     (cl-assert (eql len (length s2)))
-    (let ((out (make-string len 0 nil)))
+    (let ((out (make-string len 0)))
       (dotimes (i len)
         (setf (aref out i) (logxor (aref s1 i) (aref s2 i))))
       out)))
