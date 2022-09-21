@@ -21,6 +21,10 @@
   `(with-pg-connection ,conn ("pgeltestdb" "pgeltestuser" "pgeltest" "localhost" 5432)
                        ,@body))
 
+;; Connect to the database over an encrypted (TLS) connection
+(defmacro with-pgtest-connection-tls (conn &rest body)
+  `(with-pg-connection ,conn ("pgeltestdb" "pgeltestuser" "pgeltest" "localhost" 5432 t)
+                       ,@body))
 
 (defun pg-test ()
   (with-pgtest-connection conn
@@ -41,6 +45,24 @@
    ;; (pg-test-lo-import)
    (pg-exec conn "DROP DATABASE pgeltest")
    (message "Tests passed")))
+
+(defun pg-test-tls ()
+  (with-pgtest-connection-tls conn
+    (message "Running pg.el tests over TLS against backend %s"
+             (pg-backend-version conn))
+    (let ((databases (pg-databases conn)))
+      (if (member "pgeltest" databases)
+          (pg-exec conn "DROP DATABASE pgeltest"))
+      (pg-exec conn "CREATE DATABASE pgeltest"))
+    (message "Testing insertions...")
+    (pg-test-insert)
+    (message "Testing date routines...")
+    (pg-test-date)
+    (message "Testing field extraction routines...")
+    (pg-test-result)
+    (pg-exec conn "DROP DATABASE pgeltest")
+    (message "Tests passed")))
+
 
 (defun pg-test-insert (&optional count)
   (with-pgtest-connection conn
