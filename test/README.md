@@ -78,3 +78,11 @@ just sent.
 
 
 
+## Testing the QuestDB time series database
+
+[QuestDB](https://questdb.io/) is an open source relational column-oriented database designed for
+time series and event data. It implements the PostgreSQL wire protocol. 
+
+    sudo podman run -p 8812:8812 questdb/questdb
+
+    ELISP> (pg-connect "ignored" "admin" "quest" "localhost" 8812)
