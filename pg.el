@@ -354,14 +354,37 @@ tag called pg-finished."
 Connect to the database DBNAME with the username USER, on PORT of
 HOST, providing PASSWORD if necessary. Return a connection to the
 database (as an opaque type). PORT defaults to 5432, HOST to
-\"localhost\", and PASSWORD to an empty string."
+\"localhost\", and PASSWORD to an empty string. If TLS is non-NIL,
+attempt to establish an encrypted connection to PostgreSQL."
   (let* ((buf (generate-new-buffer " *PostgreSQL*"))
-         (type (if tls 'tls nil))
-         (process (open-network-stream "postgres" buf host port :type type :coding nil))
+         (process (open-network-stream "postgres" buf host port :coding nil))
          (connection (make-pgcon :process process :position 1)))
     (with-current-buffer buf
       (set-process-coding-system process 'binary 'binary)
       (set-buffer-multibyte nil))
+    ;; TLS connections to PostgreSQL are based on a custom STARTTLS-like connection upgrade
+    ;; handshake. The frontend establishes an unencrypted network connection to the backend over the
+    ;; standard port (normally 5432). It then sends an SSLRequest message, indicating the desire to
+    ;; establish an encrypted connection. The backend responds with ?S to indicate that it is able
+    ;; to support an encrypted connection. The frontend then runs TLS negociation to upgrade the
+    ;; connection to an encrypted one.
+    (when tls
+      (unless (gnutls-available-p)
+        (error "Connecting over TLS requires GnuTLS support in Emacs"))
+      ;; send the SSLRequest message
+      (pg-send-int connection 8 4)
+      (pg-send-int connection 80877103 4)
+      (pg-flush connection)
+      (unless (eql ?S (pg-read-char connection))
+        (error "Couldn't establish TLS connection to PostgreSQL"))
+      (let ((cert (network-stream-certificate host port nil)))
+        (condition-case err
+            ;; now do STARTTLS-like connection upgrade
+	    (gnutls-negotiate :process process
+                              :hostname host
+			      :keylist (and cert (list cert)))
+	  (gnutls-error
+           (error "TLS error connecting to PostgreSQL: %s" (error-message-string err))))))
     ;; send the StartupMessage, as per https://www.postgresql.org/docs/current/protocol-message-formats.html
     (let ((packet-octets (+ 4 2 2
                             (1+ (length "user"))
@@ -469,7 +492,7 @@ Return a result structure which can be decoded using `pg-result'."
         (tuples '())
         (attributes '())
         (result (make-pgresult :connection connection)))
-    ;; (message "pg-exec: %s" sql)
+    (message "pg-exec: %s" sql)
     (when (> (length sql) pg-MAX_MESSAGE_LEN)
       (error "SQL statement too long: %s" sql))
     (pg-send-char connection ?Q)
@@ -477,6 +500,7 @@ Return a result structure which can be decoded using `pg-result'."
     (pg-send-string connection sql)
     (pg-flush connection)
     (cl-loop for c = (pg-read-char connection) do
+       ;; (message "pg-exec message-type = %c" c)
        (cl-case c
             ;; AsynchronousNotify
             (?A
@@ -484,22 +508,21 @@ Return a result structure which can be decoded using `pg-result'."
                    (msg (pg-read-string connection pg-MAX_MESSAGE_LEN)))
                (message "Asynchronous notify %s" msg)))
 
-            ;; BinaryRow  FIXME this is not a Bind message
+            ;; Bind
             (?B
              (setf (pgcon-binaryp connection) t)
              (unless attributes
                (error "Tuple received before metadata"))
              (push (pg-read-tuple connection attributes) tuples))
 
-            ;; CommandComplete
+            ;; CommandComplete -- one SQL command has completed
             (?C
              (let* ((msglen (pg-read-net-int connection 4))
                     (msg (pg-read-chars connection (- msglen 5)))
                     (_null (pg-read-char connection)))
                (setf (pgresult-status result) msg)
-               (setf (pgresult-tuples result) (nreverse tuples))
-               (setf (pgresult-attributes result) attributes)))
                ;; now wait for the ReadyForQuery message
+               nil))
 
             ;; DataRow
             (?D
@@ -576,6 +599,8 @@ Return a result structure which can be decoded using `pg-result'."
                    (_status (pg-read-char connection)))
                ;; status is 'I' or 'T' or 'E'
                ;; (message "Got ReadyForQuery with status %c" status)
+               (setf (pgresult-tuples result) (nreverse tuples))
+               (setf (pgresult-attributes result) attributes)
                (cl-return-from pg-exec result)))
 
             (t (error "Unknown response type from backend: %s" c))))))
