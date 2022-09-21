@@ -18,7 +18,7 @@
 
 ;; For PostgreSQL, including for GitHub CI "test" workflow
 (defmacro with-pgtest-connection (conn &rest body)
-  `(with-pg-connection ,conn ("pgeltestdb" "pgeltestuser" "pgeltest")
+  `(with-pg-connection ,conn ("pgeltestdb" "pgeltestuser" "pgeltest" "localhost" 5432)
                        ,@body))
 
 
@@ -95,7 +95,8 @@
          (r2 (pg-exec conn "INSERT INTO resulttest VALUES (3, 'zae')"))
          (r3 (pg-exec conn "INSERT INTO resulttest VALUES (66, 'poiu')"))
          (r4 (pg-exec conn "SELECT * FROM resulttest"))
-         (r5 (pg-exec conn "DROP TABLE resulttest")))
+         (r5 (pg-exec conn "DROP TABLE resulttest"))
+         (r6 (pg-exec conn "SELECT generate_series(1, 10)")))
      (message "==============================================")
      (message "status of CREATE is %s" (pg-result r1 :status))
      (message "status of INSERT is %s" (pg-result r2 :status))
@@ -105,7 +106,8 @@
      (message "tuples of SELECT are %s" (pg-result r4 :tuples))
      (message "second tuple of SELECT is %s" (pg-result r4 :tuple 1))
      (message "status of DROP is %s" (pg-result r5 :status))
-     (message "=============================================="))))
+     (message "==============================================")
+     (cl-assert (eql (length (pg-result r6 :tuples)) 10)))))
 
 ;; test of large-object interface. Note the use of with-pg-transaction
 ;; to wrap the requests in a BEGIN..END transaction which is necessary
