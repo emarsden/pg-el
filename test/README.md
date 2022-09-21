@@ -34,12 +34,13 @@ images](https://hub.docker.com/_/postgres/), using Docker or Podman.
 
 Example invocation: 
 
-    sudo podman run -d --name pgsql -v /dev/log:/dev/log --publish 5432:5432 -p 5432 -e POSTGRES_USER=pgeltestuser -e POSTGRES_PASSWORD=pgeltest docker.io/library/postgres:13
+    sudo podman run -d --name pgsql -v /dev/log:/dev/log --publish 5432:5432 -e POSTGRES_DB=pgeltestdb -e POSTGRES_USER=pgeltestuser -e POSTGRES_PASSWORD=pgeltest docker.io/library/postgres:13
 
 then from Emacs
 
-    ELISP> (pg-connect "template1" "pgeltestuser" "pgeltest" "localhost" 5432)
+    ELISP> (pg-connect "pgeltestdb" "pgeltestuser" "pgeltest" "localhost" 5432)
 
+Note that these Docker images don't include TLS support.
 
 
 
