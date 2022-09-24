@@ -18,8 +18,13 @@
 
 ;; For PostgreSQL, including for GitHub CI "test" workflow
 (defmacro with-pgtest-connection (conn &rest body)
-  `(with-pg-connection ,conn ("pgeltestdb" "pgeltestuser" "pgeltest" "localhost" 5432)
-                       ,@body))
+  (let ((db (or (getenv "PGEL_DATABASE") "pgeltestdb"))
+        (user (or (getenv "PGEL_USER") "pgeltestuser"))
+        (password (or (getenv "PGEL_PASSWORD") "pgeltest"))
+        (host (or (getenv "PGEL_HOSTNAME") "localhost"))
+        (port (or (getenv "PGEL_PORT") 5432)))
+    `(with-pg-connection ,conn (,db ,user ,password ,host ,port)
+         ,@body)))
 
 ;; Connect to the database over an encrypted (TLS) connection
 (defmacro with-pgtest-connection-tls (conn &rest body)
@@ -170,6 +175,13 @@
         (when p
           (delete-process p)))
       (kill-buffer b))))
+
+
+(defun pg-bench ()
+  (let* ((time (current-time))
+         (_ (pg-test))
+         (elapsed (float-time (time-since time))))
+    (message "Emacs version %s: %s" (version) elapsed)))
 
 
 ;; EOF
