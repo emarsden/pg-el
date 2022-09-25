@@ -1,0 +1,35 @@
+name: test-pgv15b-docker
+on: push
+
+jobs:
+  runner-job:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install Emacs
+        run: |
+          sudo apt-get update
+          sudo apt-get install emacs podman
+
+      - name: Start Docker/Podman image of PostgreSQL
+        run: |
+          sudo podman run -d --name pgsql \
+             --health-cmd pg_isready \
+             --health-interval 10s \
+             --health-timeout 5s \
+             --health-retries 5 \
+             --publish 5432:5432 \
+             -e POSTGRES_DB=pgeltestdb \
+             -e POSTGRES_USER=pgeltestuser \
+             -e POSTGRES_PASSWORD=pgeltest \
+             docker.io/library/postgres:15beta4 \
+             -c ssl=on \
+             -c ssl_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem \
+             -c ssl_key_file=/etc/ssl/private/ssl-cert-snakeoil.key
+
+        
+      - name: Check out repository code
+        uses: actions/checkout@v3
+
+      - name: Run connection tests
+        run: make -C test test test-tls
