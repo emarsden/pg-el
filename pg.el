@@ -856,7 +856,7 @@ Authenticate as USER with PASSWORD."
 
 ;; Implement PBKDF2 by calling out to the nettle-pbkdf2 application (typically available in the
 ;; "nettle-bin" package) as a subprocess.
-(defun pg-pbkdf2-hash-sha256/nettle (password salt iterations)
+(defun pg-pbkdf2-hash-sha256-nettle (password salt iterations)
   ;; ITERATIONS is a integer
   ;; the hash function in nettle-pbkdf2 is hard coded to HMAC-SHA256
   (require 'hex-util)
