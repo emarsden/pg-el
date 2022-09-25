@@ -1,6 +1,23 @@
 # Changelog
 
-## [0.15] - 2022-09
+## [0.17] - 2022-09-25
+### Updated
+- Support for encrypted (TLS) connections with PostgreSQL
+- Native support for PBKDF2 algorithm to allow SCRAM-SHA-256 authentication without the external
+  nettle-pbkdf2 application
+- Implement multibyte encoding and decoding for pg-exec requests
+- Send application_name to PostgreSQL backend to improve observability
+- Improve test coverage
+
+
+## [0.16] - 2022-09-18
+### Updated
+- Fix MD5 authentication
+- Use client-encoding to decode PostgreSQL error messages
+- Improve GitHub Actions continuous integration workflow
+
+
+## [0.15] - 2022-09-06
 ### Updated
 - Moved from cl library to cl-lib
 - pg: prefix for symbol names changed to pg- (Emacs Lisp coding conventions)

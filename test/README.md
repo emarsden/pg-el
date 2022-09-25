@@ -34,14 +34,30 @@ images](https://hub.docker.com/_/postgres/), using Docker or Podman.
 
 Example invocation: 
 
-    sudo podman run -d --name pgsql -v /dev/log:/dev/log --publish 5432:5432 -e POSTGRES_DB=pgeltestdb -e POSTGRES_USER=pgeltestuser -e POSTGRES_PASSWORD=pgeltest docker.io/library/postgres:13
+    sudo podman run -d --name pgsql -v /dev/log:/dev/log \
+       --publish 5432:5432 \
+       -e POSTGRES_DB=pgeltestdb \
+       -e POSTGRES_USER=pgeltestuser \
+       -e POSTGRES_PASSWORD=pgeltest \
+       docker.io/library/postgres:13
 
 then from Emacs
 
     ELISP> (pg-connect "pgeltestdb" "pgeltestuser" "pgeltest" "localhost" 5432)
 
-Note that these Docker images don't include TLS support.
+Note that these Docker images don't include TLS support. If you want to run the Debian-based images
+(it won't work with the Alpine-based ones) with a self-signed certificate, you can use
 
+    sudo podman run -d --name pgsql \
+       -v /dev/log:/dev/log \
+       --publish 5432:5432 \
+       -e POSTGRES_DB=pgeltestdb \
+       -e POSTGRES_USER=pgeltestuser \
+       -e POSTGRES_PASSWORD=pgeltest \
+       docker.io/library/postgres:13 \
+       -c ssl=on \
+       -c ssl_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem \
+       -c ssl_key_file=/etc/ssl/private/ssl-cert-snakeoil.key
 
 
 ## Testing the CockroachDB distributed database
@@ -50,7 +66,10 @@ Note that these Docker images don't include TLS support.
 implemented in Golang, built on a strongly-consistent key-value store. It implements the PostgreSQL
 wire protocol.
 
-    sudo podman run --name cockroachdb -v /dev/log:/dev/log --publish 26257:26257 -d cockroachdb/cockroach start-single-node --insecure 
+    sudo podman run --name cockroachdb \
+       -v /dev/log:/dev/log \
+       --publish 26257:26257 \
+       -d cockroachdb/cockroach start-single-node --insecure
  
     ELISP> (pg-connect "postgres" "root" "" "localhost" 26257)
 
@@ -63,7 +82,9 @@ Note that CockroachDB does not have large object support.
 [CrateDB](https://crate.io/) is an open source distributed database implemented in Java, that
 implements the PostgreSQL wire protocol.
 
-    sudo podman run --name cratedb --publish 5432:5432 docker.io/library/crate:latest -Cdiscovery.type=single-node
+    sudo podman run --name cratedb \
+       --publish 5432:5432 \
+       docker.io/library/crate:latest -Cdiscovery.type=single-node
     # psql -h localhost -p 5432 -U crate
     crate=> CREATE USER pgeltestuser WITH (password = 'pgeltest');
     CREATE 1
@@ -86,3 +107,9 @@ time series and event data. It implements the PostgreSQL wire protocol.
     sudo podman run -p 8812:8812 questdb/questdb
 
     ELISP> (pg-connect "ignored" "admin" "quest" "localhost" 8812)
+
+
+
+## Testing with older Emacs versions
+
+    sudo podman run silex/emacs:26.3-alpine-ci

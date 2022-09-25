@@ -29,16 +29,13 @@
 
 ;;; Overview ==========================================================
 ;;
-;; This module lets you access the PostgreSQL object-relational DBMS
-;; from Emacs, using its socket-level frontend/backend protocol. The
-;; module is capable of automatic type coercions from a range of SQL
-;; types to the equivalent Emacs Lisp type. This is a low level API,
-;; and won't be useful to end users.
+;; This module lets you access the PostgreSQL object-relational DBMS from Emacs, using its
+;; socket-level frontend/backend protocol. The module is capable of automatic type coercions from a
+;; range of SQL types to the equivalent Emacs Lisp type. This is a low level API, and won't be
+;; useful to end users.
 ;;
-;; Requirements: SCRAM-SHA-256 authentication (which is the default
-;; authentication method since PostgreSQL version 14) is implemented by calling
-;; out to the nettle-pbkdf2 application, which must be installed (typically
-;; available in the "nettle-bin" package of your distribution).
+;; Authentication methods: SCRAM-SHA-256 (the default authentication method since PostgreSQL version
+;; 14) and MD5 authentication are implemented. Encrypted (TLS) connections are supported.
 
 
 ;;; Entry points =======================================================
@@ -232,6 +229,11 @@
 (require 'cl-lib)
 (require 'hex-util)
 
+(defvar pg-application-name "pg.el"
+  "The application_name sent to the PostgreSQL backend.
+This information appears in queries to the `pg_stat_activity' table
+and (depending on server configuration) in the connection log.")
+
 
 (defvar pg-disable-type-coercion nil
   "*Non-nil disables the type coercion mechanism.
@@ -369,6 +371,8 @@ attempt to establish an encrypted connection to PostgreSQL."
     ;; to support an encrypted connection. The frontend then runs TLS negociation to upgrade the
     ;; connection to an encrypted one.
     (when tls
+      (require 'gnutls)
+      (require 'network-stream)
       (unless (gnutls-available-p)
         (error "Connecting over TLS requires GnuTLS support in Emacs"))
       ;; send the SSLRequest message
@@ -391,6 +395,8 @@ attempt to establish an encrypted connection to PostgreSQL."
                             (1+ (length user))
                             (1+ (length "database"))
                             (1+ (length dbname))
+                            (1+ (length "application_name"))
+                            (1+ (length pg-application-name))
                             1)))
       (pg-send-int connection packet-octets 4)
       (pg-send-int connection pg-PG_PROTOCOL_MAJOR 2)
@@ -399,6 +405,8 @@ attempt to establish an encrypted connection to PostgreSQL."
       (pg-send-string connection user)
       (pg-send-string connection "database")
       (pg-send-string connection dbname)
+      (pg-send-string connection "application_name")
+      (pg-send-string connection pg-application-name)
       ;; A zero byte is required as a terminator after the last name/value pair.
       (pg-send-int connection 0 1)
       (pg-flush connection))
@@ -488,16 +496,18 @@ attempt to establish an encrypted connection to PostgreSQL."
 (cl-defun pg-exec (connection &rest args)
   "Execute the SQL command given by concatenating ARGS on database CONNECTION.
 Return a result structure which can be decoded using `pg-result'."
-  (let ((sql (apply #'concat args))
-        (tuples '())
-        (attributes '())
-        (result (make-pgresult :connection connection)))
-    (message "pg-exec: %s" sql)
-    (when (> (length sql) pg-MAX_MESSAGE_LEN)
+  (let* ((sql (apply #'concat args))
+         (tuples '())
+         (attributes '())
+         (result (make-pgresult :connection connection))
+         (ce (pgcon-client-encoding connection))
+         (encoded (if ce (encode-coding-string sql ce t) sql)))
+    ;; (message "pg-exec: %s" sql)
+    (when (> (length encoded) pg-MAX_MESSAGE_LEN)
       (error "SQL statement too long: %s" sql))
     (pg-send-char connection ?Q)
-    (pg-send-int connection (+ 4 (length sql) 1) 4)
-    (pg-send-string connection sql)
+    (pg-send-int connection (+ 4 (length encoded) 1) 4)
+    (pg-send-string connection encoded)
     (pg-flush connection)
     (cl-loop for c = (pg-read-char connection) do
        ;; (message "pg-exec message-type = %c" c)
@@ -709,19 +719,21 @@ PostgreSQL and Emacs. CON should no longer be used."
     ("tinterval"    . ,'pg-text-parser)))
 
 ;; see `man pgbuiltin' for details on PostgreSQL builtin types
-(defun pg-number-parser (str) (string-to-number str))
+(defun pg-number-parser (str _encoding)
+  (string-to-number str))
 
-;; We ignore here encoding issues which would appear if server-encoding differs from client-encoding
-(defsubst pg-text-parser (str)
-  str)
+(defsubst pg-text-parser (str encoding)
+  (if encoding
+      (decode-coding-string str encoding)
+    str))
 
-(defun pg-bool-parser (str)
+(defun pg-bool-parser (str _encoding)
   (cond ((string= "t" str) t)
         ((string= "f" str) nil)
         (t (error "Badly formed boolean from backend: %s" str))))
 
 ;; format for ISO dates is "1999-10-24"
-(defun pg-date-parser (str)
+(defun pg-date-parser (str _encoding)
   (let ((year  (string-to-number (substring str 0 4)))
         (month (string-to-number (substring str 5 7)))
         (day   (string-to-number (substring str 8 10))))
@@ -732,7 +744,7 @@ PostgreSQL and Emacs. CON should no longer be used."
 ;; which we convert to the internal Emacs date/time representation
 ;; (there may be a fractional seconds quantity as well, which the regex
 ;; handles)
-(defun pg-isodate-parser (str)
+(defun pg-isodate-parser (str _encoding)
   (if (string-match pg-ISODATE_REGEX str)  ; is non-null
       (let ((year    (string-to-number (match-string 1 str)))
 	    (month   (string-to-number (match-string 2 str)))
@@ -750,7 +762,7 @@ PostgreSQL and Emacs. CON should no longer be used."
          (tuples (pg-result pgtypes :tuples)))
     (setq pg-parsers '())
     (mapcar
-     #'(lambda (tuple)
+     (lambda (tuple)
        (let* ((typname (cl-first tuple))
               (oid (string-to-number (cl-second tuple)))
               (type (cl-assoc typname pg-type-parsers :test #'string=)))
@@ -758,10 +770,10 @@ PostgreSQL and Emacs. CON should no longer be used."
              (push (cons oid (cdr type)) pg-parsers))))
      tuples)))
 
-(defun pg-parse (str oid)
+(defun pg-parse (str oid encoding)
   (let ((parser (cl-assoc oid pg-parsers :test #'eq)))
     (if (consp parser)
-        (funcall (cdr parser) str)
+        (funcall (cdr parser) str encoding)
       str)))
 
 ;; Map between PostgreSQL names for encodings and their Emacs name.
@@ -821,14 +833,30 @@ Authenticate as USER with PASSWORD."
 (defun pg-sasl-prep (string)
   string)
 
+
+
+(defun pg-logxor-string (s1 s2)
+  "Elementwise XOR of each character of strings S1 and S2."
+  (let ((len (length s1)))
+    (cl-assert (eql len (length s2)))
+    (let ((out (make-string len 0)))
+      (dotimes (i len)
+        (setf (aref out i) (logxor (aref s1 i) (aref s2 i))))
+      out)))
+
 ;; PBKDF2 is a key derivation function used to reduce vulnerability to brute-force password guessing
-;; attempts <https://en.wikipedia.org/wiki/PBKDF2>. There is no implementation built into Emacs, and
-;; implementing it in Emacs Lisp would be very slow. We call out to the nettle-pbkdf2 application
-;; (typically available in the "nettle-bin" package) as a subprocess.
-;;
-;; TODO: could use gnutls builtin if Emacs bound to it
-;; https://gnutls.org/reference/gnutls-crypto.html#gnutls-pbkdf2
+;; attempts <https://en.wikipedia.org/wiki/PBKDF2>.
 (defun pg-pbkdf2-hash-sha256 (password salt iterations)
+  (let* ((hash (gnutls-hash-mac 'SHA256 (cl-copy-seq password) (concat salt (string 0 0 0 1))))
+         (result hash))
+    (dotimes (_i (1- iterations))
+      (setf hash (gnutls-hash-mac 'SHA256 (cl-copy-seq password) hash))
+      (setf result (pg-logxor-string result hash)))
+    result))
+
+;; Implement PBKDF2 by calling out to the nettle-pbkdf2 application (typically available in the
+;; "nettle-bin" package) as a subprocess.
+(defun pg-pbkdf2-hash-sha256/nettle (password salt iterations)
   ;; ITERATIONS is a integer
   ;; the hash function in nettle-pbkdf2 is hard coded to HMAC-SHA256
   (require 'hex-util)
@@ -847,21 +875,6 @@ Authenticate as USER with PASSWORD."
     ;; out is in the format 55234f50f7f54f13 9e7f13d4becff1d6 aee3ab80a08cc034 c75e8ba21e43e01b
     (let ((out (delete ?\s (buffer-string))))
       (decode-hex-string out))))
-
-;; python3:
-;; >>> from hashlib import pbkdf2_hmac
-;; >>> pbkdf2_hmac("sha256", b"foobles", b"1122334455667788", 4096).hex()
-;; '2ca90af934eee8297925368eb2a618efba9508861d93e1a7f224f7b52a0051aa'
-
-
-(defun pg-logxor-string (s1 s2)
-  "Elementwise XOR of each character of strings S1 and S2."
-  (let ((len (length s1)))
-    (cl-assert (eql len (length s2)))
-    (let ((out (make-string len 0)))
-      (dotimes (i len)
-        (setf (aref out i) (logxor (aref s1 i) (aref s2 i))))
-      out)))
 
 
 ;; use NIL to generate a new client nonce on each authentication attempt (normal practice)
@@ -905,12 +918,12 @@ Authenticate as USER with PASSWORD."
                (unless (eql type 11)
                  (error "Unexpected AuthenticationSASLContinue type %d" type))
                (let* ((components (split-string server-first-msg ","))
-                      (r= (cl-find "r=" components :key #'(lambda (s) (substring s 0 2)) :test #'string=))
+                      (r= (cl-find "r=" components :key (lambda (s) (substring s 0 2)) :test #'string=))
                       (r (substring r= 2))
-                      (s= (cl-find "s=" components :key #'(lambda (s) (substring s 0 2)) :test #'string=))
+                      (s= (cl-find "s=" components :key (lambda (s) (substring s 0 2)) :test #'string=))
                       (s (substring s= 2))
                       (salt (base64-decode-string s))
-                      (i= (cl-find "i=" components :key #'(lambda (s) (substring s 0 2)) :test #'string=))
+                      (i= (cl-find "i=" components :key (lambda (s) (substring s 0 2)) :test #'string=))
                       (iterations (string-to-number (substring i= 2)))
                       (salted-password (pg-pbkdf2-hash-sha256 password salt iterations))
                       ;; beware: gnutls-hash-mac will zero out its first argument (the "secret")!
@@ -1005,8 +1018,8 @@ Authenticate as USER with PASSWORD."
                        "proname = 'lowrite'")))
     (setq pg-lo-functions '())
     (mapc
-     #'(lambda (tuple)
-         (push (cons (car tuple) (cadr tuple)) pg-lo-functions))
+     (lambda (tuple)
+       (push (cons (car tuple) (cadr tuple)) pg-lo-functions))
      (pg-result res :tuples))
     (setq pg-lo-initialized t)))
 
@@ -1027,15 +1040,15 @@ Authenticate as USER with PASSWORD."
     (pg-send-char con 0)
     (pg-send-int con fnid 4)
     (pg-send-int con (length args) 4)
-    (mapc #'(lambda (arg)
-              (cond ((integerp arg)
-                     (pg-send-int con 4 4)
-                     (pg-send-int con arg 4))
-                    ((stringp arg)
-                     (pg-send-int con (length arg) 4)
-                     (pg-send con arg))
-                    (t
-                     (error "Unknown fastpath type %s" arg))))
+    (mapc (lambda (arg)
+            (cond ((integerp arg)
+                   (pg-send-int con 4 4)
+                   (pg-send-int con arg 4))
+                  ((stringp arg)
+                   (pg-send-int con (length arg) 4)
+                   (pg-send con arg))
+                  (t
+                   (error "Unknown fastpath type %s" arg))))
           args)
     (pg-flush con)
     (cl-loop with result = '()
@@ -1213,7 +1226,8 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
 (defun pg-read-tuple (connection attributes)
   (let* ((num-attributes (length attributes))
          (count (pg-read-net-int connection 2))
-         (tuples (list)))
+         (tuples (list))
+         (ce (pgcon-client-encoding connection)))
     (unless (eql count num-attributes)
       (error "Unexpected value for attribute count sent by backend"))
     (cl-do ((i 0 (+ i 1))
@@ -1223,7 +1237,7 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
       (let* ((col-octets (pg-read-net-int connection 4))
              (col-value (when (> col-octets 0)
                           (pg-read-chars connection col-octets)))
-             (parsed (pg-parse col-value (car type-ids))))
+             (parsed (pg-parse col-value (car type-ids) ce)))
         (push parsed tuples)))))
 
 (defun pg-read-char (connection)
