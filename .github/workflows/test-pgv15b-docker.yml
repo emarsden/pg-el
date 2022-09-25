@@ -13,7 +13,7 @@ jobs:
 
       - name: Start Docker/Podman image of PostgreSQL
         run:
-          sudo podman run --name pgsql \
+          sudo podman run -d --name pgsql \
              --health-cmd pg_isready \
              --health-interval 10s \
              --health-timeout 5s \
