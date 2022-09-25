@@ -103,6 +103,37 @@
      (message "time = %s" (cl-second res)))
    (pg-exec conn "DROP TABLE date_test")))
 
+(defun pg-test-numeric ()
+  (with-pgtest-connection conn
+    (cl-flet ((scalar (sql) (car (pg-result (pg-exec conn sql) :tuple 0)))
+              (approx= (x y) (< (/ (abs (- x y)) (max (abs x) (abs y))) 1e-5)))
+      (cl-assert (eql (scalar "SELECT floor(42.3)") 42))
+      (cl-assert (eql (scalar "SELECT trunc(43.3)") 43))
+      (cl-assert (eql (scalar "SELECT trunc(-42.3)") -42))
+      (cl-assert (eql (scalar "SELECT log(100)") 2))
+      ;; bignums only supported from Emacs 27.2 onwards
+      (when (fboundp 'bignump)
+        (cl-assert (eql (scalar "SELECT 25!") 15511210043330985984000000)))
+      (cl-assert (approx= (scalar "SELECT pi()") 3.1415626))
+      (cl-assert (eql (scalar "SELECT char_length('foo')") 3))
+      (cl-assert (string= (scalar "SELECT lower('FOO')") "foo"))
+      (cl-assert (string= (scalar "SELECT lower('FÔÖÉ')") "fôöé"))
+      (cl-assert (eql (scalar "SELECT ascii('a')") 97))
+      (cl-assert (eql (length (scalar "SELECT repeat('Q', 5000)")) 5000))
+      (cl-assert (string= (scalar "SELECT interval '1 day' + interval '3 days'") "4 days"))
+      (cl-assert (eql (scalar "SELECT date '2001-10-01' - date '2001-09-28'") 3))
+      ;; we are not parsing XML values
+      (cl-assert (string= (scalar "SELECT xmlforest('abc' AS foo, 123 AS bar)") "<foo>abc</foo><bar>123</bar>")))))
+
+
+;; TODO: implement tests for BYTEA type (https://www.postgresql.org/docs/15/functions-binarystring.html)
+(defun pg-test-bytea ()
+  nil)
+
+;; https://www.postgresql.org/docs/14/functions-json.html
+(defun pg-test-json ()
+  nil)
+
 ;; Testing for the data access functions. Expected output is something
 ;; like
 ;;
