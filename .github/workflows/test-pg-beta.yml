@@ -14,13 +14,13 @@ jobs:
           POSTGRES_DB: pgeltestdb
           POSTGRES_USER: pgeltestuser
           POSTGRES_PASSWORD: pgeltest
-        command: -c ssl=on -c ssl_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem -c ssl_key_file=/etc/ssl/private/ssl-cert-snakeoil.key
         # Set health checks to wait until postgres has started
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+          -c ssl=on -c ssl_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem -c ssl_key_file=/etc/ssl/private/ssl-cert-snakeoil.key
         ports:
           # Maps tcp port 5432 on service container to the host
           - 5432:5432
