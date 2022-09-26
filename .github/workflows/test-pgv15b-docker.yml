@@ -15,11 +15,8 @@ jobs:
         run: sudo podman rmi --all
 
       - name: Start Docker/Podman image of PostgreSQL
-        run: sudo podman run -d --name pgsql \
-             --health-cmd pg_isready \
-             --health-interval 10s \
-             --health-timeout 5s \
-             --health-retries 5 \
+        run: sudo podman run --detach \
+             --name pgsql \
              --publish 5432:5432 \
              -e POSTGRES_DB=pgeltestdb \
              -e POSTGRES_USER=pgeltestuser \
@@ -28,6 +25,12 @@ jobs:
              -c ssl=on \
              -c ssl_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem \
              -c ssl_key_file=/etc/ssl/private/ssl-cert-snakeoil.key
+
+
+             # --health-cmd pg_isready \
+             # --health-interval 10s \
+             # --health-timeout 5s \
+             # --health-retries 5 \
 
       - name: Check out repository code
         uses: actions/checkout@v3
