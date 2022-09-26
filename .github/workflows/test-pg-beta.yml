@@ -20,7 +20,8 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-          -c ssl=on -c ssl_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem -c ssl_key_file=/etc/ssl/private/ssl-cert-snakeoil.key
+        # would also like to pass -c ssl=on -c ssl_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem -c ssl_key_file=/etc/ssl/private/ssl-cert-snakeoil.key
+
         ports:
           # Maps tcp port 5432 on service container to the host
           - 5432:5432
@@ -29,7 +30,7 @@ jobs:
       - name: Install Emacs
         run: |
           sudo apt-get update
-          sudo apt-get install emacs nettle-bin
+          sudo apt-get install emacs
 
       - name: Check out repository code
         uses: actions/checkout@v3

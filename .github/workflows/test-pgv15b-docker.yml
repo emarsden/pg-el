@@ -11,10 +11,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install emacs podman
 
+      - name: Podman cleanup
+        run: sudo podman rmi --all
+
       - name: Start Docker/Podman image of PostgreSQL
-        run:
-          sudo podman rmi --all
-          sudo podman run -d --name pgsql \
+        run: sudo podman run -d --name pgsql \
              --health-cmd pg_isready \
              --health-interval 10s \
              --health-timeout 5s \
