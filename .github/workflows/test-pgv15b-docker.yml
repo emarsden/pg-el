@@ -27,9 +27,6 @@ jobs:
              -c ssl_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem \
              -c ssl_key_file=/etc/ssl/private/ssl-cert-snakeoil.key
 
-      - name: list podman containers
-        run: sleep 5; sudo podman ps
-        
       - name: Check out repository code
         uses: actions/checkout@v3
 

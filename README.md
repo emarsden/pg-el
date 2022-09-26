@@ -3,11 +3,21 @@
 [![License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](https://www.gnu.org/licenses/old-licenses/gpl-2.0)
 [![CI](https://github.com/emarsden/pg-el/workflows/check/badge.svg)](https://github.com/emarsden/pg-el/workflows/check/badge.svg)
 [![Connect-v12](https://github.com/emarsden/pg-el/workflows/test-pgv12/badge.svg)](https://github.com/emarsden/pg-el/workflows/test-pgv12/badge.svg)
-[![Connect-v15beta](https://github.com/emarsden/pg-el/workflows/test-pgv15b/badge.svg)](https://github.com/emarsden/pg-el/workflows/test-pgv15b/badge.svg)
+
 
 This module lets you access the PostgreSQL object-relational DBMS from Emacs, using its socket-level
 frontend/backend protocol. The module is capable of automatic type coercions from a range of SQL
 types to the equivalent Emacs Lisp type. This is a low level API, and won't be useful to end users.
+
+Including support for:
+
+- SCRAM-SHA-256 authentication (the default authentication method since PostgreSQL version 14)
+
+- MD5 authentication 
+
+- Encrypted (TLS) connections with PostgreSQL, though currently not for authentication using
+  client-side certificates. This assumes your Emacs has been built with GnuTLS support.
+
 
 The code has been tested with PostgreSQL versions 15 beta, 13.8, 11.17, and 10.22. It also works
 against other databases that implement the PostgreSQL wire protocol:
@@ -18,16 +28,13 @@ against other databases that implement the PostgreSQL wire protocol:
 - [CrateDB](https://crate.io/): tested with version 5.0.1.
 
 
+
 ## Installation
 
 To install manually, place the file `pg.el` in a directory on your `load-path`, byte-compile it
 (using for example `B` in dired) and add the following to your Emacs initialization file:
 
     (require 'pg)
-
-SCRAM-SHA-256 authentication (which is the default authentication method since PostgreSQL version
-14) is implemented by calling out to the `nettle-pbkdf2` application, which must be installed
-(typically available in the `nettle-bin` package of your distribution).
 
 
 
@@ -48,12 +55,11 @@ database. If an error occurs during the execution of the forms, a ROLLBACK instr
 
     (pg-connect dbname user [password host port]) -> connection
     
-Connect to the database `DBNAME` on `HOST` (defaults to localhost) at `PORT` (defaults to 5432) via TCP/IP
-and authenticate as `USER` with `PASSWORD`. This library currently supports SCRAM-SHA-256
+Connect to the database `DBNAME` on `HOST` (defaults to localhost) at `PORT` (defaults to 5432) via
+TCP/IP and authenticate as `USER` with `PASSWORD`. This library currently supports SCRAM-SHA-256
 authentication (the default method from PostgreSQL version 14 onwards), MD5 authentication and
-cleartext password authentication. Connecting over TLS is not supported, due to apparent limitations
-in the TLS negotiation support provided by the Emacs routines from GnuTLS. This function also sets the output
-date type to 'ISO', and initializes our type parser tables.
+cleartext password authentication. This function also sets the output date type to 'ISO', and
+initializes our type parser tables.
 
 
     (pg-exec connection &rest sql) -> pgresult
