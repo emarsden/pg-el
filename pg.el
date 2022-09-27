@@ -510,13 +510,21 @@ Return a result structure which can be decoded using `pg-result'."
     (pg-send-string connection encoded)
     (pg-flush connection)
     (cl-loop for c = (pg-read-char connection) do
-       ;; (message "pg-exec message-type = %c" c)
+             ;; (message "pg-exec message-type = %c" c)
        (cl-case c
-            ;; AsynchronousNotify
+            ;; NoData
+            (?n
+             (let ((_msglen (pg-read-net-int connection 4)))
+               nil))
+
+            ;; NotificationResponse
             (?A
-             (let ((_pid (pg-read-int connection 4))
-                   (msg (pg-read-string connection pg-MAX_MESSAGE_LEN)))
-               (message "Asynchronous notify %s" msg)))
+             (let ((_msglen (pg-read-net-int connection 4))
+                   ;; PID of the notifying backend
+                   (_pid (pg-read-int connection 4))
+                   (channel (pg-read-string connection pg-MAX_MESSAGE_LEN))
+                   (payload (pg-read-string connection pg-MAX_MESSAGE_LEN)))
+               (message "Asynchronous notify %s:%s" channel payload)))
 
             ;; Bind
             (?B
@@ -560,8 +568,18 @@ Return a result structure which can be decoded using `pg-result'."
 
             ;; NoticeResponse
             (?N
-             (let ((notice (pg-read-string connection pg-MAX_MESSAGE_LEN)))
-               (message "NOTICE: N%s" notice)))
+             (let* ((msglen (pg-read-net-int connection 4))
+                    (msg (pg-read-chars connection (- msglen 5))))
+               (message "tmp notice msg is %s" msg)
+               (cl-loop with msgpos = 0
+                        while (< msgpos (- msglen 5))
+                        with code = (aref msg msgpos)
+                        until (zerop code)
+                        for val = (let* ((start (cl-incf msgpos))
+                                         (end (cl-position #x0 msg :start start :end (- msglen 5))))
+                                    (prog1 (substring msg start end)
+                                      (setf msgpos (1+ end))))
+                        do (message "PostgreSQL notice %c: %s" code val))))
 
             ;; CursorResponse
             (?P
@@ -649,7 +667,7 @@ This command should be used when you have finished with the database.
 It will release memory used to buffer the data transfered between
 PostgreSQL and Emacs. CON should no longer be used."
   ;; send a Terminate message
-  (pg-send con "X")
+  (pg-send-char con ?X)
   (pg-send-int con 4 4)
   (pg-flush con)
   (delete-process (pgcon-process con))
