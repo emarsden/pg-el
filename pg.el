@@ -26,13 +26,15 @@
 
 ;;;; Overview =========================================================
 ;;
-;; This module lets you access the PostgreSQL object-relational DBMS from Emacs, using its
-;; socket-level frontend/backend protocol. The module is capable of automatic type coercions from a
-;; range of SQL types to the equivalent Emacs Lisp type. This is a low level API, and won't be
+;; This module lets you access the PostgreSQL object-relational DBMS from
+;; Emacs, using its socket-level frontend/backend protocol. The module is
+;; capable of automatic type coercions from a range of SQL types to the
+;; equivalent Emacs Lisp type. This is a low level API, and won't be
 ;; useful to end users.
 ;;
-;; Authentication methods: SCRAM-SHA-256 (the default authentication method since PostgreSQL version
-;; 14) and MD5 authentication are implemented. Encrypted (TLS) connections are supported.
+;; Authentication methods: SCRAM-SHA-256 (the default authentication
+;; method since PostgreSQL version 14) and MD5 authentication are
+;; implemented. Encrypted (TLS) connections are supported.
 
 
 ;;;; Entry points ======================================================
