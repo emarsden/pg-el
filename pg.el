@@ -278,8 +278,8 @@ session (not per connection to the backend).")
 
 (defconst pg-ISODATE_REGEX
   (concat "\\([0-9]+\\)-\\([0-9][0-9]\\)-\\([0-9][0-9]\\) " ; Y-M-D
-	  "\\([0-9][0-9]\\):\\([0-9][0-9]\\):\\([.0-9]+\\)" ; H:M:S.S
-	  "\\([-+][0-9]+\\)?")) ; TZ
+          "\\([0-9][0-9]\\):\\([0-9][0-9]\\):\\([.0-9]+\\)" ; H:M:S.S
+          "\\([-+][0-9]+\\)?")) ; TZ
 
 ;; alist of (oid . parser) pairs. This is built dynamically at
 ;; initialization of the connection with the database (once generated,
@@ -384,10 +384,10 @@ attempt to establish an encrypted connection to PostgreSQL."
       (let ((cert (network-stream-certificate host port nil)))
         (condition-case err
             ;; now do STARTTLS-like connection upgrade
-	    (gnutls-negotiate :process process
+            (gnutls-negotiate :process process
                               :hostname host
-			      :keylist (and cert (list cert)))
-	  (gnutls-error
+                              :keylist (and cert (list cert)))
+          (gnutls-error
            (error "TLS error connecting to PostgreSQL: %s" (error-message-string err))))))
     ;; send the StartupMessage, as per https://www.postgresql.org/docs/current/protocol-message-formats.html
     (let ((packet-octets (+ 4 2 2
@@ -765,13 +765,13 @@ PostgreSQL and Emacs. CON should no longer be used."
 (defun pg-isodate-parser (str _encoding)
   (if (string-match pg-ISODATE_REGEX str)  ; is non-null
       (let ((year    (string-to-number (match-string 1 str)))
-	    (month   (string-to-number (match-string 2 str)))
-	    (day     (string-to-number (match-string 3 str)))
-	    (hours   (string-to-number (match-string 4 str)))
-	    (minutes (string-to-number (match-string 5 str)))
-	    (seconds (round (string-to-number (match-string 6 str))))
-	    (tz      (string-to-number (or (match-string 7 str) "0"))))
-	(encode-time seconds minutes hours day month year (* 3600 tz)))
+            (month   (string-to-number (match-string 2 str)))
+            (day     (string-to-number (match-string 3 str)))
+            (hours   (string-to-number (match-string 4 str)))
+            (minutes (string-to-number (match-string 5 str)))
+            (seconds (round (string-to-number (match-string 6 str))))
+            (tz      (string-to-number (or (match-string 7 str) "0"))))
+        (encode-time seconds minutes hours day month year (* 3600 tz)))
       (error "Badly formed ISO timestamp from backend: %s" str)))
 
 
@@ -1104,7 +1104,7 @@ Authenticate as USER with PASSWORD."
 (defun pg-lo-create (connection &optional args)
   (let* ((modestr (or args "r"))
          (mode (cond ((integerp modestr) modestr)
-		     ((string= "r" modestr) pg-INV_READ)
+                     ((string= "r" modestr) pg-INV_READ)
                      ((string= "w" modestr) pg-INV_WRITE)
                      ((string= "rw" modestr)
                       (logior pg-INV_READ pg-INV_WRITE))
@@ -1121,7 +1121,7 @@ Authenticate as USER with PASSWORD."
 (defun pg-lo-open (connection oid &optional args)
   (let* ((modestr (or args "r"))
          (mode (cond ((integerp modestr) modestr)
-		     ((string= "r" modestr) pg-INV_READ)
+                     ((string= "r" modestr) pg-INV_READ)
                      ((string= "w" modestr) pg-INV_WRITE)
                      ((string= "rw" modestr)
                       (logior pg-INV_READ pg-INV_WRITE))
@@ -1406,10 +1406,10 @@ presented to the user."
   "Kill all buffers used for network connections with PostgreSQL."
   (interactive)
   (cl-loop for buffer in (buffer-list)
-	   for name = (buffer-name buffer)
-	   when (and (> (length name) 12)
-		     (string= " *PostgreSQL*" (substring (buffer-name buffer) 0 13)))
-	   do (let ((p (get-buffer-process buffer)))
+           for name = (buffer-name buffer)
+           when (and (> (length name) 12)
+                     (string= " *PostgreSQL*" (substring (buffer-name buffer) 0 13)))
+           do (let ((p (get-buffer-process buffer)))
                 (when p
                   (kill-process p)))
            (kill-buffer buffer)))
@@ -1417,4 +1417,7 @@ presented to the user."
 
 (provide 'pg)
 
+;; Local Variables:
+;; indent-tabs-mode: nil
+;; End:
 ;;; pg.el ends here
