@@ -24,7 +24,8 @@
 
 ;;; Commentary:
 
-;;;; Overview =========================================================
+;; Overview
+;; --------
 ;;
 ;; This module lets you access the PostgreSQL object-relational DBMS from
 ;; Emacs, using its socket-level frontend/backend protocol. The module is
@@ -37,7 +38,8 @@
 ;; implemented. Encrypted (TLS) connections are supported.
 
 
-;;;; Entry points ======================================================
+;; Entry points
+;; ------------
 ;;
 ;; (with-pg-connection con (dbname user [password host port]) &body body)
 ;;     A macro which opens a connection to database DBNAME, executes the
@@ -203,14 +205,14 @@
 ;; McNaught and Pavel Janik for bug fixes.
 
 
-;;; INSTALL =========================================================
+;;; INSTALL
 ;;
 ;; Place this file in a directory somewhere in the load-path, then
 ;; byte-compile it (do a `B' on it in Dired, for example). Place a
 ;; line such as `(require 'pg)' in your Emacs initialization file.
 
 
-;;; TODO ============================================================
+;;; TODO
 ;;
 ;; * add a mechanism for parsing user-defined types. The user should
 ;;   be able to define a parse function and a type-name; we query
