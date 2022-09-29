@@ -7,6 +7,7 @@
   nettle-pbkdf2 application
 - Implement multibyte encoding and decoding for pg-exec requests
 - Send application_name to PostgreSQL backend to improve observability
+- Fix handling of NotificationResponse messages 
 - Improve test coverage
 
 
