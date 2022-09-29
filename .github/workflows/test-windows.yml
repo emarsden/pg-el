@@ -1,0 +1,25 @@
+name: test-windows
+on: push
+
+jobs:
+  runner-job:
+    # using the PostgreSQL version pre-installed on GitHub's Windows virtual images
+    runs-on: windows-latest
+
+    steps:
+      - name: Set up pre-installed PostgreSQL
+      - uses: ikalnytskyi/action-setup-postgres@v3
+        with:
+          username: pgeltestuser
+          password: pgeltest
+          database: pgeltestdb
+        id: postgres
+
+      - name: Install Emacs
+        run: choco install emacs
+
+      - name: Check out repository code
+        uses: actions/checkout@v3
+
+      - name: Run connection tests
+        run: make -C test test
