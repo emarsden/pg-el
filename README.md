@@ -1,6 +1,7 @@
 # pg.el -- Emacs Lisp socket-level interface to the PostgreSQL RDBMS
 
 [![License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](https://www.gnu.org/licenses/old-licenses/gpl-2.0)
+[![MELPA](https://melpa.org/packages/pg-badge.svg)](https://melpa.org/#/pg)
 [![CI](https://github.com/emarsden/pg-el/workflows/check/badge.svg)](https://github.com/emarsden/pg-el/workflows/check/badge.svg)
 [![Connect-v12](https://github.com/emarsden/pg-el/workflows/test-pgv12/badge.svg)](https://github.com/emarsden/pg-el/workflows/test-pgv12/badge.svg)
 
@@ -19,8 +20,10 @@ Including support for:
   client-side certificates. This assumes your Emacs has been built with GnuTLS support.
 
 
-The code has been tested with PostgreSQL versions 15 beta, 13.8, 11.17, and 10.22. It also works
-against other databases that implement the PostgreSQL wire protocol:
+The code has been tested with PostgreSQL versions 15 beta, 13.8, 11.17, and 10.22 on Linux. It is
+also tested via GitHub actions on MacOS and Windows, using the PostgreSQL version which is
+pre-installed in the virtual images (currently 14.5). This library also works against other
+databases that implement the PostgreSQL wire protocol:
 
 - [CockroachDB](https://github.com/cockroachdb/cockroach): tested with CockroachDB CCL v22.1.7. Note
   that this database does not implement the large object functionality.
@@ -30,6 +33,16 @@ against other databases that implement the PostgreSQL wire protocol:
 
 
 ## Installation
+
+Install via the [MELPA package archive](https://melpa.org/partials/getting-started.html) by
+including the following in your Emacs initialization file (`.emacs.el` or `init.el`):
+
+    (require 'package)
+    (add-to-list 'package-archives '("melpa" . "https://stable.melpa.org/packages/") t)
+
+then saying 
+
+     M-x install-package RET pg
 
 To install manually, place the file `pg.el` in a directory on your `load-path`, byte-compile it
 (using for example `B` in dired) and add the following to your Emacs initialization file:

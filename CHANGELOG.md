@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.17] - 2022-09-25
+## [0.17] - 2022-09-30
 ### Updated
 - Support for encrypted (TLS) connections with PostgreSQL
 - Native support for PBKDF2 algorithm to allow SCRAM-SHA-256 authentication without the external
@@ -9,6 +9,8 @@
 - Send application_name to PostgreSQL backend to improve observability
 - Fix handling of NotificationResponse messages 
 - Improve test coverage
+- Include continuous integration tests on Windows and MacOS (GitHub actions)
+- This version distributed via MELPA
 
 
 ## [0.16] - 2022-09-18
