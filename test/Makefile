@@ -22,6 +22,13 @@ test-emacs26: test-pg.el
 	   emacs -Q --batch -l /tmp/pg.el -l /tmp/test-pg.el -f pg-test
 
 
+# CrateDB uses a default database name of "doc" that we can't set via Docker
+test-cratedb: test-pg.el
+	PGEL_DATABASE=doc make test
+
+test-cockroachdb: test-pg.el
+	PGEL_DATABASE=postgres PGEL_USER=root PGEL_PASSWORD="" PGEL_PORT=26257 make test
+
 bench-uncompiled: test-pg.el
 	emacs -Q --batch -l ../pg.el -l test-pg.el -f pg-bench
 
@@ -29,4 +36,4 @@ bench-bytecompiled: test-pg.el
 	emacs -Q --batch --eval '(byte-compile-file "../pg.el")' -l ../pg.elc -l test-pg.el -f pg-bench
 
 bench-nativecompiled: test-pg.el
-	emacs -Q --batch --eval '(native-compile "../pg.el" "/tmp/pgelnative.eln")' -l /tmp/pgelnative.eln -l test-pg.el -f pg-bench
+	emacs -Q --batch --eval '(load (native-compile "../pg.el"))' -l test-pg.el -f pg-bench

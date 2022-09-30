@@ -5,18 +5,8 @@
 
 
 (require 'pg)
+(require 'ert)
 
-;; For CockroachDB with default settings 
-(defmacro with-pgtest-connection (conn &rest body)
-  `(with-pg-connection ,conn ("postgres" "root" "" "localhost" 26257)
-      ,@body))
-
-;; For CrateDB
-(defmacro with-pgtest-connection (conn &rest body)
-  `(with-pg-connection ,conn ("doc" "pgeltestuser" "pgeltest")
-                       ,@body))
-
-;; For PostgreSQL, including for GitHub CI "test" workflow
 (defmacro with-pgtest-connection (conn &rest body)
   (let ((db (or (getenv "PGEL_DATABASE") "pgeltestdb"))
         (user (or (getenv "PGEL_USER") "pgeltestuser"))
@@ -71,20 +61,20 @@
     (message "Tests passed")))
 
 
-(defun pg-test-insert (&optional count)
+(ert-deftest pg-test-insert ()
   (with-pgtest-connection conn
    (let ((res (list))
-         (count (or count 100)))
+         (count 100))
      (pg-exec conn "CREATE TABLE count_test(key int, val int)")
      (cl-loop for i from 1 to count
            for sql = (format "INSERT INTO count_test VALUES(%s, %s)"
                              i (* i i))
            do (pg-exec conn sql))
      (setq res (pg-exec conn "SELECT count(val) FROM count_test"))
-     (cl-assert (= count (cl-first (pg-result res :tuple 0))))
+     (should (= count (cl-first (pg-result res :tuple 0))))
      (setq res (pg-exec conn "SELECT sum(key) FROM count_test"))
-     (cl-assert (= (cl-first (pg-result res :tuple 0))
-                   (/ (* count (1+ count)) 2)))
+     (should (= (cl-first (pg-result res :tuple 0))
+                (/ (* count (1+ count)) 2)))
      (pg-exec conn "DROP TABLE count_test"))))
 
 ;; Testing for the time handling routines. Expected output is
@@ -93,7 +83,7 @@
 ;; timestamp = (14189 17420)
 ;; abstime = (14189 17420)
 ;; time = 19:42:06
-(defun pg-test-date ()
+(ert-deftest pg-test-date ()
   (with-pgtest-connection conn
    (let (res)
      (pg-exec conn "CREATE TABLE date_test(a timestamp, b time)")
@@ -105,27 +95,27 @@
      (message "time = %s" (cl-second res)))
    (pg-exec conn "DROP TABLE date_test")))
 
-(defun pg-test-numeric ()
+(ert-deftest pg-test-numeric ()
   (with-pgtest-connection conn
     (cl-flet ((scalar (sql) (car (pg-result (pg-exec conn sql) :tuple 0)))
               (approx= (x y) (< (/ (abs (- x y)) (max (abs x) (abs y))) 1e-5)))
-      (cl-assert (eql (scalar "SELECT floor(42.3)") 42))
-      (cl-assert (eql (scalar "SELECT trunc(43.3)") 43))
-      (cl-assert (eql (scalar "SELECT trunc(-42.3)") -42))
-      (cl-assert (eql (scalar "SELECT log(100)") 2))
+      (should (eql (scalar "SELECT floor(42.3)") 42))
+      (should (eql (scalar "SELECT trunc(43.3)") 43))
+      (should (eql (scalar "SELECT trunc(-42.3)") -42))
+      (should (eql (scalar "SELECT log(100)") 2))
       ;; bignums only supported from Emacs 27.2 onwards
       (when (fboundp 'bignump)
-        (cl-assert (eql (scalar "SELECT factorial(25)") 15511210043330985984000000)))
-      (cl-assert (approx= (scalar "SELECT pi()") 3.1415626))
-      (cl-assert (eql (scalar "SELECT char_length('foo')") 3))
-      (cl-assert (string= (scalar "SELECT lower('FOO')") "foo"))
-      (cl-assert (string= (scalar "SELECT lower('FÔÖÉ💥')") "fôöé💥"))
-      (cl-assert (eql (scalar "SELECT ascii('a')") 97))
-      (cl-assert (eql (length (scalar "SELECT repeat('Q', 5000)")) 5000))
-      (cl-assert (string= (scalar "SELECT interval '1 day' + interval '3 days'") "4 days"))
-      (cl-assert (eql (scalar "SELECT date '2001-10-01' - date '2001-09-28'") 3))
+        (should (eql (scalar "SELECT factorial(25)") 15511210043330985984000000)))
+      (should (approx= (scalar "SELECT pi()") 3.1415626))
+      (should (eql (scalar "SELECT char_length('foo')") 3))
+      (should (string= (scalar "SELECT lower('FOO')") "foo"))
+      (should (string= (scalar "SELECT lower('FÔÖÉ💥')") "fôöé💥"))
+      (should (eql (scalar "SELECT ascii('a')") 97))
+      (should (eql (length (scalar "SELECT repeat('Q', 5000)")) 5000))
+      (should (string= (scalar "SELECT interval '1 day' + interval '3 days'") "4 days"))
+      (should (eql (scalar "SELECT date '2001-10-01' - date '2001-09-28'") 3))
       ;; we are not parsing XML values
-      (cl-assert (string= (scalar "SELECT xmlforest('abc' AS foo, 123 AS bar)") "<foo>abc</foo><bar>123</bar>")))))
+      (should (string= (scalar "SELECT xmlforest('abc' AS foo, 123 AS bar)") "<foo>abc</foo><bar>123</bar>")))))
 
 
 ;; TODO: implement tests for BYTEA type (https://www.postgresql.org/docs/15/functions-binarystring.html)
@@ -149,7 +139,7 @@
 ;; second tuple of SELECT is (66 poiu)
 ;; status of DROP is DROP
 ;; ==============================================
-(defun pg-test-result ()
+(ert-deftest pg-test-result ()
   (with-pgtest-connection conn
    (let ((r1 (pg-exec conn "CREATE TABLE resulttest (a int, b VARCHAR(4))"))
          (r2 (pg-exec conn "INSERT INTO resulttest VALUES (3, 'zae')"))
@@ -167,7 +157,7 @@
      (message "second tuple of SELECT is %s" (pg-result r4 :tuple 1))
      (message "status of DROP is %s" (pg-result r5 :status))
      (message "==============================================")
-     (cl-assert (eql (length (pg-result r6 :tuples)) 10)))))
+     (should (eql (length (pg-result r6 :tuples)) 10)))))
 
 ;; test of large-object interface. Note the use of with-pg-transaction
 ;; to wrap the requests in a BEGIN..END transaction which is necessary
