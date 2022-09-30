@@ -1,44 +1,45 @@
 ;;; pg.el --- Emacs Lisp socket-level interface to the PostgreSQL RDBMS  -*- lexical-binding: t -*-
-;;;
-;;; Author: Eric Marsden <eric.marsden@risk-engineering.org>
-;;; Copyright: (C) 1999-2002, 2022  Eric Marsden
-;;; Version: 0.16
-;;; Keywords: data comm database postgresql
-;;; URL: https://github.com/emarsden/pg-el
-;;; Package-Requires: ((emacs "26.1"))
 
-;;
-;;     This program is free software; you can redistribute it and/or
-;;     modify it under the terms of the GNU General Public License as
-;;     published by the Free Software Foundation; either version 2 of
-;;     the License, or (at your option) any later version.
-;;
-;;     This program is distributed in the hope that it will be useful,
-;;     but WITHOUT ANY WARRANTY; without even the implied warranty of
-;;     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-;;     GNU General Public License for more details.
-;;
-;;     You should have received a copy of the GNU General Public
-;;     License along with this program; if not, write to the Free
-;;     Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
-;;     MA 02111-1307, USA.
-;;
+;; Copyright: (C) 1999-2002, 2022  Eric Marsden
 
+;; Author: Eric Marsden <eric.marsden@risk-engineering.org>
+;; Version: 0.16
+;; Keywords: data comm database postgresql
+;; URL: https://github.com/emarsden/pg-el
+;; Package-Requires: ((emacs "26.1"))
+;; SPDX-License-Identifier: GPL-2.0-or-later
+;;
+;; This file is free software: you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published
+;; by the Free Software Foundation, either version 2 of the License,
+;; or (at your option) any later version.
+;;
+;; This file is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+;;
+;; You should have received a copy of the GNU General Public License
+;; along with this file.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
-;;; Overview ==========================================================
+;; Overview
+;; --------
 ;;
-;; This module lets you access the PostgreSQL object-relational DBMS from Emacs, using its
-;; socket-level frontend/backend protocol. The module is capable of automatic type coercions from a
-;; range of SQL types to the equivalent Emacs Lisp type. This is a low level API, and won't be
+;; This module lets you access the PostgreSQL object-relational DBMS from
+;; Emacs, using its socket-level frontend/backend protocol. The module is
+;; capable of automatic type coercions from a range of SQL types to the
+;; equivalent Emacs Lisp type. This is a low level API, and won't be
 ;; useful to end users.
 ;;
-;; Authentication methods: SCRAM-SHA-256 (the default authentication method since PostgreSQL version
-;; 14) and MD5 authentication are implemented. Encrypted (TLS) connections are supported.
+;; Authentication methods: SCRAM-SHA-256 (the default authentication
+;; method since PostgreSQL version 14) and MD5 authentication are
+;; implemented. Encrypted (TLS) connections are supported.
 
 
-;;; Entry points =======================================================
+;; Entry points
+;; ------------
 ;;
 ;; (with-pg-connection con (dbname user [password host port]) &body body)
 ;;     A macro which opens a connection to database DBNAME, executes the
@@ -204,15 +205,14 @@
 ;; McNaught and Pavel Janik for bug fixes.
 
 
-
-;;; INSTALL =========================================================
+;;; INSTALL
 ;;
 ;; Place this file in a directory somewhere in the load-path, then
 ;; byte-compile it (do a `B' on it in Dired, for example). Place a
 ;; line such as `(require 'pg)' in your Emacs initialization file.
 
 
-;;; TODO ============================================================
+;;; TODO
 ;;
 ;; * add a mechanism for parsing user-defined types. The user should
 ;;   be able to define a parse function and a type-name; we query
@@ -278,8 +278,8 @@ session (not per connection to the backend).")
 
 (defconst pg-ISODATE_REGEX
   (concat "\\([0-9]+\\)-\\([0-9][0-9]\\)-\\([0-9][0-9]\\) " ; Y-M-D
-	  "\\([0-9][0-9]\\):\\([0-9][0-9]\\):\\([.0-9]+\\)" ; H:M:S.S
-	  "\\([-+][0-9]+\\)?")) ; TZ
+          "\\([0-9][0-9]\\):\\([0-9][0-9]\\):\\([.0-9]+\\)" ; H:M:S.S
+          "\\([-+][0-9]+\\)?")) ; TZ
 
 ;; alist of (oid . parser) pairs. This is built dynamically at
 ;; initialization of the connection with the database (once generated,
@@ -384,10 +384,10 @@ attempt to establish an encrypted connection to PostgreSQL."
       (let ((cert (network-stream-certificate host port nil)))
         (condition-case err
             ;; now do STARTTLS-like connection upgrade
-	    (gnutls-negotiate :process process
+            (gnutls-negotiate :process process
                               :hostname host
-			      :keylist (and cert (list cert)))
-	  (gnutls-error
+                              :keylist (and cert (list cert)))
+          (gnutls-error
            (error "TLS error connecting to PostgreSQL: %s" (error-message-string err))))))
     ;; send the StartupMessage, as per https://www.postgresql.org/docs/current/protocol-message-formats.html
     (let ((packet-octets (+ 4 2 2
@@ -765,13 +765,13 @@ PostgreSQL and Emacs. CON should no longer be used."
 (defun pg-isodate-parser (str _encoding)
   (if (string-match pg-ISODATE_REGEX str)  ; is non-null
       (let ((year    (string-to-number (match-string 1 str)))
-	    (month   (string-to-number (match-string 2 str)))
-	    (day     (string-to-number (match-string 3 str)))
-	    (hours   (string-to-number (match-string 4 str)))
-	    (minutes (string-to-number (match-string 5 str)))
-	    (seconds (round (string-to-number (match-string 6 str))))
-	    (tz      (string-to-number (or (match-string 7 str) "0"))))
-	(encode-time seconds minutes hours day month year (* 3600 tz)))
+            (month   (string-to-number (match-string 2 str)))
+            (day     (string-to-number (match-string 3 str)))
+            (hours   (string-to-number (match-string 4 str)))
+            (minutes (string-to-number (match-string 5 str)))
+            (seconds (round (string-to-number (match-string 6 str))))
+            (tz      (string-to-number (or (match-string 7 str) "0"))))
+        (encode-time seconds minutes hours day month year (* 3600 tz)))
       (error "Badly formed ISO timestamp from backend: %s" str)))
 
 
@@ -1104,7 +1104,7 @@ Authenticate as USER with PASSWORD."
 (defun pg-lo-create (connection &optional args)
   (let* ((modestr (or args "r"))
          (mode (cond ((integerp modestr) modestr)
-		     ((string= "r" modestr) pg-INV_READ)
+                     ((string= "r" modestr) pg-INV_READ)
                      ((string= "w" modestr) pg-INV_WRITE)
                      ((string= "rw" modestr)
                       (logior pg-INV_READ pg-INV_WRITE))
@@ -1121,7 +1121,7 @@ Authenticate as USER with PASSWORD."
 (defun pg-lo-open (connection oid &optional args)
   (let* ((modestr (or args "r"))
          (mode (cond ((integerp modestr) modestr)
-		     ((string= "r" modestr) pg-INV_READ)
+                     ((string= "r" modestr) pg-INV_READ)
                      ((string= "w" modestr) pg-INV_WRITE)
                      ((string= "rw" modestr)
                       (logior pg-INV_READ pg-INV_WRITE))
@@ -1406,10 +1406,10 @@ presented to the user."
   "Kill all buffers used for network connections with PostgreSQL."
   (interactive)
   (cl-loop for buffer in (buffer-list)
-	   for name = (buffer-name buffer)
-	   when (and (> (length name) 12)
-		     (string= " *PostgreSQL*" (substring (buffer-name buffer) 0 13)))
-	   do (let ((p (get-buffer-process buffer)))
+           for name = (buffer-name buffer)
+           when (and (> (length name) 12)
+                     (string= " *PostgreSQL*" (substring (buffer-name buffer) 0 13)))
+           do (let ((p (get-buffer-process buffer)))
                 (when p
                   (kill-process p)))
            (kill-buffer buffer)))
@@ -1417,4 +1417,7 @@ presented to the user."
 
 (provide 'pg)
 
+;; Local Variables:
+;; indent-tabs-mode: nil
+;; End:
 ;;; pg.el ends here
