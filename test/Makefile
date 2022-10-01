@@ -9,6 +9,8 @@ test: test-pg.el
 test-tls: test-pg.el
 	emacs -Q --batch -l ../pg.el -l test-pg.el -f pg-test-tls
 
+test-local: test-pg.el
+	emacs -Q --batch -l ../pg.el -l test-pg.el -f pg-test-local
 
 # Using Docker images for emacs from https://hub.docker.com/r/silex/emacs/
 #

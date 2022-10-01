@@ -1,6 +1,9 @@
 # Changelog
 
 ## [0.18] - 2022-10
+### New
+- Add support for connecting to PostgreSQL over a local Unix socket
+
 ### Fixed
 - Fix bug in parsing of NULL column values in DataRow messages
 - Fix handling of encoding of attribute column names

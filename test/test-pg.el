@@ -18,8 +18,22 @@
 
 ;; Connect to the database over an encrypted (TLS) connection
 (defmacro with-pgtest-connection-tls (conn &rest body)
-  `(with-pg-connection ,conn ("pgeltestdb" "pgeltestuser" "pgeltest" "localhost" 5432 t)
-        ,@body))
+  (let ((db (or (getenv "PGEL_DATABASE") "pgeltestdb"))
+        (user (or (getenv "PGEL_USER") "pgeltestuser"))
+        (password (or (getenv "PGEL_PASSWORD") "pgeltest"))
+        (host (or (getenv "PGEL_HOSTNAME") "localhost"))
+        (port (or (getenv "PGEL_PORT") 5432)))
+    `(with-pg-connection ,conn (,db ,user ,password ,host ,port t)
+        ,@body)))
+
+(defmacro with-pgtest-connection-local (conn &rest body)
+  (let* ((db (or (getenv "PGEL_DATABASE") "pgeltestdb"))
+         (user (or (getenv "PGEL_USER") "pgeltestuser"))
+         (password (or (getenv "PGEL_PASSWORD") "pgeltest"))
+         (port (or (getenv "PGEL_PORT") 5432))
+         (path (or (getenv "PGEL_PATH") (format "/var/run/postgresql/.s.PGSQL.%d" port))))
+    `(with-pg-connection-local ,conn (,path ,db ,user ,password)
+        ,@body)))
 
 (defun pg-test ()
   (with-pgtest-connection conn
@@ -47,6 +61,27 @@
 (defun pg-test-tls ()
   (with-pgtest-connection-tls conn
     (message "Running pg.el tests over TLS against backend %s"
+             (pg-backend-version conn))
+    (message "Testing basic type parsing")
+    (pg-test-basic)
+    (message "Testing insertions...")
+    (pg-test-insert)
+    (message "Testing date routines...")
+    (pg-test-date)
+    (message "Testing numeric routines...")
+    (pg-test-numeric)
+    (message "Testing field extraction routines...")
+    (pg-test-result)
+    (message "Testing database creation")
+    (pg-test-createdb)
+    (message "Testing error handling")
+    (pg-test-errors)
+    (message "Tests passed")))
+
+;; Run tests over local Unix socket connection to backend
+(defun pg-test-local ()
+  (with-pgtest-connection-local conn
+    (message "Running pg.el tests over Unix socket against backend %s"
              (pg-backend-version conn))
     (message "Testing basic type parsing")
     (pg-test-basic)

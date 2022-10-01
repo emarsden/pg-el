@@ -23,5 +23,8 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v3
 
-      - name: Run connection tests
+      - name: Run connection tests over network
         run: make -C test test
+
+      - name: Run connection tests over local Unix socket
+        run: make -C test test-local

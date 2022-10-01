@@ -19,6 +19,7 @@ Including support for:
 - Encrypted (TLS) connections with PostgreSQL, though currently not for authentication using
   client-side certificates. This assumes your Emacs has been built with GnuTLS support.
 
+- Connections over TCP or (on Unix machines) a local Unix socket
 
 The code has been tested with PostgreSQL versions 15 beta, 13.8, 11.17, and 10.22 on Linux. It is
 also tested via GitHub actions on MacOS and Windows, using the PostgreSQL version which is
@@ -56,8 +57,15 @@ To install manually, place the file `pg.el` in a directory on your `load-path`, 
 
     (with-pg-connection con (dbname user [password host port]) &body body)
 
-A macro which opens a connection to database `DBNAME`, executes the `BODY` forms then disconnects. See
-function `pg-connect` for details of the connection arguments.
+A macro which opens a TCP network connection to database `DBNAME`, executes the `BODY` forms then
+disconnects. See function `pg-connect` for details of the connection arguments.
+
+
+    (with-pg-connection-local con (path dbname user [password]) &body body)
+
+A macro which opens a connection to database `DBNAME` over a local Unix socket at `PATH`, executes
+the `BODY` forms then disconnects. See function `pg-connect-local` for details of the connection
+arguments.
 
 
     (with-pg-transaction con &body body)
@@ -73,6 +81,13 @@ TCP/IP and authenticate as `USER` with `PASSWORD`. This library currently suppor
 authentication (the default method from PostgreSQL version 14 onwards), MD5 authentication and
 cleartext password authentication. This function also sets the output date type to 'ISO', and
 initializes our type parser tables.
+
+
+    (pg-connect-local path dbname user [password])
+
+Initiate a connection with the PostgreSQL backend over local Unix socket `PATH`. Connect to the
+database `DBNAME` with the username `USER`, providing `PASSWORD` if necessary. Return a connection to the
+database (as an opaque type). `PASSWORD` defaults to an empty string.
 
 
     (pg-exec connection &rest sql) -> pgresult
