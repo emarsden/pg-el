@@ -1241,22 +1241,29 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
   (let ((int (aref bitmap (floor ref 8))))
     (logand 128 (ash int (mod ref 8)))))
 
+;; Read data following a DataRow message
 (defun pg-read-tuple (connection attributes)
   (let* ((num-attributes (length attributes))
-         (count (pg-read-net-int connection 2))
+         (col-count (pg-read-net-int connection 2))
          (tuples (list))
          (ce (pgcon-client-encoding connection)))
-    (unless (eql count num-attributes)
+    (unless (eql col-count num-attributes)
       (error "Unexpected value for attribute count sent by backend"))
     (cl-do ((i 0 (+ i 1))
             (type-ids (mapcar #'cl-second attributes) (cdr type-ids)))
         ((= i num-attributes) (nreverse tuples))
-      ;; col-octets=-1 indicates a NULL column value
-      (let* ((col-octets (pg-read-net-int connection 4))
-             (col-value (when (> col-octets 0)
-                          (pg-read-chars connection col-octets)))
-             (parsed (and col-value (pg-parse col-value (car type-ids) ce))))
-        (push parsed tuples)))))
+      (let ((col-octets (pg-read-net-int connection 4)))
+        (cl-case col-octets
+          (4294967295
+           ;; this is "-1" (pg-read-net-int doesn't handle integer overflow), which indicates a
+           ;; NULL column
+           (push nil tuples))
+          (0
+           (push "" tuples))
+          (t
+           (let* ((col-value (pg-read-chars connection col-octets))
+                  (parsed (pg-parse col-value (car type-ids) ce)))
+             (push parsed tuples))))))))
 
 (defun pg-read-char (connection)
   (let ((process (pgcon-process connection))
