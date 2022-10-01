@@ -25,6 +25,3 @@ jobs:
 
       - name: Run connection tests over network
         run: make -C test test
-
-      - name: Run connection tests over local Unix socket
-        run: make -C test test-local
