@@ -34,7 +34,9 @@ images](https://hub.docker.com/_/postgres/), using Docker or Podman.
 
 Example invocation: 
 
-    sudo podman run -d --name pgsql -v /dev/log:/dev/log \
+    sudo podman run -d --name pgsql \
+       -v /dev/log:/dev/log \
+       -v /var/run/postgresql:/var/run/postgresql \
        --publish 5432:5432 \
        -e POSTGRES_DB=pgeltestdb \
        -e POSTGRES_USER=pgeltestuser \
@@ -45,11 +47,16 @@ then from Emacs
 
     ELISP> (pg-connect "pgeltestdb" "pgeltestuser" "pgeltest" "localhost" 5432)
 
+or to connect over a local Unix socket
+
+    ELISP> (pg-connect-local "/var/run/postgresql/.s.PGSQL.5432" "pgeltestdb" "pgeltestuser "pgeltest")
+
 Note that these Docker images don't include TLS support. If you want to run the Debian-based images
 (it won't work with the Alpine-based ones) with a self-signed certificate, you can use
 
     sudo podman run -d --name pgsql \
        -v /dev/log:/dev/log \
+       -v /var/run/postgresql:/var/run/postgresql \
        --publish 5432:5432 \
        -e POSTGRES_DB=pgeltestdb \
        -e POSTGRES_USER=pgeltestuser \
