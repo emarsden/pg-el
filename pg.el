@@ -1255,7 +1255,7 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
       (let* ((col-octets (pg-read-net-int connection 4))
              (col-value (when (> col-octets 0)
                           (pg-read-chars connection col-octets)))
-             (parsed (pg-parse col-value (car type-ids) ce)))
+             (parsed (and col-value (pg-parse col-value (car type-ids) ce))))
         (push parsed tuples)))))
 
 (defun pg-read-char (connection)
