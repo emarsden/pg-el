@@ -5,21 +5,31 @@ jobs:
   runner-job:
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        # Docker Hub image
+        image: postgres:12-alpine
+        env:
+          POSTGRES_DB: pgeltestdb
+          POSTGRES_USER: pgeltestuser
+          POSTGRES_PASSWORD: pgeltest
+        # Set health checks to wait until postgres has started
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          # Maps tcp port 5432 on service container to the host
+          - 5432:5432
+        volumes:
+          - /var/run/postgresql:/var/run/postgresql
+
     steps:
       - name: Install Emacs
         run: |
           sudo apt-get update
-          sudo apt-get install emacs nettle-bin
-
-      - name: Set up PostgreSQL user and database
-        uses: Daniel-Marynicz/postgresql-action@master
-        with:
-           postgres_image_tag: 12-alpine
-           # We use the superuser for tests, instead of the unprivileged app user,
-           # because our tests include creating a database
-           postgres_user: pgeltestuser
-           postgres_password: pgeltest
-           postgres_db: pgeltestdb
+          sudo apt-get install emacs
 
       - name: Check out repository code
         uses: actions/checkout@v3
