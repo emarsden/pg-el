@@ -524,6 +524,7 @@ Return a result structure which can be decoded using `pg-result'."
                    (_pid (pg-read-int connection 4))
                    (channel (pg-read-string connection pg-MAX_MESSAGE_LEN))
                    (payload (pg-read-string connection pg-MAX_MESSAGE_LEN)))
+               ;; FIXME decode channel and payload?
                (message "Asynchronous notify %s:%s" channel payload)))
 
             ;; Bind
@@ -1217,6 +1218,8 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
 
 ;; support routines ============================================================
 
+;; Called to handle a RowDescription message
+;;
 ;; Attribute information is as follows
 ;;    attribute-name (string)
 ;;    attribute-type as an oid from table pg_type
@@ -1224,7 +1227,8 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
 (defun pg-read-attributes (connection)
   (let* ((_msglen (pg-read-net-int connection 4))
          (attribute-count (pg-read-net-int connection 2))
-         (attributes '()))
+         (attributes (list))
+         (ce (pgcon-client-encoding connection)))
     (cl-do ((i attribute-count (- i 1)))
         ((zerop i) (nreverse attributes))
       (let ((type-name  (pg-read-string connection pg-MAX_MESSAGE_LEN))
@@ -1234,7 +1238,7 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
             (type-len   (pg-read-net-int connection 2))
             (_type-mod  (pg-read-net-int connection 4))
             (_format-code (pg-read-net-int connection 2)))
-        (push (list type-name type-oid type-len) attributes)))))
+        (push (list (pg-text-parser type-name ce) type-oid type-len) attributes)))))
 
 ;; a bitmap is a string, which we interpret as a sequence of bytes
 (defun pg-bitmap-ref (bitmap ref)
@@ -1296,10 +1300,10 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
 
 ;; read a null-terminated string
 (defun pg-read-string (connection maxbytes)
-  (cl-loop for i from 1 to maxbytes
-        for ch = (pg-read-char connection)
-        until (= ch ?\0)
-        concat (char-to-string ch)))
+  (cl-loop for i below maxbytes
+           for ch = (pg-read-char connection)
+           until (= ch ?\0)
+           concat (byte-to-string ch)))
 
 (cl-defstruct pgerror
   severity sqlstate message detail hint table column dtype)

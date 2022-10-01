@@ -185,8 +185,11 @@
    (let* ((res (pg-exec conn "SELECT 42 as z, 'bob' as bob"))
           (attr (pg-result res :attributes)))
      (should (string= "z" (caar attr)))
-     (should (string= "bob" (caadr attr))))))
-
+     (should (string= "bob" (caadr attr))))
+   (let* ((res (pg-exec conn "SELECT 32 as éléphant"))
+          (attr (pg-result res :attributes)))
+     (should (string= "éléphant" (caar attr)))
+     (should (eql 32 (car (pg-result res :tuple 0)))))))
 
 
 (defun pg-test-createdb ()

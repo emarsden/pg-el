@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.18] - 2022-10
+### Fixed
+- Fix bug in parsing of NULL column values in DataRow messages
+- Fix handling of encoding of attribute column names
+
+
 ## [0.17] - 2022-09-30
 ### Updated
 - Support for encrypted (TLS) connections with PostgreSQL
