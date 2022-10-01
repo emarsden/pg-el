@@ -71,7 +71,8 @@
       (should (equal (list 42) (row "SELECT 42")))
       (should (equal (list "hey" "Jude") (row "SELECT 'hey', 'Jude'")))
       (should (equal (list nil) (row "SELECT NULL")))
-      (should (equal (list 1 nil "all") (row "SELECT 1,NULL,'all'"))))))
+      (should (equal (list 1 nil "all") (row "SELECT 1,NULL,'all'")))
+      (should (string= "Z" (car (row "SELECT chr(90)")))))))
 
 (defun pg-test-insert ()
   (with-pgtest-connection conn
@@ -113,6 +114,8 @@
   (with-pgtest-connection conn
     (cl-flet ((scalar (sql) (car (pg-result (pg-exec conn sql) :tuple 0)))
               (approx= (x y) (< (/ (abs (- x y)) (max (abs x) (abs y))) 1e-5)))
+      (should (eql -1 (scalar "SELECT '-1'::int")))
+      (should (eql 42 (scalar "SELECT '42'::smallint")))
       (should (eql (scalar "SELECT floor(42.3)") 42))
       (should (eql (scalar "SELECT trunc(43.3)") 43))
       (should (eql (scalar "SELECT trunc(-42.3)") -42))
@@ -121,6 +124,14 @@
       (when (fboundp 'bignump)
         (should (eql (scalar "SELECT factorial(25)") 15511210043330985984000000)))
       (should (approx= (scalar "SELECT pi()") 3.1415626))
+      (should (approx= (scalar "SELECT -5.0") -5.0))
+      (should (approx= (scalar "SELECT 5e-30") 5e-30))
+      (should (approx= (scalar "SELECT 55.678::float4") 55.678))
+      (should (approx= (scalar "SELECT 55.678::float8") 55.678))
+      (should (approx= (scalar "SELECT 55.678::real") 55.678))
+      (should (approx= (scalar "SELECT 55.678::numeric") 55.678))
+      ;; TODO:  "SELECT 'NaN'::float8" is not being handled correctly, likewise "SELECT 'Infinity'::float8"
+      (should (string= (scalar "SELECT 42::decimal::text") "42"))
       (should (eql (scalar "SELECT char_length('foo')") 3))
       (should (string= (scalar "SELECT lower('FOO')") "foo"))
       (should (string= (scalar "SELECT lower('FÔÖÉ💥')") "fôöé💥"))
