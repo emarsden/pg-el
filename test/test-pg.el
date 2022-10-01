@@ -19,16 +19,14 @@
 ;; Connect to the database over an encrypted (TLS) connection
 (defmacro with-pgtest-connection-tls (conn &rest body)
   `(with-pg-connection ,conn ("pgeltestdb" "pgeltestuser" "pgeltest" "localhost" 5432 t)
-                       ,@body))
+        ,@body))
 
 (defun pg-test ()
   (with-pgtest-connection conn
    (message "Running pg.el tests against backend %s"
             (pg-backend-version conn))
-   (let ((databases (pg-databases conn)))
-     (if (member "pgeltest" databases)
-         (pg-exec conn "DROP DATABASE pgeltest"))
-     (pg-exec conn "CREATE DATABASE pgeltest"))
+   (message "Testing basic type parsing")
+   (pg-test-basic)
    (message "Testing insertions...")
    (pg-test-insert)
    (message "Testing date routines...")
@@ -37,31 +35,45 @@
    (pg-test-numeric)
    (message "Testing field extraction routines...")
    (pg-test-result)
+   (message "Testing database creation")
+   (pg-test-createdb)
+   (message "Testing error handling")
+   (pg-test-errors)
    ;; (message "Testing large-object routines...")
    ;; (pg-test-lo-read)
    ;; (pg-test-lo-import)
-   (pg-exec conn "DROP DATABASE pgeltest")
    (message "Tests passed")))
 
 (defun pg-test-tls ()
   (with-pgtest-connection-tls conn
     (message "Running pg.el tests over TLS against backend %s"
              (pg-backend-version conn))
-    (let ((databases (pg-databases conn)))
-      (if (member "pgeltest" databases)
-          (pg-exec conn "DROP DATABASE pgeltest"))
-      (pg-exec conn "CREATE DATABASE pgeltest"))
+    (message "Testing basic type parsing")
+    (pg-test-basic)
     (message "Testing insertions...")
     (pg-test-insert)
     (message "Testing date routines...")
     (pg-test-date)
+    (message "Testing numeric routines...")
+    (pg-test-numeric)
     (message "Testing field extraction routines...")
     (pg-test-result)
-    (pg-exec conn "DROP DATABASE pgeltest")
+    (message "Testing database creation")
+    (pg-test-createdb)
+    (message "Testing error handling")
+    (pg-test-errors)
     (message "Tests passed")))
 
+(defun pg-test-basic ()
+  (with-pgtest-connection conn
+    (cl-flet ((row (sql) (pg-result (pg-exec conn sql) :tuple 0)))
+      (should (equal (list t nil) (row "SELECT true, false")))
+      (should (equal (list 42) (row "SELECT 42")))
+      (should (equal (list "hey" "Jude") (row "SELECT 'hey', 'Jude'")))
+      (should (equal (list nil) (row "SELECT NULL")))
+      (should (equal (list 1 nil "all") (row "SELECT 1,NULL,'all'"))))))
 
-(ert-deftest pg-test-insert ()
+(defun pg-test-insert ()
   (with-pgtest-connection conn
    (let ((res (list))
          (count 100))
@@ -83,7 +95,7 @@
 ;; timestamp = (14189 17420)
 ;; abstime = (14189 17420)
 ;; time = 19:42:06
-(ert-deftest pg-test-date ()
+(defun pg-test-date ()
   (with-pgtest-connection conn
    (let (res)
      (pg-exec conn "CREATE TABLE date_test(a timestamp, b time)")
@@ -93,9 +105,11 @@
      (setq res (pg-result res :tuple 0))
      (message "timestamp = %s" (cl-first res))
      (message "time = %s" (cl-second res)))
-   (pg-exec conn "DROP TABLE date_test")))
+   (pg-exec conn "DROP TABLE date_test")
+   (let ((res (pg-exec conn "SELECT '2022-10-01'::date")))
+     (should (equal (encode-time 0 0 0 1 10 2022) (car (pg-result res :tuple 0)))))))
 
-(ert-deftest pg-test-numeric ()
+(defun pg-test-numeric ()
   (with-pgtest-connection conn
     (cl-flet ((scalar (sql) (car (pg-result (pg-exec conn sql) :tuple 0)))
               (approx= (x y) (< (/ (abs (- x y)) (max (abs x) (abs y))) 1e-5)))
@@ -126,6 +140,10 @@
 (defun pg-test-json ()
   nil)
 
+
+(defun pg-test-xmlbinary ()
+  nil)
+
 ;; Testing for the data access functions. Expected output is something
 ;; like
 ;;
@@ -139,7 +157,7 @@
 ;; second tuple of SELECT is (66 poiu)
 ;; status of DROP is DROP
 ;; ==============================================
-(ert-deftest pg-test-result ()
+(defun pg-test-result ()
   (with-pgtest-connection conn
    (let ((r1 (pg-exec conn "CREATE TABLE resulttest (a int, b VARCHAR(4))"))
          (r2 (pg-exec conn "INSERT INTO resulttest VALUES (3, 'zae')"))
@@ -157,7 +175,42 @@
      (message "second tuple of SELECT is %s" (pg-result r4 :tuple 1))
      (message "status of DROP is %s" (pg-result r5 :status))
      (message "==============================================")
-     (should (eql (length (pg-result r6 :tuples)) 10)))))
+     (should (eql (length (pg-result r6 :tuples)) 10)))
+   (let ((res (pg-exec conn "SELECT 1 UNION SELECT 2")))
+     (should (equal '((1) (2)) (pg-result res :tuples))))
+   (let ((res (pg-exec conn "SELECT 1,2,3,'soleil'")))
+     (should (equal '(1 2 3 "soleil") (pg-result res :tuple 0))))
+   (let ((res (pg-exec conn "SELECT 42 as z")))
+     (should (string= "z" (caar (pg-result res :attributes)))))
+   (let* ((res (pg-exec conn "SELECT 42 as z, 'bob' as bob"))
+          (attr (pg-result res :attributes)))
+     (should (string= "z" (caar attr)))
+     (should (string= "bob" (caadr attr))))))
+
+
+
+(defun pg-test-createdb ()
+  (with-pgtest-connection conn
+    (when (member "pgeltestextra" (pg-databases conn))
+       (pg-exec conn "DROP DATABASE pgeltestextra"))
+    (pg-exec conn "CREATE DATABASE pgeltestextra")
+    (pg-exec conn "REINDEX DATABASE pgeltestdb")
+    (let* ((r (pg-exec conn "SHOW ALL"))
+           (config (pg-result r :tuples)))
+      (cl-loop for row in config
+               when (string= "port" (car row))
+               do (message "Connected to PostgreSQL on port %s" (cadr row))))
+    (pg-exec conn "DROP DATABASE pgeltestextra")))
+
+
+(defun pg-test-errors ()
+  (with-pgtest-connection conn
+    (should-error (pg-exec conn "SELECT * FROM"))))
+
+;; FIXME: should be able to condition-case on a pg-error condition
+;; FIXME: should be able to handle two successive errors  (should-error (pg-exec conn "foobles"))))
+
+
 
 ;; test of large-object interface. Note the use of with-pg-transaction
 ;; to wrap the requests in a BEGIN..END transaction which is necessary
