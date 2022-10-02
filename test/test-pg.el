@@ -4,6 +4,7 @@
 ;;; Copyright: (C) 2022  Eric Marsden
 
 
+(require 'cl-lib)
 (require 'pg)
 (require 'ert)
 
@@ -51,6 +52,7 @@
    (pg-test-result)
    (message "Testing database creation")
    (pg-test-createdb)
+   (pg-test-parameter-change-handlers)
    (message "Testing error handling")
    (pg-test-errors)
    ;; (message "Testing large-object routines...")
@@ -74,6 +76,7 @@
     (pg-test-result)
     (message "Testing database creation")
     (pg-test-createdb)
+    (pg-test-parameter-change-handlers)
     (message "Testing error handling")
     (pg-test-errors)
     (message "Tests passed")))
@@ -95,6 +98,7 @@
     (pg-test-result)
     (message "Testing database creation")
     (pg-test-createdb)
+    (pg-test-parameter-change-handlers)
     (message "Testing error handling")
     (pg-test-errors)
     (message "Tests passed")))
@@ -154,10 +158,11 @@
       (should (eql (scalar "SELECT floor(42.3)") 42))
       (should (eql (scalar "SELECT trunc(43.3)") 43))
       (should (eql (scalar "SELECT trunc(-42.3)") -42))
-      (should (eql (scalar "SELECT log(100)") 2))
-      ;; bignums only supported from Emacs 27.2 onwards
-      (when (fboundp 'bignump)
-        (should (eql (scalar "SELECT factorial(25)") 15511210043330985984000000)))
+      (unless (cl-search "CockroachDB" (pg-backend-version conn))
+        (should (eql (scalar "SELECT log(100)") 2))
+        ;; bignums only supported from Emacs 27.2 onwards
+        (when (fboundp 'bignump)
+          (should (eql (scalar "SELECT factorial(25)") 15511210043330985984000000))))
       (should (approx= (scalar "SELECT pi()") 3.1415626))
       (should (approx= (scalar "SELECT -5.0") -5.0))
       (should (approx= (scalar "SELECT 5e-30") 5e-30))
@@ -175,7 +180,8 @@
       (should (string= (scalar "SELECT interval '1 day' + interval '3 days'") "4 days"))
       (should (eql (scalar "SELECT date '2001-10-01' - date '2001-09-28'") 3))
       ;; we are not parsing XML values
-      (should (string= (scalar "SELECT xmlforest('abc' AS foo, 123 AS bar)") "<foo>abc</foo><bar>123</bar>")))))
+      (unless (cl-search "CockroachDB" (pg-backend-version conn))
+        (should (string= (scalar "SELECT xmlforest('abc' AS foo, 123 AS bar)") "<foo>abc</foo><bar>123</bar>"))))))
 
 
 ;; TODO: implement tests for BYTEA type (https://www.postgresql.org/docs/15/functions-binarystring.html)
@@ -243,13 +249,33 @@
     (when (member "pgeltestextra" (pg-databases conn))
        (pg-exec conn "DROP DATABASE pgeltestextra"))
     (pg-exec conn "CREATE DATABASE pgeltestextra")
-    (pg-exec conn "REINDEX DATABASE pgeltestdb")
+    (unless (cl-search "CockroachDB" (pg-backend-version conn))
+      (pg-exec conn "REINDEX DATABASE pgeltestdb"))
     (let* ((r (pg-exec conn "SHOW ALL"))
            (config (pg-result r :tuples)))
       (cl-loop for row in config
                when (string= "port" (car row))
                do (message "Connected to PostgreSQL on port %s" (cadr row))))
     (pg-exec conn "DROP DATABASE pgeltestextra")))
+
+
+;; Test our support for handling ParameterStatus messages, via the pg-parameter-change-functions
+;; variable. When we change the session timezone, the backend should send us a ParameterStatus
+;; message with TimeZone=<new-value>.
+(defun pg-test-parameter-change-handlers ()
+  (message "Testing parameter-change-functions hook")
+  (with-pgtest-connection conn
+    (let ((handler-called nil))
+      (cl-flet ((tz-handler (con name value)
+                  (when (string= "TimeZone" name)
+                    (setq handler-called t))))
+        (cl-pushnew #'tz-handler pg-parameter-change-functions)
+        ;; The backend will only send us a ParameterStatus message when the timezone changes, so
+        ;; we make two changes to make sure at least one of them generates a ParameterStatus message.
+        (pg-exec conn "SET SESSION TIME ZONE 'Europe/Paris'")
+        (pg-exec conn "SET SESSION TIME ZONE 'America/Chicago'")
+        (pg-exec conn "SELECT 42")
+        (should (eql t handler-called))))))
 
 
 (defun pg-test-errors ()

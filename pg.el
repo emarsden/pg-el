@@ -205,6 +205,12 @@
 ;;     operation is also syntactic sugar.
 ;;
 ;;
+;; Variable `pg-parameter-change-functions' is a list of handlers to be called
+;; when the backend informs us of a parameter change, for example a change to
+;; the session time zone. Each handler is called with three arguments: the
+;; connection to the backend, the parameter name and the parameter value.
+;;
+;;
 ;; Boolean variable `pg-disable-type-coercion' can be set to non-nil (before
 ;; initiating a connection) to disable the library's type coercion facility.
 ;; Default is t.
@@ -259,6 +265,12 @@ database, in order to build a table mapping type names to OIDs. This
 option is provided mainly in case you wish to avoid the overhead of
 this initial query. The overhead is only incurred once per Emacs
 session (not per connection to the backend).")
+
+(defvar pg-parameter-change-functions (list 'pg-handle-parameter-client-encoding)
+  "List of handlers called when the backend informs us of a parameter change.
+Each handler is called with three arguments: the connection to
+the backend, the parameter name and the parameter value.")
+
 
 (defconst pg-PG_PROTOCOL_MAJOR 3)
 (defconst pg-PG_PROTOCOL_MINOR 0)
@@ -399,7 +411,7 @@ tag called pg-finished."
            (cond ((eq ?E c)
                   ;; an ErrorResponse message
                   (pg-handle-error-response connection "after StartupMessage"))
-                 
+
                  ;; NegotiateProtocolVersion
                  ((eq ?v c)
                   (let ((_msglen (pg-read-net-int connection 4))
@@ -464,16 +476,12 @@ tag called pg-finished."
                   (let* ((msglen (pg-read-net-int connection 4))
                          (msg (pg-read-chars connection (- msglen 4)))
                          (items (split-string msg (string 0))))
-                    (when (string= "client_encoding" (cl-first items))
-                      (let ((ce (pg-normalize-encoding-name (cl-second items))))
-                        (if ce
-                            (setf (pgcon-client-encoding connection) ce)
-                          (error "Don't know the Emacs equivalent for client encoding %s" (cl-second items)))))
-                    ;; We currently ignore the other ParameterStatus items (application_name,
-                    ;; DateStyle, in_hot_standby, integer_datetimes, etc.)
-                                        ; (when (> (length (cl-first items)) 0)
-                                        ;   (message "Got ParameterStatus %s=%s" (cl-first items) (cl-second items)))
-                    ))
+                    ;; ParameterStatus items sent by the backend include
+                    ;; application_name, DateStyle, in_hot_standby,
+                    ;; integer_datetimes
+                    (when (> (length (cl-first items)) 0)
+                      (dolist (handler pg-parameter-change-functions)
+                        (funcall handler connection (cl-first items) (cl-second items))))))
 
                  (t
                   (error "Problem connecting: expected an authentication response, got %s" c)))))
@@ -536,6 +544,17 @@ opaque type). PASSWORD defaults to an empty string."
       (set-process-coding-system process 'binary 'binary)
       (set-buffer-multibyte nil))
     (pg-do-startup connection dbname user password)))
+
+
+;; Called from pg-parameter-change-functions when we receive a ParameterStatus
+;; message of type name=value from the backend. If the status message concerns
+;; the client encoding, update the value recorded in the connection.
+(defun pg-handle-parameter-client-encoding (connection name value)
+  (when (string= "client_encoding" name)
+    (let ((ce (pg-normalize-encoding-name value)))
+      (if ce
+          (setf (pgcon-client-encoding connection) ce)
+        (error "Don't know the Emacs equivalent for client encoding %s" value)))))
 
 
 (cl-defun pg-exec (connection &rest args)
@@ -632,18 +651,16 @@ Return a result structure which can be decoded using `pg-result'."
              (let ((portal (pg-read-string connection pg-MAX_MESSAGE_LEN)))
                (setf (pgresult-portal result) portal)))
 
-            ;; ParameterStatus
+            ;; ParameterStatus sent in response to a user update over the connection
             (?S
              (let* ((msglen (pg-read-net-int connection 4))
                     (msg (pg-read-chars connection (- msglen 4)))
                     (items (split-string msg (string 0))))
-               (when (string= "client_encoding" (cl-first items))
-                 (let ((ce (pg-normalize-encoding-name (cl-second items))))
-                   (if ce
-                       (setf (pgcon-client-encoding connection) ce)
-                     (error "Don't know the Emacs equivalent for client encoding %s" (cl-second items)))))
+               ;; ParameterStatus items sent by the backend include application_name,
+               ;; DateStyle, TimeZone, in_hot_standby, integer_datetimes
                (when (> (length (cl-first items)) 0)
-                 (message "Got ParameterStatus %s=%s" (cl-first items) (cl-second items)))))
+                 (dolist (handler pg-parameter-change-functions)
+                   (funcall handler connection (cl-first items) (cl-second items))))))
 
             ;; RowDescription
             (?T
