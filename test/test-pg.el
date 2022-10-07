@@ -161,7 +161,7 @@
       (should (eql -128 (scalar "SELECT -128::int4")))
       (should (eql 66 (scalar "SELECT 66::int8")))
       (should (eql 42 (scalar "SELECT '42'::smallint")))
-      (should (eql 66 (scalar "SELECT 66::money")))
+      ;; (should (eql 66 (scalar "SELECT 66::money")))
       (should (eql (scalar "SELECT floor(42.3)") 42))
       (should (eql (scalar "SELECT trunc(43.3)") 43))
       (should (eql (scalar "SELECT trunc(-42.3)") -42))

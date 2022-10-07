@@ -789,7 +789,7 @@ PostgreSQL and Emacs. CON should no longer be used."
     ("oid"          . ,'pg-number-parser)
     ("float4"       . ,'pg-number-parser)
     ("float8"       . ,'pg-number-parser)
-    ("money"        . ,'pg-number-parser)
+    ("money"        . ,'pg-text-parser)
     ("date"         . ,'pg-date-parser)
     ("timestamp"    . ,'pg-isodate-parser)
     ("timestamptz"  . ,'pg-isodate-parser)
