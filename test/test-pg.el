@@ -111,7 +111,8 @@
       (should (equal (list "hey" "Jude") (row "SELECT 'hey', 'Jude'")))
       (should (equal (list nil) (row "SELECT NULL")))
       (should (equal (list 1 nil "all") (row "SELECT 1,NULL,'all'")))
-      (should (string= "Z" (car (row "SELECT chr(90)")))))))
+      (should (string= "Z" (car (row "SELECT chr(90)"))))
+      (should (string= "gday" (car (row "SELECT 'gday'::varchar(20)")))))))
 
 (defun pg-test-insert ()
   (with-pgtest-connection conn
@@ -137,24 +138,30 @@
 ;; time = 19:42:06
 (defun pg-test-date ()
   (with-pgtest-connection conn
-   (let (res)
-     (pg-exec conn "CREATE TABLE date_test(a timestamp, b time)")
-     (pg-exec conn "INSERT INTO date_test VALUES "
-              "(current_timestamp, 'now')")
-     (setq res (pg-exec conn "SELECT * FROM date_test"))
-     (setq res (pg-result res :tuple 0))
-     (message "timestamp = %s" (cl-first res))
-     (message "time = %s" (cl-second res)))
-   (pg-exec conn "DROP TABLE date_test")
-   (let ((res (pg-exec conn "SELECT '2022-10-01'::date")))
-     (should (equal (encode-time 0 0 0 1 10 2022) (car (pg-result res :tuple 0)))))))
+    (cl-flet ((scalar (sql) (car (pg-result (pg-exec conn sql) :tuple 0))))
+      (let (res)
+        (pg-exec conn "CREATE TABLE date_test(a timestamp, b time)")
+        (pg-exec conn "INSERT INTO date_test VALUES "
+                 "(current_timestamp, 'now')")
+        (setq res (pg-exec conn "SELECT * FROM date_test"))
+        (setq res (pg-result res :tuple 0))
+        (message "timestamp = %s" (cl-first res))
+        (message "time = %s" (cl-second res)))
+      (pg-exec conn "DROP TABLE date_test")
+      (should (equal (scalar "SELECT '2022-10-01'::date") (encode-time 0 0 0 1 10 2022)))
+      (should (equal (scalar "SELECT 'PT42S'::interval") "00:00:42"))
+      (should (equal (scalar "SELECT '2001-02-03 04:05:06'::timestamp") (encode-time 6 5 4 3 2 2001 nil t))))))
 
 (defun pg-test-numeric ()
   (with-pgtest-connection conn
     (cl-flet ((scalar (sql) (car (pg-result (pg-exec conn sql) :tuple 0)))
               (approx= (x y) (< (/ (abs (- x y)) (max (abs x) (abs y))) 1e-5)))
       (should (eql -1 (scalar "SELECT '-1'::int")))
+      (should (eql 128 (scalar "SELECT 128::int2")))
+      (should (eql -128 (scalar "SELECT -128::int4")))
+      (should (eql 66 (scalar "SELECT 66::int8")))
       (should (eql 42 (scalar "SELECT '42'::smallint")))
+      (should (eql 66 (scalar "SELECT 66::money")))
       (should (eql (scalar "SELECT floor(42.3)") 42))
       (should (eql (scalar "SELECT trunc(43.3)") 43))
       (should (eql (scalar "SELECT trunc(-42.3)") -42))

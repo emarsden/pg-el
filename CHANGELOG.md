@@ -3,6 +3,9 @@
 ## [0.18] - 2022-10
 ### New
 - Add support for connecting to PostgreSQL over a local Unix socket
+- Add support for handling ParameterStatus messages sent by the backend (see variable
+  `pg-parameter-change-functions`)
+
 
 ### Fixed
 - Fix bug in parsing of NULL column values in DataRow messages
