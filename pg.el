@@ -272,6 +272,10 @@ Each handler is called with three arguments: the connection to
 the backend, the parameter name and the parameter value.")
 
 
+(define-error 'pg-error "PostgreSQL error" 'error)
+(define-error 'pg-protocol-error "PostgreSQL protocol error" 'pg-error)
+
+
 (defconst pg-PG_PROTOCOL_MAJOR 3)
 (defconst pg-PG_PROTOCOL_MINOR 0)
 
@@ -421,7 +425,8 @@ tag called pg-finished."
                     ;; read the list of protocol options not supported by the server
                     (dotimes (_i unrec-options)
                       (push (pg-read-string connection 4096) unrec))
-                    (error "Server only supports protocol minor version <= %s" protocol-supported)))
+                    (signal 'pg-protocol-error
+                            (list (format "Server only supports protocol minor version <= %s" protocol-supported)))))
 
                  ;; BackendKeyData
                  ((eq ?K c)
@@ -463,13 +468,14 @@ tag called pg-finished."
                      ((= areq 5)
                       (pg-do-md5-authentication connection user password))
                      ((= areq pg-AUTH_REQ_CRYPT)
-                      (error "Crypt authentication not supported"))
+                      (signal 'pg-protocol-error '("Crypt authentication not supported")))
                      ((= areq pg-AUTH_REQ_KRB4)
-                      (error "Kerberos4 authentication not supported"))
+                      (signal 'pg-protocol-error '("Kerberos4 authentication not supported")))
                      ((= areq pg-AUTH_REQ_KRB5)
-                      (error "Kerberos5 authentication not supported"))
+                      (signal 'pg-protocol-error '("Kerberos5 authentication not supported")))
                      (t
-                      (error "Can't do that type of authentication: %s" areq)))))
+                      (signal 'pg-protocol-error
+                              (list (format "Can't do that type of authentication: %s" areq)))))))
 
                  ;; ParameterStatus
                  ((eq ?S c)
@@ -484,7 +490,8 @@ tag called pg-finished."
                         (funcall handler connection (cl-first items) (cl-second items))))))
 
                  (t
-                  (error "Problem connecting: expected an authentication response, got %s" c)))))
+                  (signal 'pg-protocol-error
+                          (list (format "Problem connecting: expected an authentication response, got %s" c)))))))
 
 (cl-defun pg-connect (dbname user
                              &optional
@@ -514,13 +521,13 @@ attempt to establish an encrypted connection to PostgreSQL."
       (require 'gnutls)
       (require 'network-stream)
       (unless (gnutls-available-p)
-        (error "Connecting over TLS requires GnuTLS support in Emacs"))
+        (signal 'pg-error '("Connecting over TLS requires GnuTLS support in Emacs")))
       ;; send the SSLRequest message
       (pg-send-int connection 8 4)
       (pg-send-int connection 80877103 4)
       (pg-flush connection)
       (unless (eql ?S (pg-read-char connection))
-        (error "Couldn't establish TLS connection to PostgreSQL"))
+        (signal 'pg-protocol-error (list "Couldn't establish TLS connection to PostgreSQL")))
       (let ((cert (network-stream-certificate host port nil)))
         (condition-case err
             ;; now do STARTTLS-like connection upgrade
@@ -528,7 +535,8 @@ attempt to establish an encrypted connection to PostgreSQL."
                               :hostname host
                               :keylist (and cert (list cert)))
           (gnutls-error
-           (error "TLS error connecting to PostgreSQL: %s" (error-message-string err))))))
+           (signal 'pg-protocol-error
+                   (list (format "TLS error connecting to PostgreSQL: %s" (error-message-string err))))))))
     ;; the remainder of the startup sequence is common to TCP and Unix socket connections
     (pg-do-startup connection dbname user password)))
 
@@ -554,8 +562,8 @@ opaque type). PASSWORD defaults to an empty string."
     (let ((ce (pg-normalize-encoding-name value)))
       (if ce
           (setf (pgcon-client-encoding connection) ce)
-        (error "Don't know the Emacs equivalent for client encoding %s" value)))))
-
+        (signal 'pg-error
+                (list (format "Don't know the Emacs equivalent for client encoding %s" value)))))))
 
 (cl-defun pg-exec (connection &rest args)
   "Execute the SQL command given by concatenating ARGS on database CONNECTION.
@@ -568,13 +576,14 @@ Return a result structure which can be decoded using `pg-result'."
          (encoded (if ce (encode-coding-string sql ce t) sql)))
     ;; (message "pg-exec: %s" sql)
     (when (> (length encoded) pg-MAX_MESSAGE_LEN)
-      (error "SQL statement too long: %s" sql))
+      (signal 'pg-error
+              (list (format "SQL statement too long: %s" sql))))
     (pg-send-char connection ?Q)
     (pg-send-int connection (+ 4 (length encoded) 1) 4)
     (pg-send-string connection encoded)
     (pg-flush connection)
     (cl-loop for c = (pg-read-char connection) do
-             ;; (message "pg-exec message-type = %c" c)
+       ;; (message "pg-exec message-type = %c" c)
        (cl-case c
             ;; NoData
             (?n
@@ -595,7 +604,7 @@ Return a result structure which can be decoded using `pg-result'."
             (?B
              (setf (pgcon-binaryp connection) t)
              (unless attributes
-               (error "Tuple received before metadata"))
+               (signal 'pg-protocol-error (list "Tuple received before metadata")))
              (push (pg-read-tuple connection attributes) tuples))
 
             ;; CommandComplete -- one SQL command has completed
@@ -603,15 +612,14 @@ Return a result structure which can be decoded using `pg-result'."
              (let* ((msglen (pg-read-net-int connection 4))
                     (msg (pg-read-chars connection (- msglen 5)))
                     (_null (pg-read-char connection)))
-               (setf (pgresult-status result) msg)
+               (setf (pgresult-status result) msg)))
                ;; now wait for the ReadyForQuery message
-               nil))
 
             ;; DataRow
             (?D
              (setf (pgcon-binaryp connection) nil)
              (unless attributes
-               (error "Tuple received before metadata"))
+               (signal 'pg-protocol-error (list "Tuple received before metadata")))
              (let ((_msglen (pg-read-net-int connection 4)))
                (push (pg-read-tuple connection attributes) tuples)))
 
@@ -665,7 +673,7 @@ Return a result structure which can be decoded using `pg-result'."
             ;; RowDescription
             (?T
              (when attributes
-               (error "Cannot handle multiple result group"))
+               (signal 'pg-protocol-error (list "Cannot handle multiple result group")))
              (setq attributes (pg-read-attributes connection)))
 
             ;; CopyFail
@@ -694,7 +702,8 @@ Return a result structure which can be decoded using `pg-result'."
                (setf (pgresult-attributes result) attributes)
                (cl-return-from pg-exec result)))
 
-            (t (error "Unknown response type from backend: %s" c))))))
+            (t (signal 'pg-protocol-error
+                       (list (format "Unknown response type from backend: %s" c))))))))
 
 (defun pg-result (result what &rest arg)
   "Extract WHAT component of RESULT.
@@ -713,16 +722,19 @@ and the keyword WHAT should be one of
         ((eq :tuples what)     (pgresult-tuples result))
         ((eq :tuple what)
          (let ((which (if (integerp (car arg)) (car arg)
-                        (error "%s is not an integer" arg)))
+                        (signal 'pg-error
+                                (list (format "%s is not an integer" arg)))))
                (tuples (pgresult-tuples result)))
            (nth which tuples)))
         ((eq :oid what)
          (let ((status (pgresult-status result)))
            (if (string= "INSERT" (substring status 0 6))
                (string-to-number (substring status 7 (cl-position ? status :start 7)))
-               (error "Only INSERT commands generate an oid: %s" status))))
+               (signal 'pg-error
+                       (list (format "Only INSERT commands generate an oid: %s" status))))))
         (t
-         (error "Unknown result request %s" what))))
+         (signal 'pg-error
+                 (list (format "Unknown result request %s" what))))))
 
 (defun pg-disconnect (con)
   "Close the database connection CON.
@@ -811,7 +823,8 @@ PostgreSQL and Emacs. CON should no longer be used."
 (defun pg-bool-parser (str _encoding)
   (cond ((string= "t" str) t)
         ((string= "f" str) nil)
-        (t (error "Badly formed boolean from backend: %s" str))))
+        (t (signal 'pg-protocol-error
+                   (list (format "Badly formed boolean from backend: %s" str))))))
 
 ;; format for ISO dates is "1999-10-24"
 (defun pg-date-parser (str _encoding)
@@ -835,7 +848,8 @@ PostgreSQL and Emacs. CON should no longer be used."
             (seconds (round (string-to-number (match-string 6 str))))
             (tz      (string-to-number (or (match-string 7 str) "0"))))
         (encode-time seconds minutes hours day month year (* 3600 tz)))
-      (error "Badly formed ISO timestamp from backend: %s" str)))
+      (signal 'pg-protocol-error
+              (list (format "Badly formed ISO timestamp from backend: %s" str)))))
 
 
 (defun pg-initialize-parsers (connection)
@@ -997,7 +1011,8 @@ Authenticate as USER with PASSWORD."
                     (type (pg-read-net-int con 4))
                     (server-first-msg (pg-read-chars con (- len 8))))
                (unless (eql type 11)
-                 (error "Unexpected AuthenticationSASLContinue type %d" type))
+                 (signal 'pg-protocol-error
+                         (list (format "Unexpected AuthenticationSASLContinue type %d" type))))
                (let* ((components (split-string server-first-msg ","))
                       (r= (cl-find "r=" components :key (lambda (s) (substring s 0 2)) :test #'string=))
                       (r (substring r= 2))
@@ -1019,9 +1034,11 @@ Authenticate as USER with PASSWORD."
                       (server-sig (gnutls-hash-mac 'SHA256 server-key auth-message))
                       (client-final-msg (concat client-final-bare ",p=" (base64-encode-string client-proof t))))
                  (when (zerop iterations)
-                   (error "SCRAM-SHA-256: server supplied invalid iteration count %s" i=))
+                   (signal 'pg-protocol-error
+                           (list (format "SCRAM-SHA-256: server supplied invalid iteration count %s" i=))))
                  (unless (string= client-nonce (substring r 0 (length client-nonce)))
-                   (error "SASL response doesn't include correct client nonce"))
+                   (signal 'pg-protocol-error
+                           (list "SASL response doesn't include correct client nonce")))
                  ;; we send a SASLResponse message with SCRAM client-final-message as content
                  (pg-send-char con ?p)
                  (pg-send-int con (+ 4 (length client-final-msg)) 4)
@@ -1038,21 +1055,25 @@ Authenticate as USER with PASSWORD."
                                  (type (pg-read-net-int con 4))
                                  (server-final-msg (pg-read-chars con (- len 8))))
                             (unless (eql type 12)
-                              (error "Expecting AuthenticationSASLFinal, got type %d" type))
+                              (signal 'pg-protocol-error
+                                      (list (format "Expecting AuthenticationSASLFinal, got type %d" type))))
                             (when (string= "e=" (substring server-final-msg 0 2))
-                              (error "PostgreSQL server error during SASL authentication: %s"
-                                     (substring server-final-msg 2)))
+                              (signal 'pg-protocol-error
+                                      (list (format "PostgreSQL server error during SASL authentication: %s"
+                                                    (substring server-final-msg 2)))))
                             (unless (string= "v=" (substring server-final-msg 0 2))
-                              (error "Unable to verify PostgreSQL server during SASL auth"))
+                              (signal 'pg-protocol-error '("Unable to verify PostgreSQL server during SASL auth")))
                             (unless (string= (substring server-final-msg 2)
                                              (base64-encode-string server-sig t))
-                              (error "SASL server validation failure: v=%s / %s"
-                                       (substring server-final-msg 2)
-                                       (base64-encode-string server-sig t)))
+                              (signal 'pg-protocol-error
+                                      (list (format "SASL server validation failure: v=%s / %s"
+                                                    (substring server-final-msg 2)
+                                                    (base64-encode-string server-sig t)))))
                             ;; should be followed immediately by an AuthenticationOK message
                             )))))))
             (t
-             (error "Unexpected response to SASLInitialResponse message: %s" c))))))
+             (signal 'pg-protocol-error
+                     (list (format "Unexpected response to SASLInitialResponse message: %s" c))))))))
 
 (defun pg-do-sasl-authentication (con user password)
   "Attempt SASL authentication with PostgreSQL database over connection CON.
@@ -1064,7 +1085,8 @@ Authenticate as USER with PASSWORD."
              do (push mech mechanisms))
     (if (member "SCRAM-SHA-256" mechanisms)
         (pg-do-scram-sha256-authentication con user password)
-      (error "Can't handle any of SASL mechanisms %s" mechanisms))))
+      (signal 'pg-protocol-error
+              (list (format "Can't handle any of SASL mechanisms %s" mechanisms))))))
 
 
 
@@ -1112,7 +1134,8 @@ Authenticate as USER with PASSWORD."
     (pg-lo-init con))
   (let ((fnid (cond ((integerp fn) fn)
                     ((not (stringp fn))
-                     (error "Expecting a string or an integer: %s" fn))
+                     (signal 'pg-protocol-error
+                             (list (format "Expecting a string or an integer: %s" fn))))
                     ((assoc fn pg-lo-functions) ; blech
                      (cdr (assoc fn pg-lo-functions)))
                     (t
@@ -1156,7 +1179,10 @@ Authenticate as USER with PASSWORD."
              (unix-sync))
 
             ;; ReadyForQuery
-            (?Z t)
+            (?Z
+             ;; message length then status, discarded
+             (pg-read-net-int con 4)
+             (pg-read-char con))
 
             ;; end of FunctionResult
             (?0 (cl-return result))
@@ -1314,7 +1340,7 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
          (tuples (list))
          (ce (pgcon-client-encoding connection)))
     (unless (eql col-count num-attributes)
-      (error "Unexpected value for attribute count sent by backend"))
+      (signal 'pg-protocol-error '("Unexpected value for attribute count sent by backend")))
     (cl-do ((i 0 (+ i 1))
             (type-ids (mapcar #'cl-second attributes) (cdr type-ids)))
         ((= i num-attributes) (nreverse tuples))
@@ -1428,11 +1454,19 @@ presented to the user."
     (setf extra (butlast extra))
     (when extra
       (setf extra (append (list " (") extra (list ")"))))
-    (error "PostgreSQL %s%s: %s%s"
-           (pgerror-severity e)
-           (or (concat " " context) "")
-           (pgerror-message e)
-           (apply #'concat extra))))
+    ;; now read the ReadyForQuery message
+    (let ((c (pg-read-char con)))
+      (unless (eql c ?Z)
+        (signal 'pg-protocol-error (format "Unexpected message type after ErrorMsg: %s" c))))
+    ;; message length then status, discarded
+    (pg-read-net-int con 4)
+    (pg-read-char con)
+    (signal 'pg-error
+            (list (format "%s%s: %s%s"
+                          (pgerror-severity e)
+                          (or (concat " " context) "")
+                          (pgerror-message e)
+                          (apply #'concat extra))))))
 
 ;; higher order bits first
 (defun pg-send-int (connection num bytes)

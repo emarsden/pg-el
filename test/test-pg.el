@@ -284,15 +284,18 @@
         (pg-exec conn "SELECT 42")
         (should (eql t handler-called))))))
 
-
+;; Check that we raise errors when expected, that we resync with the backend after an error so can
+;; handle successive errors, and that we can handle errors with CONDITION-CASE.
 (defun pg-test-errors ()
   (with-pgtest-connection conn
-    (should-error (pg-exec conn "SELECT * FROM"))))
-
-;; FIXME: should be able to condition-case on a pg-error condition
-;; FIXME: should be able to handle two successive errors  (should-error (pg-exec conn "foobles"))))
-
-
+    (cl-flet ((scalar (sql) (car (pg-result (pg-exec conn sql) :tuple 0))))
+      (should-error (pg-exec conn "SELECT * FROM"))
+      (should (eql 42 (scalar "SELECT 42")))
+      (should-error (pg-exec conn "SELECT 42#"))
+      (should (eql 9 (scalar "SELECT 4+5")))
+      (should (eql 2 (condition-case nil
+                         (pg-exec conn "SELECT ###")
+                       (pg-error 2)))))))
 
 ;; test of large-object interface. Note the use of with-pg-transaction
 ;; to wrap the requests in a BEGIN..END transaction which is necessary

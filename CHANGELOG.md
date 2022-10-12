@@ -5,11 +5,14 @@
 - Add support for connecting to PostgreSQL over a local Unix socket
 - Add support for handling ParameterStatus messages sent by the backend (see variable
   `pg-parameter-change-functions`)
+- New pg-error and pg-protocol-error error types. All errors raised by the library will be a
+  subclass of pg-error.
 
 
 ### Fixed
 - Fix bug in parsing of NULL column values in DataRow messages
 - Fix handling of encoding of attribute column names
+- Fix handling of PostgreSQL error messages (correctly resync with the backend)
 
 
 ## [0.17] - 2022-09-30
