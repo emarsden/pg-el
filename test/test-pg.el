@@ -32,7 +32,7 @@
          (user (or (getenv "PGEL_USER") "pgeltestuser"))
          (password (or (getenv "PGEL_PASSWORD") "pgeltest"))
          (port (or (getenv "PGEL_PORT") 5432))
-         (path (or (getenv "PGEL_PATH") (format "/var/run/postgresql/.s.PGSQL.%d" port))))
+         (path (or (getenv "PGEL_PATH") (format "/var/run/postgresql/.s.PGSQL.%s" port))))
     `(with-pg-connection-local ,conn (,path ,db ,user ,password)
         ,@body)))
 
@@ -55,6 +55,7 @@
    (pg-test-parameter-change-handlers)
    (message "Testing error handling")
    (pg-test-errors)
+   (pg-test-notice)
    ;; (message "Testing large-object routines...")
    ;; (pg-test-lo-read)
    ;; (pg-test-lo-import)
@@ -79,6 +80,7 @@
     (pg-test-parameter-change-handlers)
     (message "Testing error handling")
     (pg-test-errors)
+    (pg-test-notice)
     (message "Tests passed")))
 
 ;; Run tests over local Unix socket connection to backend
@@ -101,6 +103,7 @@
     (pg-test-parameter-change-handlers)
     (message "Testing error handling")
     (pg-test-errors)
+    (pg-test-notice)
     (message "Tests passed")))
 
 (defun pg-test-basic ()
@@ -111,19 +114,23 @@
       (should (equal (list "hey" "Jude") (row "SELECT 'hey', 'Jude'")))
       (should (equal (list nil) (row "SELECT NULL")))
       (should (equal (list 1 nil "all") (row "SELECT 1,NULL,'all'")))
-      (should (string= "Z" (car (row "SELECT chr(90)"))))
+      ;; QuestDB doesn't clearly identify itself in its version string, and doesn't implement CHR()
+      (unless (cl-search "Visual C++ build 1914" (pg-backend-version conn))
+        (should (string= "Z" (car (row "SELECT chr(90)")))))
       (should (string= "gday" (car (row "SELECT 'gday'::varchar(20)")))))))
 
 (defun pg-test-insert ()
   (with-pgtest-connection conn
    (let ((res (list))
          (count 100))
+     (when (member "count_test" (pg-tables conn))
+       (pg-exec conn "DROP TABLE count_test"))
      (pg-exec conn "CREATE TABLE count_test(key int, val int)")
      (cl-loop for i from 1 to count
            for sql = (format "INSERT INTO count_test VALUES(%s, %s)"
                              i (* i i))
            do (pg-exec conn sql))
-     (setq res (pg-exec conn "SELECT count(val) FROM count_test"))
+     (setq res (pg-exec conn "SELECT count(*) FROM count_test"))
      (should (= count (cl-first (pg-result res :tuple 0))))
      (setq res (pg-exec conn "SELECT sum(key) FROM count_test"))
      (should (= (cl-first (pg-result res :tuple 0))
@@ -296,6 +303,12 @@
       (should (eql 2 (condition-case nil
                          (pg-exec conn "SELECT ###")
                        (pg-error 2)))))))
+
+(defun pg-test-notice ()
+  (with-pgtest-connection conn
+     ;; this will generate a NOTICE
+     (pg-exec conn "DROP TABLE IF EXISTS deity")))
+
 
 ;; test of large-object interface. Note the use of with-pg-transaction
 ;; to wrap the requests in a BEGIN..END transaction which is necessary
