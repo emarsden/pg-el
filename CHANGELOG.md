@@ -5,6 +5,8 @@
 - Add support for connecting to PostgreSQL over a local Unix socket
 - Add support for handling ParameterStatus messages sent by the backend (see variable
   `pg-parameter-change-functions`)
+- Add support for handling NOTICE messages sent by the backend (see variable
+  `pg-handle-notice-functions`)
 - New pg-error and pg-protocol-error error types. All errors raised by the library will be a
   subclass of pg-error.
 

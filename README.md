@@ -21,7 +21,7 @@ Including support for:
 
 - Connections over TCP or (on Unix machines) a local Unix socket
 
-The code has been tested with PostgreSQL versions 15rc1, 13.8, 11.17, and 10.22 on Linux. It is
+The code has been tested with PostgreSQL versions 15rc2, 13.8, 11.17, and 10.22 on Linux. It is
 also tested via GitHub actions on MacOS and Windows, using the PostgreSQL version which is
 pre-installed in the virtual images (currently 14.5). This library also works against other
 databases that implement the PostgreSQL wire protocol:
@@ -239,14 +239,15 @@ three arguments: the connection to the backend, the parameter name and the param
 initially set to a function that looks out for `client_encoding` messages and updates the value
 recorded in the connection.
 
+Variable `pg-handle-notice-functions` is a list of handlers to be called when the backend sends us a
+`NOTICE` message. Each handler is called with one argument, the notice, as a pgerror struct. 
+
 
 Boolean variable `pg-disable-type-coercion` can be set to non-nil (before initiating a connection)
 to disable the library's type coercion facility. Default is `t`.
 
 
-Please note that your PostgreSQL backend has to be started with the `-i` option in order to accept
-TCP/IP connections (this is not the default). For more information about PostgreSQL see
-<https://www.PostgreSQL.org/>.
+For more information about PostgreSQL see <https://www.PostgreSQL.org/>.
 
 
 **Security note**: setting up PostgreSQL to accept TCP/IP connections has security implications;
