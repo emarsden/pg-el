@@ -77,8 +77,13 @@ wire protocol.
        -v /dev/log:/dev/log \
        --publish 26257:26257 \
        -d cockroachdb/cockroach start-single-node --insecure
- 
+
     ELISP> (pg-connect "postgres" "root" "" "localhost" 26257)
+    
+    PGEL_DATABASE=postgres PGEL_USER=root PGEL_PASSWORD="" PGEL_PORT=26257 make test
+
+    sudo podman stop cockroachdb
+    sudo podman rm cockroachdb
 
 Note that CockroachDB does not have large object support. 
 
@@ -91,19 +96,23 @@ implements the PostgreSQL wire protocol.
 
     sudo podman run --name cratedb \
        --publish 5432:5432 \
-       docker.io/library/crate:latest -Cdiscovery.type=single-node
+       -d docker.io/library/crate:latest -Cdiscovery.type=single-node
     # psql -h localhost -p 5432 -U crate
     crate=> CREATE USER pgeltestuser WITH (password = 'pgeltest');
     CREATE 1
     crate=> GRANT ALL PRIVILEGES TO pgeltestuser;
     GRANT 4
+
     ELISP> (pg-connect "postgres" "pgeltestuser" "pgeltest" "localhost" 5432)
 
+    PGEL_DATABASE=postgres PGEL_USER=pgeltestuser PGEL_PASSWORD="pgeltest" PGEL_PORT=5432 make test
 
-We have a bug in our interaction with this database (as of CrateDB version 5.0.1) in that the result
-of a `pg-exec` call returns the result from the previous command executed, rather than the command
-just sent.
+    sudo podman stop cratedb
+    sudo podman rm cratedb
 
+
+Note that CrateDB doesn't implement COPY or large object support, nor PostgreSQL's full-text search
+operators (it has specific features for text search). 
 
 
 ## Testing the QuestDB time series database
@@ -111,9 +120,20 @@ just sent.
 [QuestDB](https://questdb.io/) is an open source relational column-oriented database designed for
 time series and event data. It implements the PostgreSQL wire protocol. 
 
-    sudo podman run -p 8812:8812 questdb/questdb
+    sudo podman run --name questdb \
+       --publish 8812:8812 \
+       -d questdb/questdb
 
     ELISP> (pg-connect "ignored" "admin" "quest" "localhost" 8812)
+
+    PGEL_DATABASE=postgres PGEL_USER=admin PGEL_PASSWORD="quest" PGEL_PORT=8812 make test
+
+    sudo podman stop questdb
+    sudo podman rm questdb
+
+
+Note that QuestDB is quite far from being compatible with the SQL understood by PostgreSQL (eg.
+no TIME type, COUNT statements can't take an argument). 
 
 
 
