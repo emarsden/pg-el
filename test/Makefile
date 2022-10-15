@@ -5,22 +5,44 @@ test: test-pg.el
 	emacs -Q --batch -l ../pg.el -l test-pg.el -f pg-test
 
 # Run tests over an encrypted connection to PostgreSQL. Encryption is not available for all versions
-# and installations, so this is a separate test target.
+# and installations (the PostgreSQL backend needs to be set up with TLS certificates), so this is a
+# separate test target.
 test-tls: test-pg.el
 	emacs -Q --batch -l ../pg.el -l test-pg.el -f pg-test-tls
 
+# Run tests over a local Unix socket connection to PostgreSQL.
 test-local: test-pg.el
 	emacs -Q --batch -l ../pg.el -l test-pg.el -f pg-test-local
 
-# Using Docker images for emacs from https://hub.docker.com/r/silex/emacs/
-#
-# This is failing because we don't have nettle-pbkdf2 installed in the container. 
+
+# Using Docker images for Emacs from https://hub.docker.com/r/silex/emacs/ and the locally installed
+# PostgreSQL.
+test-emacs27: test-pg.el
+	cp ../pg.el test-pg.el ${WORKDIR}
+	sudo podman run -it \
+	   -v ${WORKDIR}:/tmp \
+	   --network slirp4netns:allow_host_loopback=true -e PGEL_HOSTNAME=10.0.2.2 \
+	   silex/emacs:27.2 \
+	   emacs -Q --batch -l /tmp/pg.el -l /tmp/test-pg.el -f pg-test
+
 test-emacs26: test-pg.el
 	cp ../pg.el test-pg.el ${WORKDIR}
 	sudo podman run -it \
 	   -v ${WORKDIR}:/tmp \
 	   --network slirp4netns:allow_host_loopback=true -e PGEL_HOSTNAME=10.0.2.2 \
 	   silex/emacs:26.3-alpine-ci \
+	   emacs -Q --batch -l /tmp/pg.el -l /tmp/test-pg.el -f pg-test
+
+# Emacs versions older than 26.1 will not work against a recent PostgreSQL version (that is set up
+# to require SCRAM-SHA-256 authentication), because they don't include the GnuTLS support which we
+# use to calculate HMACs. They may however work against a database set up to not require
+# authentication for local connections.
+test-emacs25: test-pg.el
+	cp ../pg.el test-pg.el ${WORKDIR}
+	sudo podman run -it \
+	   -v ${WORKDIR}:/tmp \
+	   --network slirp4netns:allow_host_loopback=true -e PGEL_HOSTNAME=10.0.2.2 \
+	   silex/emacs:25.3 \
 	   emacs -Q --batch -l /tmp/pg.el -l /tmp/test-pg.el -f pg-test
 
 
