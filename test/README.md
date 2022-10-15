@@ -1,6 +1,15 @@
 # Testing code for pg.el Emacs Lisp socket-level interface to PostgreSQL
 
 
+This file contains some information on how to test the pg.el library against a locally accessible
+PostgreSQL server, or running in a Docker/Podman container. It also shows how to test with other
+databases that are compatible with the PostgreSQL wire protocol, including CockroachDB, CrateDB and
+QuestDB. It also shows how to test with old Emacs versions running in a Docker/Podman container.
+
+Some of these tests are set up in the GitHub Actions continuous integration service of our
+repository (see YAML files in the `.github/workflows` directory).
+
+
 ## Testing with a local PostgreSQL implementation
 
 To set up the tests, create a PostgreSQL user `pgeltestuser` who owns a database
@@ -19,8 +28,16 @@ Adjust the username and password as necessary in `with-pgtest-connection` then r
 Emacs with
 
     ELISP> (pg-test)
+    ELISP> (pg-test-tls)
+    ELISP> (pg-test-local)
 
-Cleaning up:
+to test over respectively a standard TCP connection, a TCP connection with TLS encryption, and a
+local Unix socket (on platforms on which this is supported).
+
+You can also run `make test` from the `test` directory to run these tests from the commandline (as
+well as `make test-tls`, `make test-local`).
+
+Cleaning up after running the tests:
 
     sudo -u postgres dropdb pgeltestdb
     sudo -u postgres dropuser pgeltestuser
@@ -139,4 +156,13 @@ no TIME type, COUNT statements can't take an argument).
 
 ## Testing with older Emacs versions
 
-    sudo podman run silex/emacs:26.3-alpine-ci
+Docker/Podman images containing a range of old Emacs versions are maintained by Silex in the [docker-emacs
+project](https://github.com/Silex/docker-emacs). Here's how to run them from podman while allowing
+network access to your local host's network.
+
+	cp ../pg.el test-pg.el ${WORKDIR}
+	sudo podman run -it \
+	   -v ${WORKDIR}:/tmp \
+	   --network slirp4netns:allow_host_loopback=true -e PGEL_HOSTNAME=10.0.2.2 \
+	   silex/emacs:25.3 \
+	   emacs -Q --batch -l /tmp/pg.el -l /tmp/test-pg.el -f pg-test
