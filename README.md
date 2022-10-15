@@ -21,7 +21,7 @@ Including support for:
 
 - Connections over TCP or (on Unix machines) a local Unix socket
 
-The code has been tested with PostgreSQL versions 15rc2, 13.8, 11.17, and 10.22 on Linux. It is
+The code has been tested with PostgreSQL versions 15.0, 13.8, 11.17, and 10.22 on Linux. It is
 also tested via GitHub actions on MacOS and Windows, using the PostgreSQL version which is
 pre-installed in the virtual images (currently 14.5). This library also works against other
 databases that implement the PostgreSQL wire protocol:
@@ -31,6 +31,12 @@ databases that implement the PostgreSQL wire protocol:
   SQL occasionally differs from that of PostgreSQL.
 
 - [CrateDB](https://crate.io/): tested with version 5.0.1.
+
+
+Tested with Emacs versions 28.2, 27.2 and 26.3. Emacs versions older than 26.1 will not work against
+a recent PostgreSQL version (that is set up to require SCRAM-SHA-256 authentication), because they
+don't include the GnuTLS support which we use to calculate HMACs. They may however work against a
+database set up to allow unauthenticated local connections.
 
 
 
