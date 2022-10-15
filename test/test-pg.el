@@ -38,8 +38,8 @@
 
 (defun pg-test ()
   (with-pgtest-connection conn
-   (message "Running pg.el tests against backend %s"
-            (pg-backend-version conn))
+   (message "Running pg.el tests in %s against backend %s"
+            (version) (pg-backend-version conn))
    (message "Testing basic type parsing")
    (pg-test-basic)
    (message "Testing insertions...")
@@ -63,8 +63,8 @@
 
 (defun pg-test-tls ()
   (with-pgtest-connection-tls conn
-    (message "Running pg.el tests over TLS against backend %s"
-             (pg-backend-version conn))
+    (message "Running pg.el tests in %s against backend %s"
+             (version) (pg-backend-version conn))
     (message "Testing basic type parsing")
     (pg-test-basic)
     (message "Testing insertions...")
@@ -86,8 +86,8 @@
 ;; Run tests over local Unix socket connection to backend
 (defun pg-test-local ()
   (with-pgtest-connection-local conn
-    (message "Running pg.el tests over Unix socket against backend %s"
-             (pg-backend-version conn))
+    (message "Running pg.el tests in %s against backend %s"
+             (version) (pg-backend-version conn))
     (message "Testing basic type parsing")
     (pg-test-basic)
     (message "Testing insertions...")
@@ -304,10 +304,16 @@
                          (pg-exec conn "SELECT ###")
                        (pg-error 2)))))))
 
+;; Check our handling of NoticeMessage messages, and the correct operation of
+;; `pg-handle-notice-functions'.
 (defun pg-test-notice ()
   (with-pgtest-connection conn
-     ;; this will generate a NOTICE
-     (pg-exec conn "DROP TABLE IF EXISTS deity")))
+     ;; The DROP TABLE will generate a NOTICE. We install a handler function that checks for the
+     ;; name of the table in the NOTICE message (the message will be localized, but hopefully the
+     ;; table name will always be present).
+     (cl-flet ((deity-p (ntc) (should (cl-search "deity" (pgerror-message ntc)))))
+       (let ((pg-handle-notice-functions (list #'deity-p)))
+         (pg-exec conn "DROP TABLE IF EXISTS deity")))))
 
 
 ;; test of large-object interface. Note the use of with-pg-transaction
