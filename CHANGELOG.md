@@ -2,11 +2,13 @@
 
 ## [0.18] - 2022-10
 ### New
-- Add support for connecting to PostgreSQL over a local Unix socket
+- Add support for connecting to PostgreSQL over a local Unix socket.
+- Add support for parsing the `BYTEA` datatype (binary strings). We assume that the PostgreSQL
+  configuration variable `bytea_output` is set to `hex` (the default setting).
 - Add support for handling ParameterStatus messages sent by the backend (see variable
-  `pg-parameter-change-functions`)
+  `pg-parameter-change-functions`).
 - Add support for handling NOTICE messages sent by the backend (see variable
-  `pg-handle-notice-functions`)
+  `pg-handle-notice-functions`).
 - New pg-error and pg-protocol-error error types. All errors raised by the library will be a
   subclass of pg-error.
 

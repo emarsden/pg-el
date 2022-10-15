@@ -210,6 +210,9 @@
 ;; the session time zone. Each handler is called with three arguments: the
 ;; connection to the backend, the parameter name and the parameter value.
 ;;
+;; Variable `pg-handle-notice-functions' is a list of handlers to be called when
+;; the backend sends us a `NOTICE' message. Each handler is called with one
+;; argument, the notice, as a pgerror struct.
 ;;
 ;; Boolean variable `pg-disable-type-coercion' can be set to non-nil (before
 ;; initiating a connection) to disable the library's type coercion facility.
@@ -770,17 +773,12 @@ PostgreSQL and Emacs. CON should no longer be used."
 ;; by setting `pg-disable-type-coercion' to non-nil if it bothers you.
 ;; ====================================================================
 
-
 ;; This is a var not a const to allow user-defined types (a PostgreSQL
 ;; feature not present in ANSI SQL). The user can add a (type-name .
 ;; type-parser) pair and call `pg-initialize-parsers', after which the
 ;; user-defined type should be returned parsed from `pg-result'.
 (defvar pg-type-parsers
   `(("bool"         . ,'pg-bool-parser)
-    ;; "bytea" uses hex escapes
-    ;; "json" TODO
-    ;; "jsonb" TODO
-    ;; "xml" TODO
     ("char"         . ,'pg-text-parser)
     ("char2"        . ,'pg-text-parser)
     ("char4"        . ,'pg-text-parser)
@@ -789,6 +787,10 @@ PostgreSQL and Emacs. CON should no longer be used."
     ("char16"       . ,'pg-text-parser)
     ("text"         . ,'pg-text-parser)
     ("varchar"      . ,'pg-text-parser)
+    ("bytea"        . ,'pg-bytea-parser)
+    ;; "json" TODO
+    ;; "jsonb" TODO
+    ;; "xml" TODO
     ("numeric"      . ,'pg-number-parser)
     ("count"        . ,'pg-number-parser)
     ("int2"         . ,'pg-number-parser)
@@ -815,6 +817,19 @@ PostgreSQL and Emacs. CON should no longer be used."
   (if encoding
       (decode-coding-string str encoding)
     str))
+
+;; BYTEA binary strings (sequence of octets), that use hex escapes. Note
+;; PostgreSQL setting variable bytea_output which selects between hex escape
+;; format (the default in recent version) and traditional escape format. We
+;; assume that hex format is selected.
+;;
+;; https://www.postgresql.org/docs/current/datatype-binary.html
+(defun pg-bytea-parser (str _encoding)
+  (unless (and (eql 92 (aref str 0))   ; \ character
+               (eql ?x (aref str 1)))
+    (signal 'pg-protocol-error
+            (list "Unexpected format for BYTEA binary string")))
+  (decode-hex-string (substring str 2)))
 
 (defun pg-bool-parser (str _encoding)
   (cond ((string= "t" str) t)
@@ -849,9 +864,9 @@ PostgreSQL and Emacs. CON should no longer be used."
 
 
 (defun pg-initialize-parsers (connection)
+  (setq pg-parsers '())
   (let* ((pgtypes (pg-exec connection "SELECT typname,oid FROM pg_type"))
          (tuples (pg-result pgtypes :tuples)))
-    (setq pg-parsers '())
     (mapcar
      (lambda (tuple)
        (let* ((typname (cl-first tuple))
@@ -904,6 +919,25 @@ PostgreSQL and Emacs. CON should no longer be used."
 (defun pg-normalize-encoding-name (name)
   (let ((m (assoc name pg-encoding-names #'string=)))
     (when m (cdr m))))
+
+
+(defun pg-serialize-binary (bytestring)
+  )
+
+(defun pg-serialize-json (json)
+  )
+
+(defun pg-serialize-xml (xml)
+  )
+
+(defun pg-serialize-array (array)
+  )
+
+(defun pg-serialize-string (string)
+  ;; quoting/escaping characters as necessary (eg NULL)
+  )
+
+
 
 
 ;; pwdhash = md5(password + username).hexdigest()
