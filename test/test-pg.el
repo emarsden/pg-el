@@ -1,4 +1,4 @@
-;;; Tests for the pg.el library
+;;; Tests for the pg.el library   -*- coding: utf-8; -*-
 ;;;
 ;;; Author: Eric Marsden <eric.marsden@risk-engineering.org>
 ;;; Copyright: (C) 2022  Eric Marsden
@@ -50,6 +50,7 @@
    (pg-test-numeric)
    (message "Testing field extraction routines...")
    (pg-test-result)
+   (pg-test-bytea)
    (message "Testing database creation")
    (pg-test-createdb)
    (pg-test-parameter-change-handlers)
@@ -126,6 +127,8 @@
      (when (member "count_test" (pg-tables conn))
        (pg-exec conn "DROP TABLE count_test"))
      (pg-exec conn "CREATE TABLE count_test(key int, val int)")
+     (should (member "count_test" (pg-tables conn)))
+     (should (member "val" (pg-columns conn "count_test")))
      (cl-loop for i from 1 to count
            for sql = (format "INSERT INTO count_test VALUES(%s, %s)"
                              i (* i i))
@@ -135,10 +138,11 @@
      (setq res (pg-exec conn "SELECT sum(key) FROM count_test"))
      (should (= (cl-first (pg-result res :tuple 0))
                 (/ (* count (1+ count)) 2)))
-     (pg-exec conn "DROP TABLE count_test"))))
+     (pg-exec conn "DROP TABLE count_test")
+     (should (not (member "count_test" (pg-tables conn)))))))
 
-;; Testing for the time handling routines. Expected output is
-;; something like (in buffer *Messages*)
+;; Testing for the time handling routines. Expected output is something like (in buffer *Messages*,
+;; or on the terminal if running the tests in batch mode)
 ;;
 ;; timestamp = (14189 17420)
 ;; abstime = (14189 17420)
@@ -157,7 +161,8 @@
       (pg-exec conn "DROP TABLE date_test")
       (should (equal (scalar "SELECT '2022-10-01'::date") (encode-time 0 0 0 1 10 2022)))
       (should (equal (scalar "SELECT 'PT42S'::interval") "00:00:42"))
-      (should (equal (scalar "SELECT '2001-02-03 04:05:06'::timestamp") (encode-time 6 5 4 3 2 2001 nil t))))))
+      (should (equal (scalar "SELECT '2001-02-03 04:05:06'::timestamp")
+                     (encode-time 6 5 4 3 2 2001 nil t))))))
 
 (defun pg-test-numeric ()
   (with-pgtest-connection conn
@@ -188,21 +193,45 @@
       (should (string= (scalar "SELECT 42::decimal::text") "42"))
       (should (eql (scalar "SELECT char_length('foo')") 3))
       (should (string= (scalar "SELECT lower('FOO')") "foo"))
-      (should (string= (scalar "SELECT lower('FÔÖÉ💥')") "fôöé💥"))
+      (should (string= (scalar "SELECT lower('FÔÖÉ')") "fôöé"))
+      (should (string= (scalar "SELECT lower('FÔ💥bz')") "fô💥bz"))
       (should (eql (scalar "SELECT ascii('a')") 97))
       (should (eql (length (scalar "SELECT repeat('Q', 5000)")) 5000))
       (should (string= (scalar "SELECT interval '1 day' + interval '3 days'") "4 days"))
       (should (eql (scalar "SELECT date '2001-10-01' - date '2001-09-28'") 3))
       ;; we are not parsing XML values
       (unless (cl-search "CockroachDB" (pg-backend-version conn))
-        (should (string= (scalar "SELECT xmlforest('abc' AS foo, 123 AS bar)") "<foo>abc</foo><bar>123</bar>"))))))
+        (should (string= (scalar "SELECT xmlforest('abc' AS foo, 123 AS bar)")
+                         "<foo>abc</foo><bar>123</bar>"))))))
 
 
-;; TODO: implement tests for BYTEA type (https://www.postgresql.org/docs/15/functions-binarystring.html)
+;; tests for BYTEA type (https://www.postgresql.org/docs/15/functions-binarystring.html)
 (defun pg-test-bytea ()
-  nil)
+  (with-pgtest-connection conn
+     (pg-exec conn "CREATE TABLE byteatest(col BYTEA, tag int)")
+     (pg-exec conn "INSERT INTO byteatest VALUES('warning\\000'::bytea, 1)")
+     (pg-exec conn "INSERT INTO byteatest VALUES('\\001\\002\\003'::bytea, 2)")
+     (cl-flet ((scalar (sql) (car (pg-result (pg-exec conn sql) :tuple 0))))
+       (should (equal (byte-to-string 0) (scalar "SELECT '\\000'::bytea")))
+       (should (equal (byte-to-string ?') (scalar "SELECT ''''::bytea")))
+       (should (equal "\336\255\276\357" (scalar "SELECT '\\xDEADBEEF'::bytea")))
+       (should (equal (string 1 3 5) (scalar "SELECT '\\001\\003\\005'::bytea")))
+       (should (equal (decode-hex-string "123456789a00bcde")
+                      (scalar "SELECT '\\x123456'::bytea || '\\x789a00bcde'::bytea")))
+       (should (equal (secure-hash 'sha256 "foobles")
+                      (encode-hex-string (scalar "SELECT sha256('foobles'::bytea)"))))
+       (should (equal (base64-encode-string "foobles")
+                      (scalar "SELECT encode('foobles', 'base64')")))
+       (should (equal "foobles" (scalar "SELECT decode('Zm9vYmxlcw==', 'base64')")))
+       (should (equal "warning " (scalar "SELECT col FROM byteatest WHERE tag=1")))
+       (should (equal (string 1 2 3) (scalar "SELECT col FROM byteatest WHERE tag=2"))))
+     (pg-exec conn "DROP TABLE byteatest")))
 
-;; https://www.postgresql.org/docs/14/functions-json.html
+(defun pg-test-array ()
+  ;; eg  "SELECT CAST('{a,b,c}' AS CHAR[])")
+  )
+
+;; https://www.postgresql.org/docs/15/functions-json.html
 (defun pg-test-json ()
   nil)
 
@@ -263,6 +292,7 @@
     (when (member "pgeltestextra" (pg-databases conn))
        (pg-exec conn "DROP DATABASE pgeltestextra"))
     (pg-exec conn "CREATE DATABASE pgeltestextra")
+    (should (member "pgeltestextra" (pg-databases conn)))
     (unless (cl-search "CockroachDB" (pg-backend-version conn))
       (pg-exec conn "REINDEX DATABASE pgeltestdb"))
     (let* ((r (pg-exec conn "SHOW ALL"))
