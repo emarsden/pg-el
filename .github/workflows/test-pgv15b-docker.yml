@@ -18,7 +18,7 @@ jobs:
              -e POSTGRES_DB=pgeltestdb \
              -e POSTGRES_USER=pgeltestuser \
              -e POSTGRES_PASSWORD=pgeltest \
-             docker.io/library/postgres:15beta4
+             docker.io/library/postgres:15
 
              # -c ssl=on \
              # -c ssl_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem \

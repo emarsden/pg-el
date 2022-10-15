@@ -1,4 +1,4 @@
-name: test-pgv15rc2
+name: test-pgv15
 on: push
 
 jobs:
@@ -9,7 +9,7 @@ jobs:
       # Label used to access the service container
       postgres:
         # Docker Hub image
-        image: postgres:15rc2
+        image: postgres:15
         env:
           POSTGRES_DB: pgeltestdb
           POSTGRES_USER: pgeltestuser
