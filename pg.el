@@ -249,7 +249,6 @@
 
 (require 'cl-lib)
 (require 'hex-util)
-(require 'json)
 
 (defvar pg-application-name "pg.el"
   "The application_name sent to the PostgreSQL backend.
@@ -833,7 +832,12 @@ PostgreSQL and Emacs. CON should no longer be used."
   (decode-hex-string (substring str 2)))
 
 (defun pg-json-parser (str _encoding)
-  (json-parse-string str))
+  (if (fboundp 'json-parse-string)
+      ;; Use the JSON support natively compiled into Emacs
+      (json-parse-string str)
+    ;; Use the routines from the json library
+    (require 'json)
+    (json-read-from-string str)))
 
 (defun pg-bool-parser (str _encoding)
   (cond ((string= "t" str) t)
