@@ -789,7 +789,7 @@ PostgreSQL and Emacs. CON should no longer be used."
     ("varchar"      . ,'pg-text-parser)
     ("bytea"        . ,'pg-bytea-parser)
     ("json"         . ,'pg-json-parser)
-    ;; "jsonb" TODO
+    ("jsonb"        . ,'pg-json-parser)
     ;; "xml" TODO
     ("numeric"      . ,'pg-number-parser)
     ("count"        . ,'pg-number-parser)
@@ -836,6 +836,7 @@ PostgreSQL and Emacs. CON should no longer be used."
 ;; particular, NULL, false and the empty array are handled differently).
 (defun pg-json-parser (str _encoding)
   (if (and (fboundp 'json-parse-string)
+           (fboundp 'json-available-p)
            (json-available-p))
       ;; Use the JSON support natively compiled into Emacs
       (json-parse-string str)
