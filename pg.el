@@ -249,6 +249,7 @@
 
 (require 'cl-lib)
 (require 'hex-util)
+(require 'json)
 
 (defvar pg-application-name "pg.el"
   "The application_name sent to the PostgreSQL backend.
@@ -788,7 +789,7 @@ PostgreSQL and Emacs. CON should no longer be used."
     ("text"         . ,'pg-text-parser)
     ("varchar"      . ,'pg-text-parser)
     ("bytea"        . ,'pg-bytea-parser)
-    ;; "json" TODO
+    ("json"         . ,'pg-json-parser)
     ;; "jsonb" TODO
     ;; "xml" TODO
     ("numeric"      . ,'pg-number-parser)
@@ -830,6 +831,9 @@ PostgreSQL and Emacs. CON should no longer be used."
     (signal 'pg-protocol-error
             (list "Unexpected format for BYTEA binary string")))
   (decode-hex-string (substring str 2)))
+
+(defun pg-json-parser (str _encoding)
+  (json-parse-string str))
 
 (defun pg-bool-parser (str _encoding)
   (cond ((string= "t" str) t)

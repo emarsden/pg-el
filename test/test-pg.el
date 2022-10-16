@@ -51,6 +51,7 @@
    (message "Testing field extraction routines...")
    (pg-test-result)
    (pg-test-bytea)
+   (pg-test-json)
    (message "Testing database creation")
    (pg-test-createdb)
    (pg-test-parameter-change-handlers)
@@ -189,7 +190,8 @@
       (should (approx= (scalar "SELECT 55.678::float8") 55.678))
       (should (approx= (scalar "SELECT 55.678::real") 55.678))
       (should (approx= (scalar "SELECT 55.678::numeric") 55.678))
-      ;; TODO:  "SELECT 'NaN'::float8" is not being handled correctly, likewise "SELECT 'Infinity'::float8"
+      ;; FIXME "SELECT 'NaN'::float8" handled incorrectly
+      ;; FIXME "SELECT 'Infinity'::float8" handled incorrectly
       (should (string= (scalar "SELECT 42::decimal::text") "42"))
       (should (eql (scalar "SELECT char_length('foo')") 3))
       (should (string= (scalar "SELECT lower('FOO')") "foo"))
@@ -233,8 +235,28 @@
 
 ;; https://www.postgresql.org/docs/15/functions-json.html
 (defun pg-test-json ()
-  nil)
-
+  (with-pgtest-connection conn
+     (cl-flet ((scalar (sql) (car (pg-result (pg-exec conn sql) :tuple 0)))
+               (approx= (x y) (< (/ (abs (- x y)) (max (abs x) (abs y))) 1e-5)))
+       (should (eql 42 (scalar "SELECT to_json(42)")))
+       (should (eql :null (scalar "SELECT 'null'::json")))
+       (should (equal (vector :null) (scalar "SELECT '[null]'::json")))
+       (should (equal (vector 42 :null 77) (scalar "SELECT '[42,null,77]'::json")))
+       (should (equal :null (gethash "a" (scalar "SELECT '{\"a\": null}'::json"))))
+       (let ((json (scalar "SELECT '[5,7]'::json")))
+         (should (eql 5 (aref json 0))))
+       (let ((json (scalar "SELECT '[66.7,-42.0,8]'::json")))
+         (should (approx= 66.7 (aref json 0)))
+         (should (approx= -42.0 (aref json 1))))
+       (let ((json (scalar "SELECT '[true,false,42]'::json")))
+         (should (equal (vector t :false 42) json)))
+       (let ((json (scalar "SELECT '{\"a\":1,\"b\":-22}'::json")))
+         (should (eql 1 (gethash "a" json)))
+         (should (eql -22 (gethash "b" json))))
+       (let ((json (scalar "SELECT '[{\"a\":\"foo\"},{\"b\":\"bar\"},{\"c\":\"baz\"}]'::json")))
+         (should (string= "bar" (gethash "b" (aref json 1)))))
+       (let ((json (scalar "SELECT '{\"a\": [0,1,2,null]}'::json")))
+         (should (eql 2 (aref (gethash "a" json) 2)))))))
 
 (defun pg-test-xmlbinary ()
   nil)
