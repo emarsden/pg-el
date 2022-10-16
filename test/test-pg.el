@@ -241,7 +241,8 @@
        (should (eql 42 (scalar "SELECT to_json(42)")))
        ;; Handling of NULL, false, [] and {} are different in the native JSON support and the json
        ;; elisp libary. We only test the native support for these types.
-       (when (json-available-p)
+       (when (and (fboundp 'json-parse-string)
+                  (json-available-p))
          (should (eql :null (scalar "SELECT 'null'::json")))
          (should (equal (vector) (scalar "SELECT '[]'::json")))
          (let ((json (scalar "SELECT '{}'::json")))
