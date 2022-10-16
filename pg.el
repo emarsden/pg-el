@@ -835,10 +835,11 @@ PostgreSQL and Emacs. CON should no longer be used."
 ;; from the JSON library. Note however that these do not parse JSON in exactly the same way (in
 ;; particular, NULL, false and the empty array are handled differently).
 (defun pg-json-parser (str _encoding)
-  (if (json-available-p)
+  (if (and (fboundp 'json-parse-string)
+           (json-available-p))
       ;; Use the JSON support natively compiled into Emacs
       (json-parse-string str)
-    ;; Use the routines from the json library
+    ;; Use the parsing routines from the json library
     (require 'json)
     (json-read-from-string str)))
 
