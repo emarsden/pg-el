@@ -1,11 +1,12 @@
 # Changelog
 
-## [0.18] - 2022-10
+## [0.18] - 2022-10-16
 ### New
 - Add support for connecting to PostgreSQL over a local Unix socket.
 - Add support for parsing the `BYTEA` datatype (binary strings). We assume that the PostgreSQL
   configuration variable `bytea_output` is set to `hex` (the default setting).
 - Add support for parsing the `JSON` datatype, into the Emacs JSON representation.
+- Add support for parsing the `JSONB` datatype, into the Emacs JSON representation.
 - Add support for handling ParameterStatus messages sent by the backend (see variable
   `pg-parameter-change-functions`).
 - Add support for handling NOTICE messages sent by the backend (see variable
@@ -14,9 +15,9 @@
   subclass of pg-error.
 
 ### Fixed
-- Fix bug in parsing of NULL column values in DataRow messages
-- Fix handling of encoding of attribute column names
-- Fix handling of PostgreSQL error messages (correctly resync with the backend)
+- Fix bug in parsing of NULL column values in DataRow messages.
+- Fix handling of encoding of attribute column names.
+- Fix handling of PostgreSQL error messages (correctly resync with the backend).
 
 
 ## [0.17] - 2022-09-30
