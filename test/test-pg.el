@@ -190,8 +190,12 @@
       (should (approx= (scalar "SELECT 55.678::float8") 55.678))
       (should (approx= (scalar "SELECT 55.678::real") 55.678))
       (should (approx= (scalar "SELECT 55.678::numeric") 55.678))
-      ;; FIXME "SELECT 'NaN'::float8" handled incorrectly
-      ;; FIXME "SELECT 'Infinity'::float8" handled incorrectly
+      (should (eql 1.0e+INF (scalar "SELECT 'Infinity'::float4")))
+      (should (eql -1.0e+INF (scalar "SELECT '-Infinity'::float4")))
+      (should (eql 1.0e+INF (scalar "SELECT 'Infinity'::float8")))
+      (should (eql -1.0e+INF (scalar "SELECT '-Infinity'::float8")))
+      (should (eql 0.0e+NaN (scalar "SELECT 'NaN'::float4")))
+      (should (eql 0.0e+NaN (scalar "SELECT 'NaN'::float8")))
       (should (string= (scalar "SELECT 42::decimal::text") "42"))
       (should (eql (scalar "SELECT char_length('foo')") 3))
       (should (string= (scalar "SELECT lower('FOO')") "foo"))

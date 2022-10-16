@@ -791,14 +791,14 @@ PostgreSQL and Emacs. CON should no longer be used."
     ("json"         . ,'pg-json-parser)
     ("jsonb"        . ,'pg-json-parser)
     ;; "xml" TODO
-    ("numeric"      . ,'pg-number-parser)
     ("count"        . ,'pg-number-parser)
     ("int2"         . ,'pg-number-parser)
     ("int4"         . ,'pg-number-parser)
     ("int8"         . ,'pg-number-parser)
     ("oid"          . ,'pg-number-parser)
-    ("float4"       . ,'pg-number-parser)
-    ("float8"       . ,'pg-number-parser)
+    ("numeric"      . ,'pg-float-parser)
+    ("float4"       . ,'pg-float-parser)
+    ("float8"       . ,'pg-float-parser)
     ("money"        . ,'pg-text-parser)
     ("date"         . ,'pg-date-parser)
     ("timestamp"    . ,'pg-isodate-parser)
@@ -812,6 +812,18 @@ PostgreSQL and Emacs. CON should no longer be used."
 ;; see `man pgbuiltin' for details on PostgreSQL builtin types
 (defun pg-number-parser (str _encoding)
   (string-to-number str))
+
+;; We need to handle +Inf, -Inf, NaN specially because the Emacs Lisp reader uses a specific format
+;; for them.
+(defun pg-float-parser (str _encoding)
+  (cond ((string= str "Infinity")
+         1.0e+INF)
+        ((string= str "-Infinity")
+         -1.0e+INF)
+        ((string= str "NaN")
+         0.0e+NaN)
+        (t
+         (string-to-number str))))
 
 (defsubst pg-text-parser (str encoding)
   (if encoding
