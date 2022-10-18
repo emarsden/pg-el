@@ -6,9 +6,10 @@
 [![Connect-v12](https://github.com/emarsden/pg-el/workflows/test-pgv12/badge.svg)](https://github.com/emarsden/pg-el/workflows/test-pgv12/badge.svg)
 
 
-This module lets you access the PostgreSQL object-relational DBMS from Emacs, using its socket-level
-frontend/backend protocol. The module is capable of automatic type coercions from a range of SQL
-types to the equivalent Emacs Lisp type. This is a low level API, and won't be useful to end users.
+This module lets you access the PostgreSQL 🐘 object-relational DBMS from Emacs, using its
+socket-level frontend/backend protocol. The module is capable of automatic type coercions from a
+range of SQL types to the equivalent Emacs Lisp type. This is a low level API, and won't be useful
+to end users.
 
 Including support for:
 
@@ -40,6 +41,8 @@ a recent PostgreSQL version (that is set up to require SCRAM-SHA-256 authenticat
 don't include the GnuTLS support which we use to calculate HMACs. They may however work against a
 database set up to allow unauthenticated local connections.
 
+You may be interested in an alternative library [emacs-libpq](https://github.com/anse1/emacs-libpq)
+that enables access to PostgreSQL from Emacs by binding to the libpq library.
 
 
 ## Installation
