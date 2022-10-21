@@ -124,6 +124,8 @@
       (unless (cl-search "Visual C++ build 1914" (pg-backend-version conn))
         (should (string= "Z" (car (row "SELECT chr(90)")))))
       (should (equal (list 12) (row "select length('(╯°□°)╯︵ ┻━┻')")))
+      ;; TODO: bit type "select cast(255 as bit(8))"
+      (should (string= "howdy" (car (row "SELECT 'howdy'::text"))))
       (should (string= "gday" (car (row "SELECT 'gday'::varchar(20)")))))))
 
 (defun pg-test-insert ()
@@ -167,6 +169,7 @@
       (pg-exec conn "DROP TABLE date_test")
       (should (equal (scalar "SELECT '2022-10-01'::date") (encode-time 0 0 0 1 10 2022)))
       (should (equal (scalar "SELECT 'PT42S'::interval") "00:00:42"))
+      (should (equal (scalar "select '05:00'::time") "05:00:00"))
       (should (equal (scalar "SELECT '2001-02-03 04:05:06'::timestamp")
                      (encode-time 6 5 4 3 2 2001 nil t))))))
 
@@ -250,6 +253,9 @@
 
 (defun pg-test-array ()
   ;; eg  "SELECT CAST('{a,b,c}' AS CHAR[])")
+  ;; select row(ARRAY[1,2,4,8])
+  ;; select row(ARRAY[1234::int2])
+  ;; select row(ARRAY[3.14::float])
   )
 
 ;; https://www.postgresql.org/docs/15/functions-json.html
