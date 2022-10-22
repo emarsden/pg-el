@@ -263,11 +263,20 @@
      (pg-exec conn "DROP TABLE byteatest")))
 
 (defun pg-test-array ()
+  (with-pgtest-connection conn
+     (cl-flet ((scalar (sql) (car (pg-result (pg-exec conn sql) :tuple 0)))
+               (approx= (x y) (< (/ (abs (- x y)) (max (abs x) (abs y))) 1e-5)))
+       (should (equal (vector 7 8) (scalar "SELECT ARRAY[7,8]")))
+       (should (equal (vector 1234) (scalar "SELECT ARRAY[1234::int2]")))
+       (let ((vec (scalar "SELECT ARRAY[44.3, 8999.5]")))
+         (should (equal 2 (length vec)))
+         (should (approx= 44.3 (aref vec 0)))
+         (should (approx= 899.5 (aref vec 1)))))))
+
   ;; eg  "SELECT CAST('{a,b,c}' AS CHAR[])")
   ;; select row(ARRAY[1,2,4,8])
-  ;; select row(ARRAY[1234::int2])
   ;; select row(ARRAY[3.14::float])
-  )
+
 
 ;; https://www.postgresql.org/docs/15/functions-json.html
 (defun pg-test-json ()
