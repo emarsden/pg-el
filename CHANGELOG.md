@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.19] - 2022-11
+### New
+- Add support for parsing the `BIT` and `VARBIT` datatypes.
+
+
 ## [0.18] - 2022-10-16
 ### New
 - Add support for connecting to PostgreSQL over a local Unix socket.

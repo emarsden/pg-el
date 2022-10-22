@@ -780,6 +780,8 @@ PostgreSQL and Emacs. CON should no longer be used."
 ;; user-defined type should be returned parsed from `pg-result'.
 (defvar pg-type-parsers
   `(("bool"         . ,'pg-bool-parser)
+    ("bit"          . ,'pg-bit-parser)
+    ("varbit"       . ,'pg-bit-parser)
     ("char"         . ,'pg-text-parser)
     ("char2"        . ,'pg-text-parser)
     ("char4"        . ,'pg-text-parser)
@@ -827,6 +829,13 @@ PostgreSQL and Emacs. CON should no longer be used."
          0.0e+NaN)
         (t
          (string-to-number str))))
+
+(defun pg-bit-parser (str _encoding)
+  (let* ((len (length str))
+         (bv (make-bool-vector len t)))
+    (dotimes (i len)
+      (setf (aref bv i) (eql ?1 (aref str i))))
+    bv))
 
 (defsubst pg-text-parser (str encoding)
   (if encoding
