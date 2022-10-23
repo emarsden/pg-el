@@ -117,6 +117,7 @@
     (cl-flet ((row (sql) (pg-result (pg-exec conn sql) :tuple 0)))
       (should (equal (list t nil) (row "SELECT true, false")))
       (should (equal (list 42) (row "SELECT 42")))
+      (should (equal (list -1) (row "SELECT -1::integer")))
       (should (equal (list "hey" "Jude") (row "SELECT 'hey', 'Jude'")))
       (should (equal (list nil) (row "SELECT NULL")))
       (should (equal (list 1 nil "all") (row "SELECT 1,NULL,'all'")))
@@ -124,7 +125,7 @@
       (unless (cl-search "Visual C++ build 1914" (pg-backend-version conn))
         (should (string= "Z" (car (row "SELECT chr(90)")))))
       (should (equal (list 12) (row "select length('(╯°□°)╯︵ ┻━┻')")))
-      ;; TODO: bit type "select cast(255 as bit(8))"
+      (should (eql nil (row " SELECT 3 where 1=0")))
       (should (string= "howdy" (car (row "SELECT 'howdy'::text"))))
       (should (string= "gday" (car (row "SELECT 'gday'::varchar(20)")))))))
 
@@ -179,8 +180,11 @@
               (approx= (x y) (< (/ (abs (- x y)) (max (abs x) (abs y))) 1e-5)))
       (should (eql -1 (scalar "SELECT '-1'::int")))
       (should (eql 128 (scalar "SELECT 128::int2")))
+      (should (eql -5 (scalar "SELECT -5::int2")))
+      (should (eql 27890 (scalar "SELECT 27890::int4")))
       (should (eql -128 (scalar "SELECT -128::int4")))
       (should (eql 66 (scalar "SELECT 66::int8")))
+      (should (eql -1 (scalar "SELECT -1::int8")))
       (should (eql 42 (scalar "SELECT '42'::smallint")))
       (should (equal (make-bool-vector 1 nil) (scalar "SELECT 0::bit")))
       (should (equal (make-bool-vector 1 t) (scalar "SELECT 1::bit")))
@@ -268,6 +272,7 @@
                (approx= (x y) (< (/ (abs (- x y)) (max (abs x) (abs y))) 1e-5)))
        (should (equal (vector 7 8) (scalar "SELECT ARRAY[7,8]")))
        (should (equal (vector 1234) (scalar "SELECT ARRAY[1234::int2]")))
+       (should (equal (vector 45 67 89) (scalar "SELECT '{45,67,89}'::smallint[]")))
        (let ((vec (scalar "SELECT ARRAY[44.3, 8999.5]")))
          (should (equal 2 (length vec)))
          (should (approx= 44.3 (aref vec 0)))
@@ -365,6 +370,12 @@
           (attr (pg-result res :attributes)))
      (should (string= "z" (caar attr)))
      (should (string= "bob" (caadr attr))))
+   (pg-exec conn "DROP TYPE IF EXISTS FRUIT")
+   (pg-exec conn "CREATE TYPE FRUIT AS ENUM('banana', 'orange', 'apple', 'pear')")
+   (let* ((res (pg-exec conn "SELECT 'apple'::fruit"))
+          (attr (pg-result res :attributes)))
+     (should (string= "apple" (car (pg-result res :tuple 0))))
+     (should (string= "fruit" (caar attr))))
    (let* ((res (pg-exec conn "SELECT 32 as éléphant"))
           (attr (pg-result res :attributes)))
      (should (string= "éléphant" (caar attr)))
@@ -416,7 +427,12 @@
       (should (eql 9 (scalar "SELECT 4+5")))
       (should (eql 2 (condition-case nil
                          (pg-exec conn "SELECT ###")
-                       (pg-error 2)))))))
+                       (pg-error 2))))
+      ;; PostgreSQL should signal numerical overflow
+      (should-error (pg-exec conn "SELECT 2147483649::int4"))
+      (should (eql -42 (scalar "SELECT -42")))
+      (should-error (pg-exec conn "SELECT 'foobles'::unexistingtype"))
+      (should (eql -55 (scalar "SELECT -55"))))))
 
 ;; Check our handling of NoticeMessage messages, and the correct operation of
 ;; `pg-handle-notice-functions'.

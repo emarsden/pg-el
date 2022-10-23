@@ -849,7 +849,7 @@ PostgreSQL and Emacs. CON should no longer be used."
     (unless (and (eql (aref str 0) ?{)
                  (eql (aref str (1- len)) ?}))
       (signal 'pg-protocol-error (list "Unexpected format for int array")))
-    (let ((segments (split-string (subseq str 1 (- len 1)) ",")))
+    (let ((segments (split-string (cl-subseq str 1 (- len 1)) ",")))
       (apply #'vector (mapcar #'string-to-number segments)))))
 
 (defun pg-floatarray-parser (str _encoding)
@@ -857,7 +857,7 @@ PostgreSQL and Emacs. CON should no longer be used."
     (unless (and (eql (aref str 0) ?{)
                  (eql (aref str (1- len)) ?}))
       (signal 'pg-protocol-error (list "Unexpected format for float array")))
-    (let ((segments (split-string (subseq str 1 (- len 1)) ",")))
+    (let ((segments (split-string (cl-subseq str 1 (- len 1)) ",")))
       (apply #'vector (mapcar (lambda (x) (pg-float-parser x nil)) segments)))))
 
 (defsubst pg-text-parser (str encoding)
