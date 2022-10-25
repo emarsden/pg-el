@@ -812,6 +812,7 @@ PostgreSQL and Emacs. CON should no longer be used."
     ("_float8"      . ,'pg-floatarray-parser)
     ("_numeric"     . ,'pg-floatarray-parser)
     ("_bool"        . ,'pg-boolarray-parser)
+    ("_char"        . ,'pg-chararray-parser)
     ("money"        . ,'pg-text-parser)
     ("date"         . ,'pg-date-parser)
     ("timestamp"    . ,'pg-isodate-parser)
@@ -870,6 +871,14 @@ PostgreSQL and Emacs. CON should no longer be used."
       (signal 'pg-protocol-error (list "Unexpected format for bool array")))
     (let ((segments (split-string (cl-subseq str 1 (- len 1)) ",")))
       (apply #'vector (mapcar (lambda (x) (pg-bool-parser x nil)) segments)))))
+
+(defun pg-chararray-parser (str encoding)
+  (let ((len (length str)))
+    (unless (and (eql (aref str 0) ?{)
+                 (eql (aref str (1- len)) ?}))
+      (signal 'pg-protocol-error (list "Unexpected format for bool array")))
+    (let ((segments (split-string (cl-subseq str 1 (- len 1)) ",")))
+      (apply #'vector (mapcar (lambda (x) (pg-text-parser x encoding)) segments)))))
 
 (defsubst pg-text-parser (str encoding)
   (if encoding
