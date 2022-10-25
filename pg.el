@@ -235,14 +235,16 @@
 
 ;;; TODO
 ;;
-;; * add a mechanism for parsing user-defined types. The user should
+;; * Provide support for client-side certificates to authenticate network
+;;   connections over TLS.
+;;
+;; * Implement the SASLPREP algorithm for usernames and passwords that contain
+;;   unprintable characters (used for SCRAM-SHA-256 authentication).
+;;
+;; * Add a mechanism for parsing user-defined types. The user should
 ;;   be able to define a parse function and a type-name; we query
 ;;   pg_type to get the type's OID and add the information to
 ;;   pg-parsers.
-;;
-;; * in a future release I will probably modify the numeric conversion
-;;   routines to return elisp floating point values instead of elisp
-;;   integers, in order to work around possible overflow problems.
 
 
 ;;; Code:
@@ -809,6 +811,7 @@ PostgreSQL and Emacs. CON should no longer be used."
     ("_float4"      . ,'pg-floatarray-parser)
     ("_float8"      . ,'pg-floatarray-parser)
     ("_numeric"     . ,'pg-floatarray-parser)
+    ("_bool"        . ,'pg-boolarray-parser)
     ("money"        . ,'pg-text-parser)
     ("date"         . ,'pg-date-parser)
     ("timestamp"    . ,'pg-isodate-parser)
@@ -859,6 +862,14 @@ PostgreSQL and Emacs. CON should no longer be used."
       (signal 'pg-protocol-error (list "Unexpected format for float array")))
     (let ((segments (split-string (cl-subseq str 1 (- len 1)) ",")))
       (apply #'vector (mapcar (lambda (x) (pg-float-parser x nil)) segments)))))
+
+(defun pg-boolarray-parser (str _encoding)
+  (let ((len (length str)))
+    (unless (and (eql (aref str 0) ?{)
+                 (eql (aref str (1- len)) ?}))
+      (signal 'pg-protocol-error (list "Unexpected format for bool array")))
+    (let ((segments (split-string (cl-subseq str 1 (- len 1)) ",")))
+      (apply #'vector (mapcar (lambda (x) (pg-bool-parser x nil)) segments)))))
 
 (defsubst pg-text-parser (str encoding)
   (if encoding

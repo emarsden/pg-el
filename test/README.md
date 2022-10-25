@@ -22,7 +22,7 @@ To set up the tests, create a PostgreSQL user `pgeltestuser` who owns a database
 
 Check that you are able to connect to and authenticate with the database from Emacs:
 
-    ELISP> (pg-connect "pgeltestdb" "pgeltestuser" "pgeltest" "localhost" 5432)
+    ELISP> (defvar *pg* (pg-connect "pgeltestdb" "pgeltestuser" "pgeltest" "localhost" 5432))
 
 Adjust the username and password as necessary in `with-pgtest-connection` then run the tests from
 Emacs with
