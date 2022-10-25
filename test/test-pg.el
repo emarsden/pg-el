@@ -278,6 +278,7 @@
        (should (equal (vector t nil t nil t)
                       (scalar "SELECT '{true, false, true, false, true}'::bool[]")))
        (should (equal (vector ?A ?z ?5) (scalar "SELECT '{A,z,5}'::char[]")))
+       (should (equal (vector "foo" "bar") (scalar "SELECT '{foo, bar}'::text[]")))
        (let ((vec (scalar "SELECT ARRAY[44.3, 8999.5]")))
          (should (equal 2 (length vec)))
          (should (approx= 44.3 (aref vec 0)))
