@@ -426,6 +426,7 @@
 ;; handle successive errors, and that we can handle errors with CONDITION-CASE.
 (defun pg-test-errors ()
   (with-pgtest-connection conn
+    (pg-cancel conn)
     (cl-flet ((scalar (sql) (car (pg-result (pg-exec conn sql) :tuple 0))))
       (should-error (pg-exec conn "SELECT * FROM"))
       (should (eql 42 (scalar "SELECT 42")))

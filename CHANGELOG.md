@@ -4,6 +4,8 @@
 ### New
 - Add support for parsing the `BIT` and `VARBIT` datatypes.
 - Add support for parsing ARRAY datatypes.
+- Add function `pg-cancel` to request cancellation of the command currently being processed
+  by the backend.
 
 
 ## [0.18] - 2022-10-16

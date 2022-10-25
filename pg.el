@@ -100,6 +100,11 @@
 ;;     database (this is PostgreSQL-specific, please refer to the
 ;;     documentation for more details).
 ;;
+;; (pg-cancel connection) -> nil
+;;     Ask the server to cancel the command being processed by the backend.
+;;     The cancellation request concerns the command requested over
+;;     database connection CONNECTION.
+;;
 ;; (pg-disconnect connection) -> nil
 ;;     Close the database connection.
 ;;
@@ -325,7 +330,7 @@ struct.")
 
 
 (cl-defstruct pgcon
-  process pid secret position (client-encoding 'utf-8) (binaryp nil))
+  process pid secret position (client-encoding 'utf-8) (binaryp nil) connect-info)
 
 (cl-defstruct pgresult
   connection status attributes tuples portal)
@@ -520,6 +525,8 @@ attempt to establish an encrypted connection to PostgreSQL."
     (with-current-buffer buf
       (set-process-coding-system process 'binary 'binary)
       (set-buffer-multibyte nil))
+    ;; Save connection info in the pgcon object, for possible later use by pg-cancel
+    (setf (pgcon-connect-info connection) (list :tcp host port dbname user password))
     ;; TLS connections to PostgreSQL are based on a custom STARTTLS-like connection upgrade
     ;; handshake. The frontend establishes an unencrypted network connection to the backend over the
     ;; standard port (normally 5432). It then sends an SSLRequest message, indicating the desire to
@@ -557,6 +564,8 @@ opaque type). PASSWORD defaults to an empty string."
   (let* ((buf (generate-new-buffer " *PostgreSQL*"))
          (process (make-network-process :name "postgres" :buffer buf :family 'local :service path :coding nil))
          (connection (make-pgcon :process process :position 1)))
+    ;; Save connection info in the pgcon object, for possible later use by pg-cancel
+    (setf (pgcon-connect-info connection) (list :local path dbname user password))
     (with-current-buffer buf
       (set-process-coding-system process 'binary 'binary)
       (set-buffer-multibyte nil))
@@ -737,6 +746,46 @@ and the keyword WHAT should be one of
         (t
          (let ((msg (format "Unknown result request %s" what)))
            (signal 'pg-error (list msg))))))
+
+(defun pg-cancel (con)
+  "Cancel the command currently being processed by the backend.
+The cancellation request concerns the command requested over connection CON."
+  ;; Send a CancelRequest message. We open a new connection to the server and
+  ;; send the CancelRequest message, rather than the StartupMessage message that
+  ;; would ordinarily be sent across a new connection. The server will process
+  ;; this request and then close the connection.
+  (let* ((ci (pgcon-connect-info con))
+         (ccon (cl-case (car ci)
+                 ;; :tcp host port dbname user password
+                 (:tcp
+                  (let* ((buf (generate-new-buffer " *PostgreSQL-cancellation*"))
+                         (host (nth 1 ci))
+                         (port (nth 2 ci))
+                         (process (open-network-stream "postgres-cancel" buf host port :coding nil))
+                         (connection (make-pgcon :process process :position 1)))
+                    (with-current-buffer buf
+                      (set-process-coding-system process 'binary 'binary)
+                      (set-buffer-multibyte nil))
+                    connection))
+                 ;; :local path dbname user password
+                 (:local
+                  (let* ((buf (generate-new-buffer " *PostgreSQL-cancellation*"))
+                         (path (nth 1 ci))
+                         (process (make-network-process :name "postgres"
+                                                        :buffer buf
+                                                        :family 'local
+                                                        :service path
+                                                        :coding nil))
+                         (connection (make-pgcon :process process :position 1)))
+                    (with-current-buffer buf
+                      (set-process-coding-system process 'binary 'binary)
+                      (set-buffer-multibyte nil))
+                    connection)))))
+    (pg-send-int ccon 16 4)
+    (pg-send-int ccon 80877102 4)
+    (pg-send-int ccon (pgcon-pid con) 4)
+    (pg-send-int ccon (pgcon-secret con) 4)
+    (pg-disconnect ccon)))
 
 (defun pg-disconnect (con)
   "Close the database connection CON.
