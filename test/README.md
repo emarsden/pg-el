@@ -153,6 +153,25 @@ Note that QuestDB is quite far from being compatible with the SQL understood by 
 no TIME type, COUNT statements can't take an argument). 
 
 
+## Testing the YugabyteDB distributed database
+
+[YugabyteDB](https://yugabyte.com/) is an open source distributed database designed for large
+volumes of data. It implements the PostgreSQL wire protocol.
+
+    podman run --name yugabyte \
+       --publish 5433:5433 \
+       -d yugabytedb/yugabyte \
+       bin/yugabyted start \
+       --base_dir=/tmp \
+       --daemon=false
+
+    ELISP> (pg-connect "yugabyte" "yugabyte" "" "localhost" 5433)
+
+    PGEL_DATABASE=yugabyte PGEL_USER=yugabyte PGEL_PASSWORD="" PGEL_PORT=5433 make test
+
+    sudo podman stop yugabyte
+    sudo podman rm yugabyte
+
 
 ## Testing with older Emacs versions
 

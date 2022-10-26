@@ -496,9 +496,8 @@ tag called pg-finished."
                   (let* ((msglen (pg-read-net-int connection 4))
                          (msg (pg-read-chars connection (- msglen 4)))
                          (items (split-string msg (string 0))))
-                    ;; ParameterStatus items sent by the backend include
-                    ;; application_name, DateStyle, in_hot_standby,
-                    ;; integer_datetimes
+                    ;; ParameterStatus items sent by the backend include application_name,
+                    ;; DateStyle, in_hot_standby, integer_datetimes
                     (when (> (length (cl-first items)) 0)
                       (dolist (handler pg-parameter-change-functions)
                         (funcall handler connection (cl-first items) (cl-second items))))))
