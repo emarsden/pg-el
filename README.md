@@ -24,6 +24,8 @@ Including support for:
 
 - Parsing PostgreSQL JSON and JSONB objects
 
+- Parsing PostgreSQL array types
+
 The code has been tested with PostgreSQL versions 15.0, 13.8, 11.17, and 10.22 on Linux. It is
 also tested via GitHub actions on MacOS and Windows, using the PostgreSQL version which is
 pre-installed in the virtual images (currently 14.5). This library also works against other
@@ -35,11 +37,14 @@ databases that implement the PostgreSQL wire protocol:
 
 - [CrateDB](https://crate.io/): tested with version 5.0.1.
 
+- [QuestDB](https://questdb.io/): tested against version 6.5.4
+
+- [YugabyteDB](https://yugabyte.com/): tested against version 2.15
 
 Tested with Emacs versions 28.2, 27.2 and 26.3. Emacs versions older than 26.1 will not work against
-a recent PostgreSQL version (that is set up to require SCRAM-SHA-256 authentication), because they
-don't include the GnuTLS support which we use to calculate HMACs. They may however work against a
-database set up to allow unauthenticated local connections.
+a recent PostgreSQL version (whose default configuration requires SCRAM-SHA-256 authentication),
+because they don't include the GnuTLS support which we use to calculate HMACs. They may however work
+against a database set up to allow unauthenticated local connections.
 
 You may be interested in an alternative library [emacs-libpq](https://github.com/anse1/emacs-libpq)
 that enables access to PostgreSQL from Emacs by binding to the libpq library.
@@ -113,29 +118,35 @@ database and return it in an opaque record PGRESULT.
 Extract information from the `PGRESULT` returned by `pg-exec`. The `WHAT` keyword can be
 one of
 
-- `:connection`: retrieve the database connection.
+* `:connection`: retrieve the database connection.
 
-- `:status`: a string returned by the backend to indicate the status of the command; it is something
-  like "SELECT" for a select command, "DELETE 1" if the deletion affected a single row, etc.
+* `:status`: a string returned by the backend to indicate the status of the command; it is something
+   like "SELECT" for a select command, "DELETE 1" if the deletion affected a single row, etc.
 
-- `:attributes`: a list of tuples providing metadata: the first component of each tuple is the
-  attribute's name as a string, the second an integer representing its PostgreSQL type, and the third
-  an integer representing the size of that type.
+* `:attributes`: a list of tuples providing metadata: the first component of each tuple is the
+   attribute's name as a string, the second an integer representing its PostgreSQL type, and the third
+   an integer representing the size of that type.
 
-- `:tuples`: all the data retrieved from the database, as a list of lists, each list
-  corresponding to one row of data returned by the backend. 
+* `:tuples`: all the data retrieved from the database, as a list of lists, each list corresponding
+   to one row of data returned by the backend.
 
-- `:tuple` tuple-number: return a specific tuple (numbering starts at 0).
+* `:tuple` tuple-number: return a specific tuple (numbering starts at 0).
 
-- `:oid`: allows you to retrieve the OID returned by the backend if the command was an insertion.
-  The OID is a unique identifier for that row in the database (this is PostgreSQL-specific, please
-  refer to the documentation for more details).
+* `:oid`: allows you to retrieve the OID returned by the backend if the command was an insertion.
+   The OID is a unique identifier for that row in the database (this is PostgreSQL-specific; please
+   refer to the documentation for more details).
+ 
+.
+
+    (pg-cancel con) -> nil
+
+Ask the server to cancel the command currently being processed by the backend. The cancellation
+request concerns the command requested over database connection `CON`.
 
 
-     (pg-disconnect con) -> nil
-    
+    (pg-disconnect con) -> nil
+
 Close the database connection `CON`.
-
 
 
     (pg-for-each connection select-form callback)
