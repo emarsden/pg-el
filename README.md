@@ -22,9 +22,11 @@ Including support for:
 
 - Connections over TCP or (on Unix machines) a local Unix socket
 
-- Parsing PostgreSQL JSON and JSONB objects
+- Parsing PostgreSQL JSON, JSONB and HSTORE objects
 
 - Parsing PostgreSQL array types
+
+- Parsing PostgreSQL integer and numerical range types
 
 The code has been tested with PostgreSQL versions 15.0, 13.8, 11.17, and 10.22 on Linux. It is
 also tested via GitHub actions on MacOS and Windows, using the PostgreSQL version which is

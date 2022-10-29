@@ -311,18 +311,6 @@ struct.")
 (defconst pg-INV_READ    262144)
 (defconst pg-LO_BUFIZE   1024)
 
-;; this regular expression works in Emacs 21 and XEmacs, but not Emacs
-;; 20.x (no match-exactly-n-times facility)
-;; (defconst pg-ISODATE_REGEX (concat
-;; "\\([0-9]\\{4\\}\\)-\\([0-9]\\{2\\}\\)-\\([0-9]\\{2\\}\\) " ; Y-M-D
-;; "\\([0-9]\\{2\\}\\):\\([0-9]\\{2\\}\\):\\([.0-9]+\\)" ; H:M:S.S
-;; "\\([-+][0-9]+\\)")) ; TZ
-
-(defconst pg-ISODATE_REGEX
-  (concat "\\([0-9]+\\)-\\([0-9][0-9]\\)-\\([0-9][0-9]\\) " ; Y-M-D
-          "\\([0-9][0-9]\\):\\([0-9][0-9]\\):\\([.0-9]+\\)" ; H:M:S.S
-          "\\([-+][0-9]+\\)?")) ; TZ
-
 ;; alist of (oid . parser) pairs. This is built dynamically at
 ;; initialization of the connection with the database (once generated,
 ;; the information is shared between connections).
@@ -844,6 +832,7 @@ PostgreSQL and Emacs. CON should no longer be used."
     ("json"         . ,'pg-json-parser)
     ("jsonb"        . ,'pg-json-parser)
     ;; "xml" TODO
+    ("hstore"       . ,'pg-hstore-parser)
     ("count"        . ,'pg-number-parser)
     ("int2"         . ,'pg-number-parser)
     ("int4"         . ,'pg-number-parser)
@@ -991,6 +980,21 @@ PostgreSQL and Emacs. CON should no longer be used."
     (require 'json)
     (json-read-from-string str)))
 
+;; We receive something like "\"a\"=>\"1\", \"b\"=>\"2\""
+(defun pg-hstore-parser (str encoding)
+  (cl-flet ((parse (v)
+              (if (string= "NULL" v)
+                  nil
+                (unless (and (eql ?\" (aref v 0))
+                             (eql ?\" (aref v (1- (length v)))))
+                  (signal 'pg-protocol-error '("Unexpected format for HSTORE content")))
+                (substring v 1 (1- (length v))))))
+    (let ((hstore (make-hash-table :test #'equal)))
+      (dolist (segment (split-string str "," t "\s+"))
+        (let* ((kv (split-string segment "=>" t "\s+")))
+          (puthash (parse (car kv)) (parse (cadr kv)) hstore)))
+      hstore)))
+
 (defun pg-bool-parser (str _encoding)
   (cond ((string= "t" str) t)
         ((string= "f" str) nil)
@@ -1003,6 +1007,11 @@ PostgreSQL and Emacs. CON should no longer be used."
         (month (string-to-number (substring str 5 7)))
         (day   (string-to-number (substring str 8 10))))
     (encode-time 0 0 0 day month year)))
+
+(defconst pg-ISODATE_REGEX
+  (concat "\\([0-9]+\\)-\\([0-9][0-9]\\)-\\([0-9][0-9]\\) " ; Y-M-D
+          "\\([0-9][0-9]\\):\\([0-9][0-9]\\):\\([.0-9]+\\)" ; H:M:S.S
+          "\\([-+][0-9]+\\)?")) ; TZ
 
 ;;  format for abstime/timestamp etc with ISO output syntax is
 ;;;    "1999-01-02 14:32:53+01"
