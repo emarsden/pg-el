@@ -13,7 +13,7 @@
         (user (or (getenv "PGEL_USER") "pgeltestuser"))
         (password (or (getenv "PGEL_PASSWORD") "pgeltest"))
         (host (or (getenv "PGEL_HOSTNAME") "localhost"))
-        (port (or (getenv "PGEL_PORT") 5432)))
+        (port (or (string-to-number (getenv "PGEL_PORT")) 5432)))
     `(with-pg-connection ,conn (,db ,user ,password ,host ,port)
          ,@body)))
 
@@ -23,7 +23,7 @@
         (user (or (getenv "PGEL_USER") "pgeltestuser"))
         (password (or (getenv "PGEL_PASSWORD") "pgeltest"))
         (host (or (getenv "PGEL_HOSTNAME") "localhost"))
-        (port (or (getenv "PGEL_PORT") 5432)))
+        (port (or (string-to-number (getenv "PGEL_PORT")) 5432)))
     `(with-pg-connection ,conn (,db ,user ,password ,host ,port t)
         ,@body)))
 
@@ -31,7 +31,7 @@
   (let* ((db (or (getenv "PGEL_DATABASE") "pgeltestdb"))
          (user (or (getenv "PGEL_USER") "pgeltestuser"))
          (password (or (getenv "PGEL_PASSWORD") "pgeltest"))
-         (port (or (getenv "PGEL_PORT") 5432))
+         (port (or (string-to-number (getenv "PGEL_PORT")) 5432))
          (path (or (getenv "PGEL_PATH") (format "/var/run/postgresql/.s.PGSQL.%s" port))))
     `(with-pg-connection-local ,conn (,path ,db ,user ,password)
         ,@body)))
@@ -345,8 +345,6 @@
        (let ((json (scalar "SELECT '[66.7,-42.0,8]'::jsonb")))
          (should (approx= 66.7 (aref json 0)))
          (should (approx= -42.0 (aref json 1))))
-       (let ((json (scalar "SELECT json_object_agg(42, 66)")))
-         (should (eql 66 (gethash "42" json))))
        ;; JSON handling (handling of dictionaries, of NULL, false, [] and {}, etc.) differs between
        ;; the native JSON support and the json elisp libary. We only test the native support.
        (when (and (fboundp 'json-parse-string)
@@ -365,6 +363,8 @@
          (should (equal :null (gethash "a" (scalar "SELECT '{\"a\": null}'::json"))))
          (should (equal (vector t :false 42) (scalar "SELECT '[true,false,42]'::json")))
          (should (equal (vector t :false 42) (scalar "SELECT '[true,false,42]'::jsonb")))
+         (let ((json (scalar "SELECT json_object_agg(42, 66)")))
+           (should (eql 66 (gethash "42" json))))
          (let ((json (scalar "SELECT '{\"a\":1,\"b\":-22}'::json")))
            (should (eql 1 (gethash "a" json)))
            (should (eql -22 (gethash "b" json))))
@@ -375,8 +375,13 @@
 
 (defun pg-test-hstore ()
   (with-pgtest-connection conn
+     ;; We need to call this before using HSTORE datatypes to load the extension if necessary, and
+     ;; to set up our parser support for the HSTORE type.
+     (pg-hstore-setup conn)
      (cl-flet ((scalar (sql) (car (pg-result (pg-exec conn sql) :tuple 0))))
-       (pg-exec conn "CREATE EXTENSION IF NOT EXISTS hstore")
+       (let ((hs (scalar "SELECT 'foo=>bar'::hstore")))
+         (should (string= "bar" (gethash "foo" hs)))
+         (should (eql 1 (hash-table-count hs))))
        (let ((hs (scalar "SELECT 'a=>1,b=>2'::hstore")))
          (should (string= "1" (gethash "a" hs)))
          (should (eql 2 (hash-table-count hs))))

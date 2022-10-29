@@ -139,6 +139,11 @@
 ;;     detailed information (attribute types, for example), it can be
 ;;     obtained from `pg-result' on a SELECT statement for that table.
 ;;
+;; (pg-hstore-setup conn)
+;;     Prepare for the use of HSTORE datatypes. This function must be called
+;;     before using the HSTORE extension. It loads the extension if necessary,
+;;     and sets up the parsing support for HSTORE datatypes.
+;;
 ;; (pg-lo-create conn . args) -> oid
 ;;     Create a new large object (BLOB, or binary large object in
 ;;     other DBMSes parlance) in the database to which we are
@@ -832,6 +837,8 @@ PostgreSQL and Emacs. CON should no longer be used."
     ("json"         . ,'pg-json-parser)
     ("jsonb"        . ,'pg-json-parser)
     ;; "xml" TODO
+    ;; Note however that the hstore type is generally not present in the pg_types table
+    ;; upon startup, so we need to call `pg-hstore-setup' before using HSTORE datatypes.
     ("hstore"       . ,'pg-hstore-parser)
     ("count"        . ,'pg-number-parser)
     ("int2"         . ,'pg-number-parser)
@@ -988,7 +995,7 @@ PostgreSQL and Emacs. CON should no longer be used."
                 (unless (and (eql ?\" (aref v 0))
                              (eql ?\" (aref v (1- (length v)))))
                   (signal 'pg-protocol-error '("Unexpected format for HSTORE content")))
-                (substring v 1 (1- (length v))))))
+                (pg-text-parser (substring v 1 (1- (length v))) encoding))))
     (let ((hstore (make-hash-table :test #'equal)))
       (dolist (segment (split-string str "," t "\s+"))
         (let* ((kv (split-string segment "=>" t "\s+")))
@@ -1050,6 +1057,17 @@ PostgreSQL and Emacs. CON should no longer be used."
     (if (consp parser)
         (funcall (cdr parser) str encoding)
       str)))
+
+;; This function must be called before using the HSTORE extension. It loads the extension if
+;; necessary, and sets up the parsing support for HSTORE datatypes. This is necessary because
+;; the hstore type is not defined on startup in the pg_type table.
+(defun pg-hstore-setup (conn)
+  "Prepare for using and parsing HSTORE datatypes on PostgreSQL connection CONN."
+  (pg-exec conn "CREATE EXTENSION IF NOT EXISTS hstore")
+  (let* ((res (pg-exec conn "SELECT oid FROM pg_type WHERE typname='hstore'"))
+         (oid (car (pg-result res :tuple 0))))
+    (push (cons oid #'pg-hstore-parser) pg-parsers)))
+
 
 ;; Map between PostgreSQL names for encodings and their Emacs name.
 ;; For Emacs, see coding-system-alist.
