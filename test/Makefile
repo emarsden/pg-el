@@ -19,7 +19,7 @@ test-local: test-pg.el
 # PostgreSQL.
 test-emacs27: test-pg.el
 	cp ../pg.el test-pg.el ${WORKDIR}
-	sudo podman run -it \
+	podman run -it \
 	   -v ${WORKDIR}:/tmp \
 	   --network slirp4netns:allow_host_loopback=true -e PGEL_HOSTNAME=10.0.2.2 \
 	   silex/emacs:27.2 \
@@ -27,7 +27,7 @@ test-emacs27: test-pg.el
 
 test-emacs26: test-pg.el
 	cp ../pg.el test-pg.el ${WORKDIR}
-	sudo podman run -it \
+	podman run -it \
 	   -v ${WORKDIR}:/tmp \
 	   --network slirp4netns:allow_host_loopback=true -e PGEL_HOSTNAME=10.0.2.2 \
 	   silex/emacs:26.3-alpine-ci \
@@ -39,11 +39,52 @@ test-emacs26: test-pg.el
 # authentication for local connections.
 test-emacs25: test-pg.el
 	cp ../pg.el test-pg.el ${WORKDIR}
-	sudo podman run -it \
+	podman run -it \
 	   -v ${WORKDIR}:/tmp \
 	   --network slirp4netns:allow_host_loopback=true -e PGEL_HOSTNAME=10.0.2.2 \
 	   silex/emacs:25.3 \
 	   emacs -Q --batch -l /tmp/pg.el -l /tmp/test-pg.el -f pg-test
+
+test-postgresql14: test-pg.el
+	podman run --name pgsql \
+	   --publish 5439:5439 \
+	   -e POSTGRES_DB=pgeltestdb \
+	   -e POSTGRES_USER=pgeltestuser \
+	   -e POSTGRES_PASSWORD=pgeltest \
+	   -e PGPORT=5439 \
+	   -d docker.io/library/postgres:14
+	sleep 5
+	PGEL_PORT=5439 emacs -Q --batch -l ../pg.el -l test-pg.el -f pg-test
+	podman stop pgsql
+	podman rm pgsql
+
+test-postgresql13: test-pg.el
+	podman run --name pgsql \
+	   --publish 5439:5439 \
+	   -e POSTGRES_DB=pgeltestdb \
+	   -e POSTGRES_USER=pgeltestuser \
+	   -e POSTGRES_PASSWORD=pgeltest \
+	   -e PGPORT=5439 \
+	   -d docker.io/library/postgres:13-alpine
+	sleep 5
+	PGEL_PORT=5439 emacs -Q --batch -l ../pg.el -l test-pg.el -f pg-test
+	podman stop pgsql
+	podman rm pgsql
+
+test-postgresql12: test-pg.el
+	podman run --detach \
+	   --name pgsql \
+	   --publish 5439:5439 \
+	   -e POSTGRES_DB=pgeltestdb \
+	   -e POSTGRES_USER=pgeltestuser \
+	   -e POSTGRES_PASSWORD=pgeltest \
+	   -e PGPORT=5439 \
+	   docker.io/library/postgres:12-alpine
+	sleep 5
+	PGEL_PORT=5439 emacs -Q --batch -l ../pg.el -l test-pg.el -f pg-test
+	podman stop pgsql
+	podman rm pgsql
+
 
 
 # CrateDB uses a default database name of "doc" that we can't set via Docker
