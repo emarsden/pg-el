@@ -13,7 +13,7 @@
         (user (or (getenv "PGEL_USER") "pgeltestuser"))
         (password (or (getenv "PGEL_PASSWORD") "pgeltest"))
         (host (or (getenv "PGEL_HOSTNAME") "localhost"))
-        (port (or (string-to-number (getenv "PGEL_PORT")) 5432)))
+        (port (let ((p (getenv "PGEL_PORT"))) (if p (string-to-number p) 5432))))
     `(with-pg-connection ,conn (,db ,user ,password ,host ,port)
          ,@body)))
 
@@ -23,7 +23,7 @@
         (user (or (getenv "PGEL_USER") "pgeltestuser"))
         (password (or (getenv "PGEL_PASSWORD") "pgeltest"))
         (host (or (getenv "PGEL_HOSTNAME") "localhost"))
-        (port (or (string-to-number (getenv "PGEL_PORT")) 5432)))
+        (port (let ((p (getenv "PGEL_PORT"))) (if p (string-to-number p) 5432))))
     `(with-pg-connection ,conn (,db ,user ,password ,host ,port t)
         ,@body)))
 
@@ -31,7 +31,7 @@
   (let* ((db (or (getenv "PGEL_DATABASE") "pgeltestdb"))
          (user (or (getenv "PGEL_USER") "pgeltestuser"))
          (password (or (getenv "PGEL_PASSWORD") "pgeltest"))
-         (port (or (string-to-number (getenv "PGEL_PORT")) 5432))
+         (port (let ((p (getenv "PGEL_PORT"))) (if p (string-to-number p) 5432)))
          (path (or (getenv "PGEL_PATH") (format "/var/run/postgresql/.s.PGSQL.%s" port))))
     `(with-pg-connection-local ,conn (,path ,db ,user ,password)
         ,@body)))
