@@ -8,7 +8,7 @@
 
 This module lets you access the PostgreSQL 🐘 object-relational DBMS from Emacs, using its
 socket-level frontend/backend protocol. The module is capable of automatic type coercions from a
-range of SQL types to the equivalent Emacs Lisp type. This is a low level API, and won't be useful
+range of SQL types to the equivalent Emacs Lisp type. This is a low-level API, and won't be useful
 to end users.
 
 Including support for:
@@ -28,7 +28,7 @@ Including support for:
 
 - Parsing PostgreSQL integer and numerical range types
 
-The code has been tested with PostgreSQL versions 15.0, 13.8, 11.17, and 10.22 on Linux. It is
+The code has been tested with PostgreSQL versions 15.1, 13.8, 11.17, and 10.22 on Linux. It is
 also tested via GitHub actions on MacOS and Windows, using the PostgreSQL version which is
 pre-installed in the virtual images (currently 14.5). This library also works against other
 databases that implement the PostgreSQL wire protocol:
