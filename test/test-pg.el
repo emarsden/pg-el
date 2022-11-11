@@ -138,6 +138,7 @@
         (should (string= "Z" (car (row "SELECT chr(90)")))))
       (should (equal (list 12) (row "select length('(╯°□°)╯︵ ┻━┻')")))
       (should (eql nil (row " SELECT 3 where 1=0")))
+      (should (string= "abcdef" (car (row "SELECT 'abc' || 'def'"))))
       (should (string= "howdy" (car (row "SELECT 'howdy'::text"))))
       (should (string= "gday" (car (row "SELECT 'gday'::varchar(20)")))))))
 
@@ -182,6 +183,7 @@
       (pg-exec conn "DROP TABLE date_test")
       (should (equal (scalar "SELECT '2022-10-01'::date") (encode-time 0 0 0 1 10 2022)))
       (should (equal (scalar "SELECT 'PT42S'::interval") "00:00:42"))
+      (should (equal (scalar "SELECT 'PT3H4M42S'::interval") "03:04:42"))
       (should (equal (scalar "select '05:00'::time") "05:00:00"))
       (should (equal (scalar "SELECT '2001-02-03 04:05:06'::timestamp")
                      (encode-time 6 5 4 3 2 2001 nil t))))))
@@ -313,20 +315,21 @@
        (should (equal (vector 1234) (scalar "SELECT ARRAY[1234::int2]")))
        (should (equal (vector -3456) (scalar "SELECT ARRAY[-3456::int4]")))
        (should (equal (vector 9987) (scalar "SELECT ARRAY[9987::int8]")))
+       (should (equal (vector 2 8) (scalar "SELECT ARRAY[2,8]")))
+       (let ((vec (scalar "SELECT ARRAY[3.14::float]")))
+         (should (approx= 3.14 (aref vec 0))))
        (should (eql (vector 42) (scalar "SELECT array_agg(42)")))
        (should (equal (vector 45 67 89) (scalar "SELECT '{45,67,89}'::smallint[]")))
        (should (equal (vector t nil t nil t)
                       (scalar "SELECT '{true, false, true, false, true}'::bool[]")))
        (should (equal (vector ?A ?z ?5) (scalar "SELECT '{A,z,5}'::char[]")))
+       ;; this is returning _bpchar
+       (should (equal (vector ?a ?b ?c) (scalar "SELECT CAST('{a,b,c}' AS CHAR[])")))
        (should (equal (vector "foo" "bar") (scalar "SELECT '{foo, bar}'::text[]")))
        (let ((vec (scalar "SELECT ARRAY[44.3, 8999.5]")))
          (should (equal 2 (length vec)))
          (should (approx= 44.3 (aref vec 0)))
          (should (approx= 899.5 (aref vec 1)))))))
-
-  ;; eg  "SELECT CAST('{a,b,c}' AS CHAR[])")
-  ;; select row(ARRAY[1,2,4,8])
-  ;; select row(ARRAY[3.14::float])
 
 
 ;; https://www.postgresql.org/docs/15/functions-json.html
