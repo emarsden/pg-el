@@ -51,7 +51,7 @@ images](https://hub.docker.com/_/postgres/), using Docker or Podman.
 
 Example invocation: 
 
-    sudo podman run -d --name pgsql \
+    podman run -d --name pgsql \
        -v /dev/log:/dev/log \
        -v /var/run/postgresql:/var/run/postgresql \
        --publish 5432:5432 \
@@ -71,7 +71,7 @@ or to connect over a local Unix socket
 Note that these Docker images don't include TLS support. If you want to run the Debian-based images
 (it won't work with the Alpine-based ones) with a self-signed certificate, you can use
 
-    sudo podman run -d --name pgsql \
+    podman run -d --name pgsql \
        -v /dev/log:/dev/log \
        -v /var/run/postgresql:/var/run/postgresql \
        --publish 5432:5432 \
@@ -90,7 +90,7 @@ Note that these Docker images don't include TLS support. If you want to run the 
 implemented in Golang, built on a strongly-consistent key-value store. It implements the PostgreSQL
 wire protocol.
 
-    sudo podman run --name cockroachdb \
+    podman run --name cockroachdb \
        -v /dev/log:/dev/log \
        --publish 26257:26257 \
        -d cockroachdb/cockroach start-single-node --insecure
@@ -99,8 +99,8 @@ wire protocol.
     
     PGEL_DATABASE=postgres PGEL_USER=root PGEL_PASSWORD="" PGEL_PORT=26257 make test
 
-    sudo podman stop cockroachdb
-    sudo podman rm cockroachdb
+    podman stop cockroachdb
+    podman rm cockroachdb
 
 Note that CockroachDB does not have large object support. 
 
@@ -111,7 +111,7 @@ Note that CockroachDB does not have large object support.
 [CrateDB](https://crate.io/) is an open source distributed database implemented in Java, that
 implements the PostgreSQL wire protocol.
 
-    sudo podman run --name cratedb \
+    podman run --name cratedb \
        --publish 5432:5432 \
        -d docker.io/library/crate:latest -Cdiscovery.type=single-node
     # psql -h localhost -p 5432 -U crate
@@ -124,8 +124,8 @@ implements the PostgreSQL wire protocol.
 
     PGEL_DATABASE=postgres PGEL_USER=pgeltestuser PGEL_PASSWORD="pgeltest" PGEL_PORT=5432 make test
 
-    sudo podman stop cratedb
-    sudo podman rm cratedb
+    podman stop cratedb
+    podman rm cratedb
 
 
 Note that CrateDB doesn't implement COPY or large object support, nor PostgreSQL's full-text search
@@ -137,7 +137,7 @@ operators (it has specific features for text search).
 [QuestDB](https://questdb.io/) is an open source relational column-oriented database designed for
 time series and event data. It implements the PostgreSQL wire protocol. 
 
-    sudo podman run --name questdb \
+    podman run --name questdb \
        --publish 8812:8812 \
        -d questdb/questdb
 
@@ -145,8 +145,8 @@ time series and event data. It implements the PostgreSQL wire protocol.
 
     PGEL_DATABASE=postgres PGEL_USER=admin PGEL_PASSWORD="quest" PGEL_PORT=8812 make test
 
-    sudo podman stop questdb
-    sudo podman rm questdb
+    podman stop questdb
+    podman rm questdb
 
 
 Note that QuestDB is quite far from being compatible with the SQL understood by PostgreSQL (eg.
@@ -169,8 +169,8 @@ volumes of data. It implements the PostgreSQL wire protocol.
 
     PGEL_DATABASE=yugabyte PGEL_USER=yugabyte PGEL_PASSWORD="" PGEL_PORT=5433 make test
 
-    sudo podman stop yugabyte
-    sudo podman rm yugabyte
+    podman stop yugabyte
+    podman rm yugabyte
 
 
 ## Testing with older Emacs versions
