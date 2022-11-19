@@ -1,13 +1,17 @@
 # Changelog
 
-## [0.19] - 2022-11
+## [0.19] - 2022-11-19
 ### New
 - Add support for parsing the `BIT` and `VARBIT` datatypes.
 - Add support for parsing ARRAY datatypes.
 - Add support for parsing RANGE datatypes (integer and numerical).
-- Add support for parsing HSTORE datatypes.
+- Add support for parsing HSTORE datatypes (see function `pg-hstore-setup` to prepare the database
+  connection for use of the HSTORE datatype).
 - Add function `pg-cancel` to request cancellation of the command currently being processed
   by the backend.
+
+### Fixed
+- Fix bug in handling of DataRow messages when zero columns returned by query.
 
 
 ## [0.18] - 2022-10-16

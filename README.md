@@ -2,7 +2,6 @@
 
 [![License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](https://www.gnu.org/licenses/old-licenses/gpl-2.0)
 [![MELPA](https://melpa.org/packages/pg-badge.svg)](https://melpa.org/#/pg)
-[![CI](https://github.com/emarsden/pg-el/workflows/check/badge.svg)](https://github.com/emarsden/pg-el/workflows/check/badge.svg)
 [![Connect-v12](https://github.com/emarsden/pg-el/workflows/test-pgv12/badge.svg)](https://github.com/emarsden/pg-el/workflows/test-pgv12/badge.svg)
 
 
