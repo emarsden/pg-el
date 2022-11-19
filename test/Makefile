@@ -86,13 +86,44 @@ test-postgresql12: test-pg.el
 	podman rm pgsql
 
 
-
 # CrateDB uses a default database name of "doc" that we can't set via Docker
 test-cratedb: test-pg.el
 	PGEL_DATABASE=doc make test
 
 test-cockroachdb: test-pg.el
+	podman run --name cockroachdb \
+	   -v /dev/log:/dev/log \
+	   --publish 26257:26257 \
+	   -d cockroachdb/cockroach start-single-node --insecure
+	sleep 5
 	PGEL_DATABASE=postgres PGEL_USER=root PGEL_PASSWORD="" PGEL_PORT=26257 make test
+	podman stop cockroachdb
+	podman rm cockroachdb
+
+
+test-questdb: test-pg.el
+	podman run --name questdb \
+	  --publish 8812:8812 \
+	  -d questdb/questdb
+	sleep 5
+	PGEL_DATABASE=postgres PGEL_USER=admin PGEL_PASSWORD="quest" PGEL_PORT=8812 make test
+	podman stop questdb
+	podman rm questdb
+
+
+test-yutabyte: test-pg.el
+	podman run --name yugabyte \
+	  --publish 5433:5433 \
+	  -d yugabytedb/yugabyte \
+	  bin/yugabyted start \
+	  --base_dir=/tmp \
+	  --daemon=false
+	sleep 5
+	PGEL_DATABASE=yugabyte PGEL_USER=yugabyte PGEL_PASSWORD="" PGEL_PORT=5433 make test
+	podman stop yugabyte
+	podman rm yugabyte
+
+
 
 bench-uncompiled: test-pg.el
 	emacs -Q --batch -l ../pg.el -l test-pg.el -f pg-bench
