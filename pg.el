@@ -610,7 +610,7 @@ Return a result structure which can be decoded using `pg-result'."
                ;; FIXME decode channel and payload?
                (message "Asynchronous notify %s:%s" channel payload)))
 
-            ;; Bind
+            ;; Bind -- should not receive this
             (?B
              (setf (pgcon-binaryp connection) t)
              (unless attributes
@@ -628,8 +628,6 @@ Return a result structure which can be decoded using `pg-result'."
             ;; DataRow
             (?D
              (setf (pgcon-binaryp connection) nil)
-             (unless attributes
-               (signal 'pg-protocol-error (list "Tuple received before metadata")))
              (let ((_msglen (pg-read-net-int connection 4)))
                (push (pg-read-tuple connection attributes) tuples)))
 
