@@ -1611,6 +1611,9 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
          (end (+ start count)))
     (accept-process-output)
     (prog1 (with-current-buffer (process-buffer process)
+             ;; wait for new output, if necessary
+             (when (> end (point-max))
+               (accept-process-output process 5))
              (buffer-substring start end))
       (setf (pgcon-position connection) end))))
 

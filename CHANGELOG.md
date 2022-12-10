@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.20] - 2022-12-10
+### Fixed
+- Wait for further data from the network in `pg-read-chars` if the process buffer doesn't yet
+  contain the necessary data (fix from swilsons).
+
+
 ## [0.19] - 2022-11-19
 ### New
 - Add support for parsing the `BIT` and `VARBIT` datatypes.
