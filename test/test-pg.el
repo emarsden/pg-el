@@ -549,12 +549,14 @@
   ;; table name will always be present).
   (cl-flet ((deity-p (ntc) (should (cl-search "deity" (pgerror-message ntc)))))
     (let ((pg-handle-notice-functions (list #'deity-p)))
-      (pg-exec conn "DROP TABLE IF EXISTS deity")))
-  ;; Only the superuser can issue a VACUUM. A bunch of NOTICEs will be emitted indicating this.
-  (let ((notice-counter 0))
-    (let ((pg-handle-notice-functions (list (lambda (_n) (cl-incf notice-counter)))))
-      (pg-exec conn "VACUUM")
-      (should (> notice-counter 0)))))
+      (pg-exec conn "DROP TABLE IF EXISTS deity"))))
+
+;; Only the superuser can issue a VACUUM. A bunch of NOTICEs will be emitted indicating this. This
+;; test is not robust across PostgreSQL versions, however.
+; (let ((notice-counter 0))
+;   (let ((pg-handle-notice-functions (list (lambda (_n) (cl-incf notice-counter)))))
+;     (pg-exec conn "VACUUM")
+;     (should (> notice-counter 0)))))
 
 
 ;; test of large-object interface. Note the use of with-pg-transaction
