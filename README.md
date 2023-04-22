@@ -57,7 +57,7 @@ Install via the [MELPA package archive](https://melpa.org/partials/getting-start
 including the following in your Emacs initialization file (`.emacs.el` or `init.el`):
 
     (require 'package)
-    (add-to-list 'package-archives '("melpa" . "https://stable.melpa.org/packages/") t)
+    (add-to-list 'package-archives '("melpa" . "https://melpa.org/packages/") t)
 
 then saying 
 
