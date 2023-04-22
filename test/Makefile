@@ -123,6 +123,15 @@ test-yutabyte: test-pg.el
 	podman stop yugabyte
 	podman rm yugabyte
 
+test-greenplum: test-pg.el
+	podman run --name greenplum \
+	  --publish 5433:5433 \
+	  -e PGPORT=5433 \
+	  -d docker.io/projectairws/greenplum:latest
+	sleep 5
+	PGEL_DATABASE=postgres PGEL_USER=gpadmin PGEL_PASSWORD="greenplum" PGEL_PORT=5432 make test
+	podman stop greenplum
+	podman rm greenplum
 
 
 bench-uncompiled: test-pg.el

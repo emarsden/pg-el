@@ -1,7 +1,7 @@
 ;;; Tests for the pg.el library   -*- coding: utf-8; -*-
 ;;;
 ;;; Author: Eric Marsden <eric.marsden@risk-engineering.org>
-;;; Copyright: (C) 2022  Eric Marsden
+;;; Copyright: (C) 2022-2023  Eric Marsden
 
 
 (require 'cl-lib)
@@ -54,6 +54,9 @@
   (pg-test-hstore conn)
   (message "Testing database creation")
   (pg-test-createdb conn)
+  (message "Testing unicode names for database, tables, columns")
+  (pg-test-unicode-names conn)
+  (pg-test-returning conn)
   (pg-test-parameter-change-handlers conn)
   (message "Testing error handling")
   (pg-test-errors conn)
@@ -148,6 +151,12 @@
       (message "time = %s" (cl-second res)))
     (pg-exec conn "DROP TABLE date_test")
     (should (equal (scalar "SELECT '2022-10-01'::date") (encode-time 0 0 0 1 10 2022)))
+    ;; When casting to DATE, the time portion is truncated
+    (should (equal (scalar "SELECT '2063-03-31T22:13:02'::date")
+                   (encode-time 0 0 0 31 3 2063)))
+    ;; Here the hh:mm:ss are taken into account. The last 't' is for UTC timezone.
+    (should (equal (scalar "SELECT '2063-03-31T22:13:02'::timestamp")
+                   (encode-time 2 13 22 31 3 2063 nil t t)))
     (should (equal (scalar "SELECT 'PT42S'::interval") "00:00:42"))
     (should (equal (scalar "SELECT 'PT3H4M42S'::interval") "03:04:42"))
     (should (equal (scalar "select '05:00'::time") "05:00:00"))
@@ -192,6 +201,7 @@
     (should (approx= (scalar "SELECT 55.678::float8") 55.678))
     (should (approx= (scalar "SELECT 55.678::real") 55.678))
     (should (approx= (scalar "SELECT 55.678::numeric") 55.678))
+    (should (approx= (scalar "SELECT -1000000000.123456789") -1000000000.123456789))
     (should (eql 1.0e+INF (scalar "SELECT 'Infinity'::float4")))
     (should (eql -1.0e+INF (scalar "SELECT '-Infinity'::float4")))
     (should (eql 1.0e+INF (scalar "SELECT 'Infinity'::float8")))
@@ -457,19 +467,44 @@
 (defun pg-test-createdb (conn)
   (when (member "pgeltestextra" (pg-databases conn))
     (pg-exec conn "DROP DATABASE pgeltestextra"))
-    (pg-exec conn "CREATE DATABASE pgeltestextra")
-    (should (member "pgeltestextra" (pg-databases conn)))
-    ;; CockroachDB and YugabyteDB don't implement REINDEX
-    (unless (or (cl-search "CockroachDB" (pg-backend-version conn))
-                (cl-search "-YB-" (pg-backend-version conn)))
-      (pg-exec conn "REINDEX DATABASE pgeltestdb"))
-    (let* ((r (pg-exec conn "SHOW ALL"))
-           (config (pg-result r :tuples)))
-      (cl-loop for row in config
-               when (string= "port" (car row))
-               do (message "Connected to PostgreSQL on port %s" (cadr row))))
-    (pg-exec conn "DROP DATABASE pgeltestextra"))
+  (pg-exec conn "CREATE DATABASE pgeltestextra")
+  (should (member "pgeltestextra" (pg-databases conn)))
+  ;; CockroachDB and YugabyteDB don't implement REINDEX
+  (unless (or (cl-search "CockroachDB" (pg-backend-version conn))
+              (cl-search "-YB-" (pg-backend-version conn)))
+    (pg-exec conn "REINDEX DATABASE pgeltestdb"))
+  (let* ((r (pg-exec conn "SHOW ALL"))
+         (config (pg-result r :tuples)))
+    (cl-loop for row in config
+             when (string= "port" (car row))
+             do (message "Connected to PostgreSQL on port %s" (cadr row))))
+  (pg-exec conn "DROP DATABASE pgeltestextra"))
 
+(defun pg-test-unicode-names (conn)
+  (when (member "pgel😎" (pg-databases conn))
+    (pg-exec conn "DROP DATABASE pgel😎"))
+  (pg-exec conn "CREATE DATABASE pgel😎")
+  (should (member "pgel😎" (pg-databases conn)))
+  (pg-exec conn "DROP DATABASE pgel😎")
+  (pg-exec conn "CREATE TEMPORARY TABLE pgel😏(data TEXT)")
+  (pg-exec conn "INSERT INTO pgel😏 VALUES('Foobles')")
+  (let ((r (pg-exec conn "SELECT * FROM pgel😏")))
+    (should (eql 1 (length (pg-result r :tuples)))))
+  (pg-exec conn "CREATE TEMPORARY TABLE pgeltestunicode(pg→el TEXT)")
+  (pg-exec conn "INSERT INTO pgeltestunicode(pg→el) VALUES ('Foobles')")
+  (pg-exec conn "INSERT INTO pgeltestunicode(pg→el) VALUES ('Bizzles')")
+  (let ((r (pg-exec conn "SELECT pg→el FROM pgeltestunicode")))
+    (should (eql 2 (length (pg-result r :tuples))))))
+
+(defun pg-test-returning (conn)
+  (when (member "pgeltestr" (pg-tables conn))
+    (pg-exec conn "DROP TABLE pgeltestr"))
+  (pg-exec conn "CREATE TABLE pgeltestr(id SERIAL, data TEXT)")
+  (let* ((res (pg-exec conn "INSERT INTO pgeltestr(data) VALUES ('Foobles') RETURNING id"))
+         (id (pg-result res :tuple 0))
+         (res (pg-exec conn (format "SELECT data from pgeltestr WHERE id=%s" id))))
+    (should (string= (car (pg-result res :tuple 0)) "Foobles")))
+  (pg-exec conn "DROP TABLE pgeltestr"))
 
 ;; Test our support for handling ParameterStatus messages, via the pg-parameter-change-functions
 ;; variable. When we change the session timezone, the backend should send us a ParameterStatus
@@ -514,7 +549,12 @@
   ;; table name will always be present).
   (cl-flet ((deity-p (ntc) (should (cl-search "deity" (pgerror-message ntc)))))
     (let ((pg-handle-notice-functions (list #'deity-p)))
-      (pg-exec conn "DROP TABLE IF EXISTS deity"))))
+      (pg-exec conn "DROP TABLE IF EXISTS deity")))
+  ;; Only the superuser can issue a VACUUM. A bunch of NOTICEs will be emitted indicating this.
+  (let ((notice-counter 0))
+    (let ((pg-handle-notice-functions (list (lambda (_n) (cl-incf notice-counter)))))
+      (pg-exec conn "VACUUM")
+      (should (> notice-counter 0)))))
 
 
 ;; test of large-object interface. Note the use of with-pg-transaction
