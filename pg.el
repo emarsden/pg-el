@@ -1,9 +1,9 @@
 ;;; pg.el --- Emacs Lisp socket-level interface to the PostgreSQL RDBMS  -*- lexical-binding: t -*-
 
-;; Copyright: (C) 1999-2002, 2022  Eric Marsden
+;; Copyright: (C) 1999-2002, 2022-2023  Eric Marsden
 
 ;; Author: Eric Marsden <eric.marsden@risk-engineering.org>
-;; Version: 0.20
+;; Version: 0.21
 ;; Keywords: data comm database postgresql
 ;; URL: https://github.com/emarsden/pg-el
 ;; Package-Requires: ((emacs "26.1"))
@@ -33,9 +33,10 @@
 ;; equivalent Emacs Lisp type. This is a low level API, and won't be
 ;; useful to end users.
 ;;
-;; Authentication methods: SCRAM-SHA-256 (the default authentication
-;; method since PostgreSQL version 14) and MD5 authentication are
-;; implemented. Encrypted (TLS) connections are supported.
+;; Supported features:
+;;  - SCRAM-SHA-256 authentication (the default method since PostgreSQL version 14)
+;;  - MD5 authentication
+;;  - Encrypted (TLS) connections
 
 
 ;; Entry points
@@ -499,6 +500,11 @@ tag called pg-finished."
                   (let ((msg (format "Problem connecting: expected an authentication response, got %s" c)))
                     (signal 'pg-protocol-error (list msg)))))))
 
+
+;; Avoid warning from the bytecode compiler
+(declare-function gnutls-negotiate "gnutls.el")
+(declare-function network-stream-certificate "network-stream.el")
+
 (cl-defun pg-connect (dbname user
                              &optional
                              (password "")
@@ -875,11 +881,13 @@ PostgreSQL and Emacs. CON should no longer be used."
 ;; https://www.npgsql.org/dev/types.html for useful information on the wire format for various
 ;; types.
 (defun pg-number-parser (str _encoding)
+  "Parse PostgreSQL value STR as a number."
   (string-to-number str))
 
 ;; We need to handle +Inf, -Inf, NaN specially because the Emacs Lisp reader uses a specific format
 ;; for them.
 (defun pg-float-parser (str _encoding)
+  "Parse PostgreSQL value STR as a floating-point value."
   (cond ((string= str "Infinity")
          1.0e+INF)
         ((string= str "-Infinity")
@@ -890,6 +898,7 @@ PostgreSQL and Emacs. CON should no longer be used."
          (string-to-number str))))
 
 (defun pg-bit-parser (str _encoding)
+  "Parse PostgreSQL value STR as a bit."
   (let* ((len (length str))
          (bv (make-bool-vector len t)))
     (dotimes (i len)
@@ -897,6 +906,7 @@ PostgreSQL and Emacs. CON should no longer be used."
     bv))
 
 (defun pg-intarray-parser (str _encoding)
+  "Parse PostgreSQL value STR as an array of integers."
   (let ((len (length str)))
     (unless (and (eql (aref str 0) ?{)
                  (eql (aref str (1- len)) ?}))
@@ -905,6 +915,7 @@ PostgreSQL and Emacs. CON should no longer be used."
       (apply #'vector (mapcar #'string-to-number segments)))))
 
 (defun pg-floatarray-parser (str _encoding)
+  "Parse PostgreSQL value STR as an array of floats."
   (let ((len (length str)))
     (unless (and (eql (aref str 0) ?{)
                  (eql (aref str (1- len)) ?}))
@@ -913,6 +924,7 @@ PostgreSQL and Emacs. CON should no longer be used."
       (apply #'vector (mapcar (lambda (x) (pg-float-parser x nil)) segments)))))
 
 (defun pg-boolarray-parser (str _encoding)
+  "Parse PostgreSQL value STR as an array of boolean values."
   (let ((len (length str)))
     (unless (and (eql (aref str 0) ?{)
                  (eql (aref str (1- len)) ?}))
@@ -921,6 +933,7 @@ PostgreSQL and Emacs. CON should no longer be used."
       (apply #'vector (mapcar (lambda (x) (pg-bool-parser x nil)) segments)))))
 
 (defun pg-chararray-parser (str encoding)
+  "Parse PostgreSQL value STR as an array of characters."
   (let ((len (length str)))
     (unless (and (eql (aref str 0) ?{)
                  (eql (aref str (1- len)) ?}))
@@ -929,6 +942,7 @@ PostgreSQL and Emacs. CON should no longer be used."
       (apply #'vector (mapcar (lambda (x) (pg-text-parser x encoding)) segments)))))
 
 (defun pg-textarray-parser (str encoding)
+  "Parse PostgreSQL value STR as an array of TEXT values."
   (let ((len (length str)))
     (unless (and (eql (aref str 0) ?{)
                  (eql (aref str (1- len)) ?}))
@@ -938,6 +952,7 @@ PostgreSQL and Emacs. CON should no longer be used."
 
 ;; Something like "[10.4,20)". TODO: handle multirange types (from PostgreSQL v14)
 (defun pg-numrange-parser (str _encoding)
+  "Parse PostgreSQL value STR as a numerical range."
   (if (string= "empty" str)
       (list :range)
     (let* ((len (length str))
@@ -956,7 +971,8 @@ PostgreSQL and Emacs. CON should no longer be used."
           (signal 'pg-protocol-error '("Unexpected number of elements in numerical range")))
         (list :range lower-type lower upper-type upper)))))
 
-(defsubst pg-text-parser (str encoding)
+(defun pg-text-parser (str encoding)
+  "Parse PostgreSQL value STR as text."
   (if encoding
       (decode-coding-string str encoding)
     str))
@@ -968,16 +984,20 @@ PostgreSQL and Emacs. CON should no longer be used."
 ;;
 ;; https://www.postgresql.org/docs/current/datatype-binary.html
 (defun pg-bytea-parser (str _encoding)
+  "Parse PostgreSQL value STR as a binary string using hex escapes."
   (unless (and (eql 92 (aref str 0))   ; \ character
                (eql ?x (aref str 1)))
     (signal 'pg-protocol-error
             (list "Unexpected format for BYTEA binary string")))
   (decode-hex-string (substring str 2)))
 
+(declare-function json-read-from-string "json.el")
+
 ;; We use either the native libjansson support compiled into Emacs, or fall back to the routines
 ;; from the JSON library. Note however that these do not parse JSON in exactly the same way (in
 ;; particular, NULL, false and the empty array are handled differently).
 (defun pg-json-parser (str _encoding)
+  "Parse PostgreSQL value STR as JSON."
   (if (and (fboundp 'json-parse-string)
            (fboundp 'json-available-p)
            (json-available-p))
@@ -989,6 +1009,7 @@ PostgreSQL and Emacs. CON should no longer be used."
 
 ;; We receive something like "\"a\"=>\"1\", \"b\"=>\"2\""
 (defun pg-hstore-parser (str encoding)
+  "Parse PostgreSQL value STR as HSTORE content."
   (cl-flet ((parse (v)
               (if (string= "NULL" v)
                   nil
@@ -1003,6 +1024,7 @@ PostgreSQL and Emacs. CON should no longer be used."
       hstore)))
 
 (defun pg-bool-parser (str _encoding)
+  "Parse PostgreSQL value STR as a boolean."
   (cond ((string= "t" str) t)
         ((string= "f" str) nil)
         (t (let ((msg (format "Badly formed boolean from backend: %s" str)))
@@ -1010,6 +1032,7 @@ PostgreSQL and Emacs. CON should no longer be used."
 
 ;; format for ISO dates is "1999-10-24"
 (defun pg-date-parser (str _encoding)
+  "Parse PostgreSQL value STR as a date."
   (let ((year  (string-to-number (substring str 0 4)))
         (month (string-to-number (substring str 5 7)))
         (day   (string-to-number (substring str 8 10))))
@@ -1026,6 +1049,7 @@ PostgreSQL and Emacs. CON should no longer be used."
 ;; (there may be a fractional seconds quantity as well, which the regex
 ;; handles)
 (defun pg-isodate-parser (str _encoding)
+  "Parse PostgreSQL value STR as an ISO-formatted date."
   (if (string-match pg-ISODATE_REGEX str)  ; is non-null
       (let ((year    (string-to-number (match-string 1 str)))
             (month   (string-to-number (match-string 2 str)))
@@ -1039,9 +1063,10 @@ PostgreSQL and Emacs. CON should no longer be used."
       (signal 'pg-protocol-error (list msg)))))
 
 
-(defun pg-initialize-parsers (connection)
+(defun pg-initialize-parsers (conn)
+  "Initialize the datatype parsers on PostgreSQL connection CONN."
   (setq pg-parsers '())
-  (let* ((pgtypes (pg-exec connection "SELECT typname,oid FROM pg_type"))
+  (let* ((pgtypes (pg-exec conn "SELECT typname,oid FROM pg_type"))
          (tuples (pg-result pgtypes :tuples)))
     (mapcar
      (lambda (tuple)
@@ -1102,8 +1127,8 @@ PostgreSQL and Emacs. CON should no longer be used."
     ("EUC_CN"  . euc-china)
     ("BIG5"    . big5)))
 
-;; Convert from PostgreSQL to Emacs encoding names
 (defun pg-normalize-encoding-name (name)
+  "Convert PostgreSQL encoding NAME to an Emacs encoding name."
   (let ((m (assoc name pg-encoding-names #'string=)))
     (when m (cdr m))))
 
@@ -1158,6 +1183,7 @@ Authenticate as USER with PASSWORD."
 ;; PBKDF2 is a key derivation function used to reduce vulnerability to brute-force password guessing
 ;; attempts <https://en.wikipedia.org/wiki/PBKDF2>.
 (defun pg-pbkdf2-hash-sha256 (password salt iterations)
+  "Return the PBKDF2 hash of PASSWORD using SALT and ITERATIONS."
   (let* ((hash (gnutls-hash-mac 'SHA256 (cl-copy-seq password) (concat salt (string 0 0 0 1))))
          (result hash))
     (dotimes (_i (1- iterations))
@@ -1168,6 +1194,7 @@ Authenticate as USER with PASSWORD."
 ;; Implement PBKDF2 by calling out to the nettle-pbkdf2 application (typically available in the
 ;; "nettle-bin" package) as a subprocess.
 (defun pg-pbkdf2-hash-sha256-nettle (password salt iterations)
+  "Return the PBKDF2 hash of PASSWORD using SALT and ITERATIONS, with nettle."
   ;; ITERATIONS is a integer
   ;; the hash function in nettle-pbkdf2 is hard coded to HMAC-SHA256
   (require 'hex-util)
@@ -1495,28 +1522,28 @@ Authenticate as USER with PASSWORD."
 ;; Based on the queries issued by psql in response to user commands `\d' and `\d tablename'; see
 ;; file /usr/local/src/pgsql/src/bin/psql/psql.c
 ;; =====================================================================
-(defun pg-databases (con)
-  "List of the databases available in the instance we are connected to via CON."
-  (let ((res (pg-exec con "SELECT datname FROM pg_database")))
+(defun pg-databases (conn)
+  "List of the databases available in the instance we are connected to via CONN."
+  (let ((res (pg-exec conn "SELECT datname FROM pg_database")))
     (apply #'append (pg-result res :tuples))))
 
-(defun pg-tables (con)
-  "List of the tables present in the database we are connected to via CON."
-  (let ((res (pg-exec con "SELECT relname FROM pg_class, pg_user WHERE "
+(defun pg-tables (conn)
+  "List of the tables present in the database we are connected to via CONN."
+  (let ((res (pg-exec conn "SELECT relname FROM pg_class, pg_user WHERE "
                       "(relkind = 'r' OR relkind = 'i' OR relkind = 'S') AND "
                       "relname !~ '^pg_' AND usesysid = relowner ORDER BY relname")))
     (apply #'append (pg-result res :tuples))))
 
-(defun pg-columns (con table)
-  "List of the columns present in TABLE over PostgreSQL connection CON."
+(defun pg-columns (conn table)
+  "List of the columns present in TABLE over PostgreSQL connection CONN."
   (let* ((sql (format "SELECT * FROM %s WHERE 0 = 1" table))
-         (res (pg-exec con sql)))
+         (res (pg-exec conn sql)))
     (mapcar #'car (pg-result res :attributes))))
 
-(defun pg-backend-version (con)
-  "Version and operating environment of backend that we are connected to by CON.
+(defun pg-backend-version (conn)
+  "Version and operating environment of backend that we are connected to by CONN.
 PostgreSQL returns the version as a string. CrateDB returns it as an integer."
-  (let ((res (pg-exec con "SELECT version()")))
+  (let ((res (pg-exec conn "SELECT version()")))
     (cl-first (pg-result res :tuple 0))))
 
 

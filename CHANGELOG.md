@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.21] - 2023-04-23
+### Fixed
+- Declare some autoloaded functions to avoid warning from the bytecode compiler.
+
+
 ## [0.20] - 2022-12-10
 ### Fixed
 - Wait for further data from the network in `pg-read-chars` if the process buffer doesn't yet
