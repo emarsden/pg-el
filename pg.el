@@ -3,7 +3,7 @@
 ;; Copyright: (C) 1999-2002, 2022-2023  Eric Marsden
 
 ;; Author: Eric Marsden <eric.marsden@risk-engineering.org>
-;; Version: 0.21
+;; Version: 0.22
 ;; Keywords: data comm database postgresql
 ;; URL: https://github.com/emarsden/pg-el
 ;; Package-Requires: ((emacs "26.1"))
@@ -441,6 +441,13 @@ tag called pg-finished."
                   (let ((_msglen (pg-read-net-int connection 4)))
                     (setf (pgcon-pid connection) (pg-read-net-int connection 4))
                     (setf (pgcon-secret connection) (pg-read-net-int connection 4))))
+
+                 ;; NoticeResponse
+                 ((eq ?N c)
+                  ;; a Notice response has the same structure and fields as an ErrorResponse
+                  (let ((notice (pg-read-error-response connection)))
+                    (dolist (handler pg-handle-notice-functions)
+                      (funcall handler notice))))
 
                  ;; ReadyForQuery message
                  ((eq ?Z c)

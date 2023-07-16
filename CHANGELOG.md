@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.22] - 2023-07-16
+### Fixed
+- The backend can send NoticeResponse messages during connection startup, for example indicating a
+  collation version mismatch between your database and the operating system.
+
+
 ## [0.21] - 2023-04-23
 ### Fixed
 - Declare some autoloaded functions to avoid warning from the bytecode compiler.
