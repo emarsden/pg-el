@@ -101,17 +101,19 @@ test-cockroachdb: test-pg.el
 	podman rm cockroachdb
 
 
+# The current version of QuestDB (based on PostgreSQL 12.3) doesn't get very far through the
+# tests; it fails on "SELECT 1::integer" because it doesn't recognize integer as a type.
 test-questdb: test-pg.el
 	podman run --name questdb \
 	  --publish 8812:8812 \
-	  -d questdb/questdb
+	  -d docker.io/questdb/questdb
 	sleep 5
 	PGEL_DATABASE=postgres PGEL_USER=admin PGEL_PASSWORD="quest" PGEL_PORT=8812 make test
 	podman stop questdb
 	podman rm questdb
 
 
-test-yutabyte: test-pg.el
+test-yugabyte: test-pg.el
 	podman run --name yugabyte \
 	  --publish 5433:5433 \
 	  -d yugabytedb/yugabyte \
@@ -123,13 +125,14 @@ test-yutabyte: test-pg.el
 	podman stop yugabyte
 	podman rm yugabyte
 
+# 20230807 this container fails to run with podman with a permission denied on su
 test-greenplum: test-pg.el
 	podman run --name greenplum \
 	  --publish 5433:5433 \
 	  -e PGPORT=5433 \
 	  -d docker.io/projectairws/greenplum:latest
 	sleep 5
-	PGEL_DATABASE=postgres PGEL_USER=gpadmin PGEL_PASSWORD="greenplum" PGEL_PORT=5432 make test
+	PGEL_DATABASE=postgres PGEL_USER=gpadmin PGEL_PASSWORD="greenplum" PGEL_PORT=5433 make test
 	podman stop greenplum
 	podman rm greenplum
 

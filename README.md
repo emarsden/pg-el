@@ -42,10 +42,10 @@ databases that implement the PostgreSQL wire protocol:
 
 - [YugabyteDB](https://yugabyte.com/): tested against version 2.15
 
-Tested with Emacs versions 28.2, 27.2 and 26.3. Emacs versions older than 26.1 will not work against
-a recent PostgreSQL version (whose default configuration requires SCRAM-SHA-256 authentication),
-because they don't include the GnuTLS support which we use to calculate HMACs. They may however work
-against a database set up to allow unauthenticated local connections.
+Tested with Emacs versions 29.1, 28.2, 27.2 and 26.3. Emacs versions older than 26.1 will not work
+against a recent PostgreSQL version (whose default configuration requires SCRAM-SHA-256
+authentication), because they don't include the GnuTLS support which we use to calculate HMACs. They
+may however work against a database set up to allow unauthenticated local connections.
 
 You may be interested in an alternative library [emacs-libpq](https://github.com/anse1/emacs-libpq)
 that enables access to PostgreSQL from Emacs by binding to the libpq library.
