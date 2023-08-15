@@ -504,10 +504,17 @@
     (pg-exec conn "DROP DATABASE pgeltestextra"))
   (pg-exec conn "CREATE DATABASE pgeltestextra")
   (should (member "pgeltestextra" (pg-databases conn)))
-  ;; CockroachDB and YugabyteDB don't implement REINDEX
+  ;; CockroachDB and YugabyteDB don't implement REINDEX. Also, REINDEX at the database level is
+  ;; disabled on certain installations (e.g. Supabase), so we check reindexing of a table.
   (unless (or (cl-search "CockroachDB" (pg-backend-version conn))
               (cl-search "-YB-" (pg-backend-version conn)))
-    (pg-exec conn "REINDEX DATABASE pgeltestdb"))
+    (pg-exec conn "DROP TABLE IF EXISTS foobles")
+    (pg-exec conn "CREATE TABLE foobles(a INTEGER, b TEXT)")
+    (pg-exec conn "CREATE INDEX idx_foobles ON foobles(a)")
+    (pg-exec conn "INSERT INTO foobles VALUES (42, 'foo')")
+    (pg-exec conn "INSERT INTO foobles VALUES (66, 'bizzle')")
+    (pg-exec conn "REINDEX TABLE CONCURRENTLY foobles")
+    (pg-exec conn "DROP TABLE foobles"))
   (let* ((r (pg-exec conn "SHOW ALL"))
          (config (pg-result r :tuples)))
     (cl-loop for row in config

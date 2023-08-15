@@ -86,6 +86,24 @@ test-postgresql12: test-pg.el
 	podman rm pgsql
 
 
+# Supabase (https://supabase.com) provide hosted PostgreSQL instances with convenient web
+# dashboards, management APIs and integrations with authentication libraries. They have a free tier.
+# As of 2023-08, they are running PostgreSQL 15.1 on Aarch64.
+test-supabase: test-pg.el
+	PGEL_PASSWORD=foobles PGEL_HOSTNAME=db.foobles.supabase.co PGEL_USER=postgres PGEL_DATABASE=postgres emacs -Q --batch -l ../pg.el -l test-pg.el -f pg-test
+
+test-supabase-tls: test-pg.el
+	PGEL_PASSWORD=foobles PGEL_HOSTNAME=db.foobles.supabase.co PGEL_USER=postgres PGEL_DATABASE=postgres emacs -Q --batch -l ../pg.el -l test-pg.el -f pg-test-tls
+
+
+# Neon (https://neon.tech/) provide hosted "serverless" PostgreSQL instances, which allow convenient
+# automated scalability according to load. They have a free tier. As of 2023-08, they are running
+# PostgreSQL 15.3 on AMD64.
+test-neon: test-pg.el
+	PGEL_PASSWORD=foobles PGEL_HOSTNAME=foobles.eu-central-1.aws.neon.tech PGEL_USER=username PGEL_DATABASE=main emacs -Q --batch -l ../pg.el -l test-pg.el -f pg-test-tls
+
+
+
 # CrateDB uses a default database name of "doc" that we can't set via Docker
 test-cratedb: test-pg.el
 	PGEL_DATABASE=doc make test
