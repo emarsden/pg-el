@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.23] - 2023-08-20
+### New
+- Preliminary support for the COPY protocol. See function `pg-copy-from-buffer`.
+
+
 ## [0.22] - 2023-07-16
 ### Fixed
 - The backend can send NoticeResponse messages during connection startup, for example indicating a

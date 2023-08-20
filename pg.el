@@ -3,7 +3,7 @@
 ;; Copyright: (C) 1999-2002, 2022-2023  Eric Marsden
 
 ;; Author: Eric Marsden <eric.marsden@risk-engineering.org>
-;; Version: 0.22
+;; Version: 0.23
 ;; Keywords: data comm database postgresql
 ;; URL: https://github.com/emarsden/pg-el
 ;; Package-Requires: ((emacs "26.1"))
@@ -294,6 +294,7 @@ struct.")
 
 (define-error 'pg-error "PostgreSQL error" 'error)
 (define-error 'pg-protocol-error "PostgreSQL protocol error" 'pg-error)
+(define-error 'pg-copy-failed "PostgreSQL COPY failed" 'pg-error)
 
 
 (defconst pg-PG_PROTOCOL_MAJOR 3)
@@ -659,7 +660,6 @@ Return a result structure which can be decoded using `pg-result'."
                (setf (pgcon-pid connection) (pg-read-net-int connection 4))
                (setf (pgcon-secret connection) (pg-read-net-int connection 4))))
 
-
             ;; NoticeResponse
             (?N
              ;; a Notice response has the same structure and fields as an ErrorResponse
@@ -749,6 +749,129 @@ and the keyword WHAT should be one of
         (t
          (let ((msg (format "Unknown result request %s" what)))
            (signal 'pg-error (list msg))))))
+
+(cl-defun pg-copy-from-buffer (con query buf)
+  "Execute COPY FROM STDIN on the contents of BUF, according to QUERY.
+Return a result structure which can be decoded using `pg-result'."
+  (unless (string-equal "COPY" (upcase (cl-subseq query 0 4)))
+    (signal 'pg-error (list "Invalid COPY query")))
+  (unless (cl-search "FROM STDIN" query)
+    (signal 'pg-error (list "COPY command must contain 'FROM STDIN'")))
+  (let ((result (make-pgresult :connection con)))
+    (pg-send-char con ?Q)
+    (pg-send-int con (+ 4 (length query) 1) 4)
+    (pg-send-string con query)
+    (pg-flush con)
+    (let ((more-pending t))
+      (while more-pending
+        (let ((c (pg-read-char con)))
+          (cond ((eq c ?G)
+                 ;; CopyInResponse
+                 (let ((_msglen (pg-read-net-int con 4))
+                       (status (pg-read-net-int con 1))
+                       (cols (pg-read-net-int con 2))
+                       (format-codes (list)))
+                   ;; status=0, which will be returned by recent backend versions: the backend is
+                   ;; expecting data in textual format (rows separated by newlines, columns separated by
+                   ;; separator characters, etc.).
+                   ;;
+                   ;; status=1: the backend is expecting binary format (which is similar to DataRow
+                   ;; format, and which we don't implement here).
+                   (dotimes (_c cols)
+                     (push (pg-read-net-int con 2) format-codes))
+                   (unless (zerop status)
+                     (signal 'pg-error (list "BINARY format for COPY is not implemented")))
+                   (setq more-pending nil)))
+
+                ;; NotificationResponse
+                ((eq c ?A)
+                 (let ((_msglen (pg-read-net-int con 4))
+                       ;; PID of the notifying backend
+                       (_pid (pg-read-int con 4))
+                       (channel (pg-read-string con pg-MAX_MESSAGE_LEN))
+                       (payload (pg-read-string con pg-MAX_MESSAGE_LEN)))
+                   ;; FIXME decode channel and payload?
+                   (message "Asynchronous notify %s:%s" channel payload)))
+
+                ;; ErrorResponse
+                ((eq ?E c)
+                 (pg-handle-error-response con))
+
+                ;; ParameterStatus sent in response to a user update over the connection
+                ((eq ?S c)
+                 (let* ((msglen (pg-read-net-int con 4))
+                        (msg (pg-read-chars con (- msglen 4)))
+                        (items (split-string msg (string 0))))
+                   (when (> (length (cl-first items)) 0)
+                     (dolist (handler pg-parameter-change-functions)
+                       (funcall handler con (cl-first items) (cl-second items))))))
+
+                (t
+                 (let ((msg (format "Unknown response type from backend: %s" c)))
+                   (signal 'pg-protocol-error (list msg))))))))
+    (let ((data (with-current-buffer buf (buffer-string))))
+      (pg-send-char con ?d)
+      (pg-send-int con (+ 4 (length data)) 4)
+      (pg-send-octets con data))
+    ;; send CopyDone message
+    (pg-send-char con ?c)
+    (pg-send-int con 4 4)
+    (pg-flush con)
+    ;; Backend sends us either CopyDone or CopyFail, followed by CommandComplete + ReadyForQuery
+    (cl-loop
+     for c = (pg-read-char con) do
+     (cond ((eq ?c c)
+            ;; CopyDone
+            (let ((_msglen (pg-read-net-int con 4)))
+              nil))
+
+           ;; CopyFail
+           ((eq ?f c)
+            (let* ((msglen (pg-read-net-int con 4))
+                   (msg (pg-read-chars con (- msglen 4)))
+                   (emsg (format "COPY failed: %s" msg)))
+              (signal 'pg-copy-failed (list emsg))))
+
+           ;; CommandComplete -- SQL command has completed. After this we expect a ReadyForQuery message.
+           ((eq ?C c)
+            (let* ((msglen (pg-read-net-int con 4))
+                   (msg (pg-read-chars con (- msglen 5)))
+                   (_null (pg-read-char con)))
+              (setf (pgresult-status result) msg)))
+
+           ;; NotificationResponse
+           ((eq ?A c)
+            (let ((_msglen (pg-read-net-int con 4))
+                  ;; PID of the notifying backend
+                  (_pid (pg-read-int con 4))
+                  (channel (pg-read-string con pg-MAX_MESSAGE_LEN))
+                  (payload (pg-read-string con pg-MAX_MESSAGE_LEN)))
+              ;; FIXME decode channel and payload?
+              (message "Asynchronous notify %s:%s" channel payload)))
+
+           ;; ErrorResponse
+           ((eq ?E c)
+            (pg-handle-error-response con))
+
+           ;; ReadyForQuery message
+           ((eq ?Z c)
+            (let ((_msglen (pg-read-net-int con 4))
+                  (_status (pg-read-char con)))
+              (cl-return-from pg-copy-from-buffer result)))
+
+           (t
+            (let ((msg (format "Unknown response type from backend (2): %s" c)))
+              (signal 'pg-protocol-error (list msg))))))))
+
+(defun pg-sync (con)
+  (pg-send-char con ?S)
+  (pg-send-int con 4 4)
+  (pg-flush con)
+  ;; discard any content in our process buffer
+  (with-current-buffer (process-buffer (pgcon-process con))
+    (setf (pgcon-position con) (point-max))))
+
+
 
 (defun pg-cancel (con)
   "Cancel the command currently being processed by the backend.
@@ -1721,7 +1844,7 @@ presented to the user."
     (when extra
       (setf extra (append (list " (") extra (list ")"))))
     ;; now read the ReadyForQuery message. We don't always receive this immediately; for example if
-    ;; an incorrect username is send during startup, PostgreSQL sends an ErrorMessage then an
+    ;; an incorrect username is sent during startup, PostgreSQL sends an ErrorMessage then an
     ;; AuthenticationSASL message. In that case, unread the message type octet so that it can
     ;; potentially be handled after the error is signaled.
     (let ((c (pg-read-char con)))

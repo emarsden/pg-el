@@ -52,6 +52,7 @@
   (pg-test-bytea conn)
   (pg-test-json conn)
   (pg-test-hstore conn)
+  (pg-test-copy conn)
   (message "Testing database creation")
   (pg-test-createdb conn)
   (message "Testing unicode names for database, tables, columns")
@@ -401,6 +402,24 @@
     (let ((arr (scalar "SELECT akeys('biz=>NULL,baz=>42,boz=>66'::hstore)")))
       (should (cl-find "biz" arr :test #'string=))
       (should (cl-find "boz" arr :test #'string=)))))
+
+(defun pg-test-copy (conn)
+  (cl-flet ((ascii (n) (+ ?A (mod n 26)))
+            (random-word () (apply #'string (cl-loop for count to 10 collect (+ ?a (random 26))))))
+    (pg-exec conn "DROP TABLE IF EXISTS copy_test")
+    (pg-exec conn "CREATE TABLE copy_test (a INTEGER, b CHAR, c TEXT)")
+    (let ((buf (get-buffer-create " *pg-copy-temp*")))
+      (with-current-buffer buf
+        (dotimes (i 42)
+          (insert (format "%d\t%c\t%s\n" i (ascii i) (random-word)))))
+      (pg-copy-from-buffer conn "COPY copy_test(a,b,c) FROM STDIN" buf)
+      (let ((res (pg-exec conn "SELECT count(*) FROM copy_test")))
+        (should (eql 42 (car (pg-result res :tuple 0)))))
+      (let ((res (pg-exec conn "SELECT sum(a) FROM copy_test")))
+        (should (eql 861 (car (pg-result res :tuple 0)))))
+      (let ((res (pg-exec conn "SELECT * FROM copy_test LIMIT 5")))
+        (message "COPY> %s" (pg-result res :tuples))))
+    (pg-exec conn "DROP TABLE copy_test")))
 
 
 ;; "SELECT xmlcomment("42") -> "<!--42-->"
