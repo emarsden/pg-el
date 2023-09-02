@@ -152,6 +152,7 @@
       (message "timestamp = %s" (cl-first res))
       (message "time = %s" (cl-second res)))
     (pg-exec conn "DROP TABLE date_test")
+    (should (equal (scalar "SELECT 'allballs'::time") "00:00:00"))
     (should (equal (scalar "SELECT '2022-10-01'::date") (encode-time 0 0 0 1 10 2022)))
     ;; When casting to DATE, the time portion is truncated
     (should (equal (scalar "SELECT '2063-03-31T22:13:02'::date")
@@ -346,6 +347,9 @@
     (let ((json (scalar "SELECT '[66.7,-42.0,8]'::jsonb")))
       (should (approx= 66.7 (aref json 0)))
       (should (approx= -42.0 (aref json 1))))
+    ;; JSON null in JSONB type is not the same as PostgreSQL NULL value!
+    (should (eql nil (scalar "SELECT 'null'::jsonb is null")))
+    (should (eql nil (scalar "SELECT '{\"name\": null}'::jsonb->'name' IS NULL")))
     ;; JSON handling (handling of dictionaries, of NULL, false, [] and {}, etc.) differs between
     ;; the native JSON support and the json elisp libary. We only test the native support.
     (when (and (fboundp 'json-parse-string)
