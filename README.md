@@ -61,7 +61,7 @@ including the following in your Emacs initialization file (`.emacs.el` or `init.
 
 then saying 
 
-     M-x install-package RET pg
+     M-x package-install RET pg
 
 To install manually, place the file `pg.el` in a directory on your `load-path`, byte-compile it
 (using for example `B` in dired) and add the following to your Emacs initialization file:
