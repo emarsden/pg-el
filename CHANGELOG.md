@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.24] - Unreleased
+### Fixed
+- Fix the implementation of `pg-tables` and `pg-columns` to use the information schema instead of
+  historical alternative SQL queries.
+
+
 ## [0.23] - 2023-08-20
 ### New
 - Preliminary support for the COPY protocol. See function `pg-copy-from-buffer`.

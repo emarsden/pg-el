@@ -437,7 +437,8 @@
       (let ((res (pg-exec conn "SELECT max(b) FROM copy_csv")))
         (should (eql 998001 (car (pg-result res :tuple 0)))))
       (let ((res (pg-exec conn "SELECT * FROM copy_csv LIMIT 3")))
-        (message "COPYCSV> %s" (pg-result res :tuples))))))
+        (message "COPYCSV> %s" (pg-result res :tuples)))
+      (pg-exec conn "DROP TABLE copy_csv"))))
 
 
 ;; "SELECT xmlcomment("42") -> "<!--42-->"

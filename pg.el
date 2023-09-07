@@ -1658,17 +1658,18 @@ Authenticate as USER with PASSWORD."
     (apply #'append (pg-result res :tuples))))
 
 (defun pg-tables (conn)
-  "List of the tables present in the database we are connected to via CONN."
-  (let ((res (pg-exec conn "SELECT relname FROM pg_class, pg_user WHERE "
-                      "(relkind = 'r' OR relkind = 'i' OR relkind = 'S') AND "
-                      "relname !~ '^pg_' AND usesysid = relowner ORDER BY relname")))
+  "List of the tables present in the database we are connected to via CONN.
+Only tables to which the current user has access are listed."
+  (let ((res (pg-exec conn "SELECT table_name FROM information_schema.tables
+                WHERE table_schema='public' AND table_type='BASE TABLE'")))
     (apply #'append (pg-result res :tuples))))
 
 (defun pg-columns (conn table)
   "List of the columns present in TABLE over PostgreSQL connection CONN."
-  (let* ((sql (format "SELECT * FROM %s WHERE 0 = 1" table))
+  (let* ((sql (format "SELECT column_name FROM information_schema.columns
+                       WHERE table_schema='public' AND table_name = '%s'" table))
          (res (pg-exec conn sql)))
-    (mapcar #'car (pg-result res :attributes))))
+    (apply #'append (pg-result res :tuples))))
 
 (defun pg-backend-version (conn)
   "Version and operating environment of backend that we are connected to by CONN.
