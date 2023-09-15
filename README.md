@@ -27,7 +27,7 @@ Including support for:
 
 - Parsing PostgreSQL integer and numerical range types
 
-The code has been tested with PostgreSQL versions 15.4, 13.8, 11.17, and 10.22 on Linux. It is
+The code has been tested with PostgreSQL versions 16.0, 15.4, 13.8, 11.17, and 10.22 on Linux. It is
 also tested via GitHub actions on MacOS and Windows, using the PostgreSQL version which is
 pre-installed in the virtual images (currently 14.8). This library also works against other
 databases that implement the PostgreSQL wire protocol:
