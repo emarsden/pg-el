@@ -325,7 +325,13 @@ struct.")
 
 
 (cl-defstruct pgcon
-  process pid secret (client-encoding 'utf-8) (binaryp nil) connect-info)
+  process
+  pid
+  secret
+  (client-encoding 'utf-8)
+  (binaryp nil)
+  connect-info
+  (notification-handlers (list)))
 
 ;; Used to save the connection-specific position in our input buffer.
 (make-local-variable 'pgcon-position)
@@ -594,6 +600,12 @@ opaque type). PASSWORD defaults to an empty string."
         (let ((msg (format "Don't know the Emacs equivalent for client encoding %s" value)))
           (signal 'pg-error (list msg)))))))
 
+(defun pg-add-notification-handler (connection handler)
+  "Add HANDLER to the list of handlers for NotificationResponse messages on CONNECTION.
+A handler takes two arguments: the channel and the payload. These correspond to SQL-level
+NOTIFY channel, 'payload'."
+  (push handler (pgcon-notification-handlers connection)))
+
 (cl-defun pg-exec (connection &rest args)
   "Execute the SQL command given by concatenating ARGS on database CONNECTION.
 Return a result structure which can be decoded using `pg-result'."
@@ -627,7 +639,8 @@ Return a result structure which can be decoded using `pg-result'."
                    (channel (pg-read-string connection pg-MAX_MESSAGE_LEN))
                    (payload (pg-read-string connection pg-MAX_MESSAGE_LEN)))
                ;; FIXME decode channel and payload?
-               (message "Asynchronous notify %s:%s" channel payload)))
+               (dolist (handler (pgcon-notification-handlers connection))
+                 (funcall handler channel payload))))
 
             ;; Bind -- should not receive this
             (?B
@@ -795,8 +808,8 @@ Return a result structure which can be decoded using `pg-result'."
                        (_pid (pg-read-int con 4))
                        (channel (pg-read-string con pg-MAX_MESSAGE_LEN))
                        (payload (pg-read-string con pg-MAX_MESSAGE_LEN)))
-                   ;; FIXME decode channel and payload?
-                   (message "Asynchronous notify %s:%s" channel payload)))
+                   (dolist (handler (pgcon-notification-handlers connection))
+                     (funcall handler channel payload))))
 
                 ;; ErrorResponse
                 ((eq ?E c)
@@ -851,8 +864,8 @@ Return a result structure which can be decoded using `pg-result'."
                   (_pid (pg-read-int con 4))
                   (channel (pg-read-string con pg-MAX_MESSAGE_LEN))
                   (payload (pg-read-string con pg-MAX_MESSAGE_LEN)))
-              ;; FIXME decode channel and payload?
-              (message "Asynchronous notify %s:%s" channel payload)))
+              (dolist (handler (pgcon-notification-handlers connection))
+                (funcall handler channel payload))))
 
            ;; ErrorResponse
            ((eq ?E c)
