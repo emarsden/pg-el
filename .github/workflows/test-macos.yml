@@ -5,7 +5,7 @@ jobs:
   runner-job:
     # using the PostgreSQL version pre-installed on GitHub's MacOS virtual images
     runs-on: macos-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Set up pre-installed PostgreSQL
@@ -19,7 +19,7 @@ jobs:
       - name: Install Emacs
         uses: purcell/setup-emacs@master
         with:
-           version: 28.2
+           version: 29.1
 
       - name: Check out repository code
         uses: actions/checkout@v3

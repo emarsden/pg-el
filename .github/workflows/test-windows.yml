@@ -5,11 +5,11 @@ jobs:
   runner-job:
     # using the PostgreSQL version pre-installed on GitHub's Windows virtual images
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Set up pre-installed PostgreSQL
-        uses: ikalnytskyi/action-setup-postgres@v4
+        uses: nyurik/action-setup-postgis@v1
         with:
           username: pgeltestuser
           password: pgeltest
