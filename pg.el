@@ -325,7 +325,10 @@ struct.")
 
 
 (cl-defstruct pgcon
-  process pid secret position (client-encoding 'utf-8) (binaryp nil) connect-info)
+  process pid secret (client-encoding 'utf-8) (binaryp nil) connect-info)
+
+;; Used to save the connection-specific position in our input buffer.
+(make-local-variable 'pgcon-position)
 
 (cl-defstruct pgresult
   connection status attributes tuples portal)
@@ -527,10 +530,11 @@ database (as an opaque type). PORT defaults to 5432, HOST to
 attempt to establish an encrypted connection to PostgreSQL."
   (let* ((buf (generate-new-buffer " *PostgreSQL*"))
          (process (open-network-stream "postgres" buf host port :coding nil))
-         (connection (make-pgcon :process process :position 1)))
+         (connection (make-pgcon :process process)))
     (with-current-buffer buf
       (set-process-coding-system process 'binary 'binary)
-      (set-buffer-multibyte nil))
+      (set-buffer-multibyte nil)
+      (setq-local pgcon-position 1))
     ;; Save connection info in the pgcon object, for possible later use by pg-cancel
     (setf (pgcon-connect-info connection) (list :tcp host port dbname user password))
     ;; TLS connections to PostgreSQL are based on a custom STARTTLS-like connection upgrade
@@ -569,12 +573,13 @@ PASSWORD if necessary. Return a connection to the database (as an
 opaque type). PASSWORD defaults to an empty string."
   (let* ((buf (generate-new-buffer " *PostgreSQL*"))
          (process (make-network-process :name "postgres" :buffer buf :family 'local :service path :coding nil))
-         (connection (make-pgcon :process process :position 1)))
+         (connection (make-pgcon :process process)))
     ;; Save connection info in the pgcon object, for possible later use by pg-cancel
     (setf (pgcon-connect-info connection) (list :local path dbname user password))
     (with-current-buffer buf
       (set-process-coding-system process 'binary 'binary)
-      (set-buffer-multibyte nil))
+      (set-buffer-multibyte nil)
+      (setq-local pgcon-position 1))
     (pg-do-startup connection dbname user password)))
 
 
@@ -869,7 +874,7 @@ Return a result structure which can be decoded using `pg-result'."
   (pg-flush con)
   ;; discard any content in our process buffer
   (with-current-buffer (process-buffer (pgcon-process con))
-    (setf (pgcon-position con) (point-max))))
+    (setq-local pgcon-position (point-max))))
 
 
 
@@ -888,10 +893,11 @@ The cancellation request concerns the command requested over connection CON."
                          (host (nth 1 ci))
                          (port (nth 2 ci))
                          (process (open-network-stream "postgres-cancel" buf host port :coding nil))
-                         (connection (make-pgcon :process process :position 1)))
+                         (connection (make-pgcon :process process)))
                     (with-current-buffer buf
                       (set-process-coding-system process 'binary 'binary)
-                      (set-buffer-multibyte nil))
+                      (set-buffer-multibyte nil)
+                      (setq-local pgcon-position 1))
                     connection))
                  ;; :local path dbname user password
                  (:local
@@ -902,10 +908,11 @@ The cancellation request concerns the command requested over connection CON."
                                                         :family 'local
                                                         :service path
                                                         :coding nil))
-                         (connection (make-pgcon :process process :position 1)))
+                         (connection (make-pgcon :process process)))
                     (with-current-buffer buf
                       (set-process-coding-system process 'binary 'binary)
-                      (set-buffer-multibyte nil))
+                      (set-buffer-multibyte nil)
+                      (setq-local pgcon-position 1))
                     connection)))))
     (pg-send-int ccon 16 4)
     (pg-send-int ccon 80877102 4)
@@ -1732,16 +1739,17 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
              (push parsed tuples))))))))
 
 (defun pg-read-char (connection)
-  (let ((process (pgcon-process connection))
-        (position (pgcon-position connection)))
+  (let ((process (pgcon-process connection)))
+    (accept-process-output)
     (with-current-buffer (process-buffer process)
-      (cl-incf (pgcon-position connection))
-      (when (null (char-after position))
+      (when (null (char-after pgcon-position))
         (accept-process-output process 5))
-      (char-after position))))
+      (prog1 (char-after pgcon-position)
+        (setq-local pgcon-position (1+ pgcon-position))))))
 
 (defun pg-unread-char (connection)
-  (cl-decf (pgcon-position connection)))
+  (with-current-buffer (process-buffer process)
+    (setq-local pgcon-position (1- pgcon-position))))
 
 ;; FIXME should be more careful here; the integer could overflow.
 (defun pg-read-net-int (connection bytes)
@@ -1764,16 +1772,15 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
     (aset chars i (pg-read-char connection))))
 
 (defun pg-read-chars (connection count)
-  (let* ((process (pgcon-process connection))
-         (start (pgcon-position connection))
-         (end (+ start count)))
-    (accept-process-output)
-    (prog1 (with-current-buffer (process-buffer process)
-             ;; wait for new output, if necessary
-             (when (> end (point-max))
-               (accept-process-output process 5))
-             (buffer-substring start end))
-      (setf (pgcon-position connection) end))))
+  (let ((process (pgcon-process connection)))
+    (with-current-buffer (process-buffer process)
+      (let* ((start pgcon-position)
+             (end (+ start count)))
+        (accept-process-output)
+        (when (> end (point-max))
+          (accept-process-output process 1))
+        (prog1 (buffer-substring start end)
+          (setq-local pgcon-position end))))))
 
 ;; read a null-terminated string
 (defun pg-read-string (connection maxbytes)
