@@ -12,20 +12,23 @@ to end users.
 
 Including support for:
 
-- SCRAM-SHA-256 authentication (the default authentication method since PostgreSQL version 14)
+- **SCRAM-SHA-256 authentication** (the default authentication method since PostgreSQL version 14)
 
 - MD5 authentication 
 
-- Encrypted (TLS) connections with PostgreSQL, though currently not for authentication using
+- Encrypted (**TLS**) connections with PostgreSQL, though currently not for authentication using
   client-side certificates. This assumes your Emacs has been built with GnuTLS support.
 
-- Connections over TCP or (on Unix machines) a local Unix socket
+- Connections over TCP or (on Unix machines) a local Unix socket.
 
-- Parsing PostgreSQL JSON, JSONB and HSTORE objects
+- Support for the SQL **COPY protocol** to copy preformatted data to PostgreSQL from an Emacs buffer.
 
-- Parsing PostgreSQL array types
+- Asynchronous handling of **LISTEN/NOTIFY** notification messages from PostgreSQL, allowing the
+  implementation of **publish-subscribe type architectures** (PostgreSQL as an “event broker” or
+  “message bus” and Emacs as event publisher and consumer).
 
-- Parsing PostgreSQL integer and numerical range types
+- Parsing various PostgreSQL types including JSON, JSONB and HSTORE objects, array types, integer
+  and numerical range types.
 
 The code has been tested with PostgreSQL versions 16.0, 15.4, 13.8, 11.17, and 10.22 on Linux. It is
 also tested via GitHub actions on MacOS and Windows, using the PostgreSQL version which is

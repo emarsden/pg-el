@@ -3,7 +3,7 @@
 ;; Copyright: (C) 1999-2002, 2022-2023  Eric Marsden
 
 ;; Author: Eric Marsden <eric.marsden@risk-engineering.org>
-;; Version: 0.23
+;; Version: 0.24
 ;; Keywords: data comm database postgresql
 ;; URL: https://github.com/emarsden/pg-el
 ;; Package-Requires: ((emacs "26.1"))
@@ -37,6 +37,10 @@
 ;;  - SCRAM-SHA-256 authentication (the default method since PostgreSQL version 14)
 ;;  - MD5 authentication
 ;;  - Encrypted (TLS) connections
+;;  - Support for the SQL COPY protocol to copy preformatted data to PostgreSQL from an Emacs buffer
+;;  - Asynchronous handling of LISTEN/NOTIFY notification messages from PostgreSQL, allowing the
+;;    implementation of publish-subscribe type architectures (PostgreSQL as an "event broker" or
+;;    "message bus" and Emacs as event publisher and consumer.
 
 
 ;; Entry points
