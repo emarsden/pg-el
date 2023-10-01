@@ -1,13 +1,19 @@
 # Changelog
 
 ## [0.24] - Unreleased
-### Fixed
-- Fix the implementation of `pg-tables` and `pg-columns` to use the information schema instead of
-  historical alternative SQL queries.
-
+### New
 - Add function `pg-add-notification-handler` to add a function to the list of handlers for
   `NotificationResponse` messages from PostgreSQL. A handler takes two arguments, the channel and
   the payload, which correspond to SQL-level `NOTIFY channel, 'payload'`.
+
+- Add support for asynchronous processing of messages from PostgreSQL, in particular for use of
+  LISTEN/NOTIFY. This allows PostgreSQL and Emacs to be used in a publish-subscribe pattern which
+  decouples event publication from the number and the speed of event processing nodes. See the
+  notification-publisher.el and notification-subscriber.el tests for a basic example.
+
+### Fixed
+- Fix the implementation of `pg-tables` and `pg-columns` to use the information schema instead of
+  historical alternative SQL queries.
 
 
 ## [0.23] - 2023-08-20

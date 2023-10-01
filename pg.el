@@ -329,12 +329,29 @@ struct.")
   pid
   secret
   (client-encoding 'utf-8)
+  (timeout 10)
   (binaryp nil)
   connect-info
   (notification-handlers (list)))
 
 ;; Used to save the connection-specific position in our input buffer.
-(make-local-variable 'pgcon-position)
+(defvar-local pgcon-position 1)
+
+;; Used to check whether the connection is currently "busy", so that we can determine whether a
+;; message was received asynchronously or synchronously.
+(defvar-local pgcon-busy t)
+
+(defvar-local pgcon-notification-handlers (list))
+
+
+(defun pg-connection-set-busy (connection busy)
+  (with-current-buffer (process-buffer (pgcon-process connection))
+    (setq-local pgcon-busy busy)))
+
+(defun pg-connection-busy-p (connection)
+  (with-current-buffer (process-buffer (pgcon-process connection))
+    pgcon-busy))
+
 
 (cl-defstruct pgresult
   connection status attributes tuples portal)
@@ -403,12 +420,57 @@ tag called pg-finished."
                    do (funcall callback res))
            (pg-exec con "CLOSE " cursor))))))
 
+;; This is installed as an Emacs Lisp process filter for the PostgreSQL connection. We return nil if
+;; the PostgreSQL connection is currently "busy" (meaning that we are currently processing a
+;; synchronous request), or if the data received doesn't look like a complete NotificationResponse
+;; message (starting with ?A, total length compatible with the length specified in the PostgreSQL
+;; message format). Otherwise, we return the length of the message length that we handled.
+;;
+;; When we return non-nil, the original process filter is called (see `add-function' advice below),
+;; which places the data in the process buffer for normal (synchronous) handling.
+(defun pg-process-filter (process data)
+  (with-current-buffer (process-buffer process)
+    (unless pgcon-busy
+      (when (and (eql ?A (aref data 0))
+                 (eql 0 (aref data 1)))
+        (let ((msglen 0))
+          ;; read a net int in 4 octets representing the message length
+          (setq msglen (+ (* 256 msglen) (aref data 1)))
+          (setq msglen (+ (* 256 msglen) (aref data 2)))
+          (setq msglen (+ (* 256 msglen) (aref data 3)))
+          (setq msglen (+ (* 256 msglen) (aref data 4)))
+          ;; We parse the channel and payload if we received a full NotificationResponse. msglen is one
+          ;; less than the size of data due to the ?A message tag.
+          (when (eql (1+ msglen) (length data))
+            ;; ignore a net int in 4 octets representing notifying backend PID
+            (let* ((channel-end-pos (cl-position 0 data :start 9 :end (length data)))
+                   (payload-end-pos (cl-position 0 data :start (1+ channel-end-pos) :end (length data)))
+                   (channel (cl-subseq data 9 channel-end-pos))
+                   (payload (cl-subseq data (1+ channel-end-pos) payload-end-pos)))
+              (dolist (handler pgcon-notification-handlers)
+                (funcall handler channel payload))))
+          (1- msglen))))))
+
+;; With the :before-until advice type, the original process filter (which places the incoming
+;; content in the process buffer) will be called only if our process filter returns nil. Our process
+;; filter returns non-nil when it has detected, parsed and handled an asynchronous notification and
+;; nil otherwise. This allows us to avoid duplicate processing of asynchronous notifications, once
+;; by #'pg-process-filter and once by the notification handling code in pg-exec.
+(defun pg-enable-async-notification-handlers (connection)
+  (add-function :before-until (process-filter (pgcon-process connection)) #'pg-process-filter))
+
+(defun pg-disable-async-notification-handlers (connection)
+  (remove-function (process-filter (pgcon-process connection)) #'pg-process-filter))
+
+
+
 ;; Run the startup interaction with the PostgreSQL database. Authenticate and read the connection
 ;; parameters. This function allows us to share code common to TCP and Unix socket connections to
 ;; the backend.
 (cl-defun pg-do-startup (connection dbname user password)
   "Handle the startup sequence to authenticate with PostgreSQL over CONNECTION."
   ;; send the StartupMessage, as per https://www.postgresql.org/docs/current/protocol-message-formats.html
+  (pg-connection-set-busy connection t)
   (let ((packet-octets (+ 4 2 2
                           (1+ (length "user"))
                           (1+ (length user))
@@ -468,6 +530,7 @@ tag called pg-finished."
                          (null pg-parsers)
                          (pg-initialize-parsers connection))
                     (pg-exec connection "SET datestyle = 'ISO'")
+                    (pg-connection-set-busy connection nil)
                     (cl-return-from pg-do-startup connection)))
 
                  ;; an authentication request
@@ -540,7 +603,9 @@ attempt to establish an encrypted connection to PostgreSQL."
     (with-current-buffer buf
       (set-process-coding-system process 'binary 'binary)
       (set-buffer-multibyte nil)
-      (setq-local pgcon-position 1))
+      (setq-local pgcon-position 1)
+      (setq-local pgcon-busy t)
+      (setq-local pgcon-notification-handlers (list)))
     ;; Save connection info in the pgcon object, for possible later use by pg-cancel
     (setf (pgcon-connect-info connection) (list :tcp host port dbname user password))
     ;; TLS connections to PostgreSQL are based on a custom STARTTLS-like connection upgrade
@@ -585,7 +650,9 @@ opaque type). PASSWORD defaults to an empty string."
     (with-current-buffer buf
       (set-process-coding-system process 'binary 'binary)
       (set-buffer-multibyte nil)
-      (setq-local pgcon-position 1))
+      (setq-local pgcon-position 1)
+      (setq-local pgcon-busy t)
+      (setq-local pgcon-notification-handlers (list)))
     (pg-do-startup connection dbname user password)))
 
 
@@ -603,12 +670,14 @@ opaque type). PASSWORD defaults to an empty string."
 (defun pg-add-notification-handler (connection handler)
   "Add HANDLER to the list of handlers for NotificationResponse messages on CONNECTION.
 A handler takes two arguments: the channel and the payload. These correspond to SQL-level
-NOTIFY channel, 'payload'."
-  (push handler (pgcon-notification-handlers connection)))
+NOTIFY channel, \\='payload\\='."
+  (with-current-buffer (process-buffer (pgcon-process connection))
+    (push handler pgcon-notification-handlers)))
 
 (cl-defun pg-exec (connection &rest args)
   "Execute the SQL command given by concatenating ARGS on database CONNECTION.
 Return a result structure which can be decoded using `pg-result'."
+  (pg-connection-set-busy connection t)
   (let* ((sql (apply #'concat args))
          (tuples '())
          (attributes '())
@@ -633,13 +702,14 @@ Return a result structure which can be decoded using `pg-result'."
 
             ;; NotificationResponse
             (?A
-             (let ((_msglen (pg-read-net-int connection 4))
-                   ;; PID of the notifying backend
-                   (_pid (pg-read-int connection 4))
-                   (channel (pg-read-string connection pg-MAX_MESSAGE_LEN))
-                   (payload (pg-read-string connection pg-MAX_MESSAGE_LEN)))
-               ;; FIXME decode channel and payload?
-               (dolist (handler (pgcon-notification-handlers connection))
+             (let* ((_msglen (pg-read-net-int connection 4))
+                    ;; PID of the notifying backend
+                    (_pid (pg-read-int connection 4))
+                    (channel (pg-read-string connection pg-MAX_MESSAGE_LEN))
+                    (payload (pg-read-string connection pg-MAX_MESSAGE_LEN))
+                    (buf (process-buffer (pgcon-process connection)))
+                    (handlers (with-current-buffer buf pgcon-notification-handlers)))
+               (dolist (handler handlers)
                  (funcall handler channel payload))))
 
             ;; Bind -- should not receive this
@@ -731,6 +801,7 @@ Return a result structure which can be decoded using `pg-result'."
                ;; (message "Got ReadyForQuery with status %c" status)
                (setf (pgresult-tuples result) (nreverse tuples))
                (setf (pgresult-attributes result) attributes)
+               (pg-connection-set-busy connection nil)
                (cl-return-from pg-exec result)))
 
             (t
@@ -775,6 +846,7 @@ Return a result structure which can be decoded using `pg-result'."
     (signal 'pg-error (list "Invalid COPY query")))
   (unless (cl-search "FROM STDIN" query)
     (signal 'pg-error (list "COPY command must contain 'FROM STDIN'")))
+  (pg-connection-set-busy con t)
   (let ((result (make-pgresult :connection con)))
     (pg-send-char con ?Q)
     (pg-send-int con (+ 4 (length query) 1) 4)
@@ -803,12 +875,14 @@ Return a result structure which can be decoded using `pg-result'."
 
                 ;; NotificationResponse
                 ((eq c ?A)
-                 (let ((_msglen (pg-read-net-int con 4))
-                       ;; PID of the notifying backend
-                       (_pid (pg-read-int con 4))
-                       (channel (pg-read-string con pg-MAX_MESSAGE_LEN))
-                       (payload (pg-read-string con pg-MAX_MESSAGE_LEN)))
-                   (dolist (handler (pgcon-notification-handlers connection))
+                 (let* ((_msglen (pg-read-net-int con 4))
+                        ;; PID of the notifying backend
+                        (_pid (pg-read-int con 4))
+                        (channel (pg-read-string con pg-MAX_MESSAGE_LEN))
+                        (payload (pg-read-string con pg-MAX_MESSAGE_LEN))
+                        (buf (process-buffer (pgcon-process connection)))
+                        (handlers (with-current-buffer buf pgcon-notification-handlers)))
+                   (dolist (handler handlers)
                      (funcall handler channel payload))))
 
                 ;; ErrorResponse
@@ -859,12 +933,14 @@ Return a result structure which can be decoded using `pg-result'."
 
            ;; NotificationResponse
            ((eq ?A c)
-            (let ((_msglen (pg-read-net-int con 4))
-                  ;; PID of the notifying backend
-                  (_pid (pg-read-int con 4))
-                  (channel (pg-read-string con pg-MAX_MESSAGE_LEN))
-                  (payload (pg-read-string con pg-MAX_MESSAGE_LEN)))
-              (dolist (handler (pgcon-notification-handlers connection))
+            (let* ((_msglen (pg-read-net-int con 4))
+                   ;; PID of the notifying backend
+                   (_pid (pg-read-int con 4))
+                   (channel (pg-read-string con pg-MAX_MESSAGE_LEN))
+                   (payload (pg-read-string con pg-MAX_MESSAGE_LEN))
+                   (buf (process-buffer (pgcon-process connection)))
+                   (handlers (with-current-buffer buf pgcon-notification-handlers)))
+              (dolist (handler handlers)
                 (funcall handler channel payload))))
 
            ;; ErrorResponse
@@ -875,6 +951,7 @@ Return a result structure which can be decoded using `pg-result'."
            ((eq ?Z c)
             (let ((_msglen (pg-read-net-int con 4))
                   (_status (pg-read-char con)))
+              (pg-connection-set-busy con nil)
               (cl-return-from pg-copy-from-buffer result)))
 
            (t
@@ -882,12 +959,14 @@ Return a result structure which can be decoded using `pg-result'."
               (signal 'pg-protocol-error (list msg))))))))
 
 (defun pg-sync (con)
+  (pg-connection-set-busy con t)
   (pg-send-char con ?S)
   (pg-send-int con 4 4)
   (pg-flush con)
   ;; discard any content in our process buffer
   (with-current-buffer (process-buffer (pgcon-process con))
-    (setq-local pgcon-position (point-max))))
+    (setq-local pgcon-position (point-max)))
+  (pg-connection-set-busy con nil))
 
 
 
@@ -910,7 +989,9 @@ The cancellation request concerns the command requested over connection CON."
                     (with-current-buffer buf
                       (set-process-coding-system process 'binary 'binary)
                       (set-buffer-multibyte nil)
-                      (setq-local pgcon-position 1))
+                      (setq-local pgcon-position 1)
+                      (setq-local pgcon-busy t)
+                      (setq-local pgcon-notification-handlers (list)))
                     connection))
                  ;; :local path dbname user password
                  (:local
@@ -925,7 +1006,9 @@ The cancellation request concerns the command requested over connection CON."
                     (with-current-buffer buf
                       (set-process-coding-system process 'binary 'binary)
                       (set-buffer-multibyte nil)
-                      (setq-local pgcon-position 1))
+                      (setq-local pgcon-position 1)
+                      (setq-local pgcon-busy t)
+                      (setq-local pgcon-notification-handlers (list)))
                     connection)))))
     (pg-send-int ccon 16 4)
     (pg-send-int ccon 80877102 4)
@@ -939,6 +1022,7 @@ This command should be used when you have finished with the database.
 It will release memory used to buffer the data transfered between
 PostgreSQL and Emacs. CON should no longer be used."
   ;; send a Terminate message
+  (pg-connection-set-busy con t)
   (pg-send-char con ?X)
   (pg-send-int con 4 4)
   (pg-flush con)
@@ -1523,6 +1607,7 @@ Authenticate as USER with PASSWORD."
 ;; in the pg_proc table, and otherwise it is a string which we look up
 ;; in the alist `pg-lo-functions' to find the corresponding OID.
 (defun pg-fn (con fn integer-result &rest args)
+  (pg-connection-set-busy con t)
   (unless pg-lo-initialized
     (pg-lo-init con))
   (let ((fnid (cond ((integerp fn) fn)
@@ -1575,7 +1660,8 @@ Authenticate as USER with PASSWORD."
             (?Z
              ;; message length then status, discarded
              (pg-read-net-int con 4)
-             (pg-read-char con))
+             (pg-read-char con)
+             (pg-connection-set-busy con nil))
 
             ;; end of FunctionResult
             (?0 (cl-return result))
@@ -1755,14 +1841,20 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
   (let ((process (pgcon-process connection)))
     (accept-process-output)
     (with-current-buffer (process-buffer process)
+      (dotimes (i (pgcon-timeout connection))
+        (when (null (char-after pgcon-position))
+          (sleep-for 1.0)
+          (accept-process-output process 1.0)))
       (when (null (char-after pgcon-position))
-        (accept-process-output process 5))
+        (let ((msg (format "Timeout reading from %s" connection)))
+          (signal 'pg-error (list msg))))
       (prog1 (char-after pgcon-position)
         (setq-local pgcon-position (1+ pgcon-position))))))
 
 (defun pg-unread-char (connection)
-  (with-current-buffer (process-buffer process)
-    (setq-local pgcon-position (1- pgcon-position))))
+  (let ((process (pgcon-process connection)))
+    (with-current-buffer (process-buffer process)
+      (setq-local pgcon-position (1- pgcon-position)))))
 
 ;; FIXME should be more careful here; the integer could overflow.
 (defun pg-read-net-int (connection bytes)
@@ -1799,7 +1891,7 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
 (defun pg-read-string (connection maxbytes)
   (cl-loop for i below maxbytes
            for ch = (pg-read-char connection)
-           until (= ch ?\0)
+           until (eql ch ?\0)
            concat (byte-to-string ch)))
 
 (cl-defstruct pgerror
