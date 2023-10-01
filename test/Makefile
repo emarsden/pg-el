@@ -155,6 +155,17 @@ test-greenplum: test-pg.el
 	podman rm greenplum
 
 
+# Testing the asynchronous notification support implemented in v0.24 to run a publish-subcribe test.
+# We run 4 separate Emacs instances, and one central PostgreSQL used as a "message broker" or "event
+# bus". Note that CPU usage in this simple demo is very low.
+pubsub: notification-subscriber.el notification-publisher.el
+	emacs -Q --batch -l ../pg.el -l notification-subscriber.el -f do-listener &
+	emacs -Q --batch -l ../pg.el -l notification-subscriber.el -f do-listener &
+	emacs -Q --batch -l ../pg.el -l notification-subscriber.el -f do-listener &
+	sleep 1
+	emacs -Q --batch -l ../pg.el -l notification-publisher.el -f do-publisher
+
+
 bench-uncompiled: test-pg.el
 	emacs -Q --batch -l ../pg.el -l test-pg.el -f pg-bench
 
