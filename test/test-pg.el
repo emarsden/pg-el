@@ -649,6 +649,10 @@
     (pg-exec conn "SELECT 'ignored'")
     (pg-exec conn "NOTIFY yourheart")
     (pg-exec conn "SELECT 'ignored'")
+    ;; The function pg_notify is an alternative to the LISTEN statement, and more flexible if your
+    ;; channel name is determined by a variable.
+    (pg-exec conn "SELECT pg_notify('yourheart', 'leaving')")
+    (pg-exec conn "SELECT 'ignored'")
     (pg-exec conn "UNLISTEN yourheart")
     (pg-exec conn "NOTIFY yourheart, 'Et redit in nihilum quod fuit ante nihil.'")))
 
