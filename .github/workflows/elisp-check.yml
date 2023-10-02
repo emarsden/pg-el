@@ -1,4 +1,4 @@
-name: check
+name: elisp-check
 
 on: [push]
 
@@ -12,8 +12,8 @@ jobs:
         emacs_version:
           - 26.3
           - 27.2
-          - 28.1
           - 28.2
+          - 29.1
           - snapshot
         ignore_warnings:
           - true

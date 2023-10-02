@@ -1,0 +1,44 @@
+name: test-pgv16
+on: push
+
+jobs:
+  runner-job:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      # Label used to access the service container
+      postgres:
+        # Docker Hub image
+        image: postgres:16
+        env:
+          POSTGRES_DB: pgeltestdb
+          POSTGRES_USER: pgeltestuser
+          POSTGRES_PASSWORD: pgeltest
+        # Set health checks to wait until postgres has started
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        # would also like to pass -c ssl=on -c ssl_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem -c ssl_key_file=/etc/ssl/private/ssl-cert-snakeoil.key
+        ports:
+          # Maps tcp port 5432 on service container to the host
+          - 5432:5432
+        volumes:
+          - /var/run/postgresql:/var/run/postgresql
+
+    steps:
+      - name: Install Emacs
+        run: |
+          sudo apt-get update
+          sudo apt-get install emacs
+
+      - name: Check out repository code
+        uses: actions/checkout@v3
+
+      - name: Run connection tests over TCP socket
+        run: make -C test test
+
+      - name: Run connection tests over local Unix socket
+        run: make -C test test-local
