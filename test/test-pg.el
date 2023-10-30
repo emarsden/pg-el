@@ -280,6 +280,7 @@
 
 ;; tests for BYTEA type (https://www.postgresql.org/docs/15/functions-binarystring.html)
 (defun pg-test-bytea (conn)
+  (pg-exec conn "DROP TABLE IF EXISTS byteatest")
   (pg-exec conn "CREATE TABLE byteatest(blob BYTEA, tag int)")
   (pg-exec conn "INSERT INTO byteatest VALUES('warning\\000'::bytea, 1)")
   (pg-exec conn "INSERT INTO byteatest VALUES('\\001\\002\\003'::bytea, 2)")
