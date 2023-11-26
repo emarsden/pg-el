@@ -329,6 +329,7 @@ struct.")
 
 
 (cl-defstruct pgcon
+  dbname
   process
   pid
   secret
@@ -603,7 +604,7 @@ database (as an opaque type). PORT defaults to 5432, HOST to
 attempt to establish an encrypted connection to PostgreSQL."
   (let* ((buf (generate-new-buffer " *PostgreSQL*"))
          (process (open-network-stream "postgres" buf host port :coding nil))
-         (connection (make-pgcon :process process)))
+         (connection (make-pgcon :dbname dbname :process process)))
     (with-current-buffer buf
       (set-process-coding-system process 'binary 'binary)
       (set-buffer-multibyte nil)
@@ -648,7 +649,7 @@ PASSWORD if necessary. Return a connection to the database (as an
 opaque type). PASSWORD defaults to an empty string."
   (let* ((buf (generate-new-buffer " *PostgreSQL*"))
          (process (make-network-process :name "postgres" :buffer buf :family 'local :service path :coding nil))
-         (connection (make-pgcon :process process)))
+         (connection (make-pgcon :dbname dbname :process process)))
     ;; Save connection info in the pgcon object, for possible later use by pg-cancel
     (setf (pgcon-connect-info connection) (list :local path dbname user password))
     (with-current-buffer buf
