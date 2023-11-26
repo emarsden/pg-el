@@ -1,4 +1,4 @@
-;;; Asynchronous notification tests for the pg.el library   -*- coding: utf-8; -*-
+;;; Asynchronous notification tests for the pg.el library   -*- coding: utf-8; lexical-binding: t; -*-
 ;;;
 ;;; This allows implementation of basic publish-subscribe functionality.
 ;;;

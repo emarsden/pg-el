@@ -1,4 +1,4 @@
-;;; Async notification tests for the pg.el library   -*- coding: utf-8; -*-
+;;; Async notification tests for the pg.el library   -*- coding: utf-8; lexical-binding: t; -*-
 ;;;
 ;;; This allows implementation of basic publish-subscribe functionality. Say "make pubsub" to run
 ;;; this test with one message publisher and three message subscribers.
