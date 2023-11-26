@@ -80,7 +80,7 @@ ELISP> (let ((res (pg-exec *pg* "SELECT 'PT3H4M42S'::interval")))
 
 Boolean vectors are only supported in Emacs from version 27 onwards.
 
-```
+```lisp
 ELISP> (let ((res (pg-exec *pg* "SELECT '1010'::bit(4)")))
           (equal (car (pg-result res :tuple 0))
                  (coerce (vector t nil t nil) 'bool-vector)))
