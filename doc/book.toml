@@ -1,0 +1,12 @@
+[book]
+title = "Using pg-el"
+authors = ["Eric Marsden <eric.marsden@risk-engineering.org>"]
+description = "User manual for the pg-el Emacs Lisp socket-level interface to PostgreSQL."
+language = "en"
+multilingual = false
+src = "src"
+
+
+[output.html]
+git-repository-url = "https://github.com/emarsden/pg-el"
+git-repository-icon = "fa-github"
