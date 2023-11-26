@@ -97,8 +97,8 @@ test-supabase-tls: test-pg.el
 
 
 # Neon (https://neon.tech/) provide hosted "serverless" PostgreSQL instances, which allow convenient
-# automated scalability according to load. They have a free tier. As of 2023-08, they are running
-# PostgreSQL 15.3 on AMD64.
+# automated scalability according to load. They have a free tier. As of 2023-11, they are running
+# PostgreSQL 15.4 on AMD64.
 test-neon: test-pg.el
 	PGEL_PASSWORD=foobles PGEL_HOSTNAME=foobles.eu-central-1.aws.neon.tech PGEL_USER=username PGEL_DATABASE=main emacs -Q --batch -l ../pg.el -l test-pg.el -f pg-test-tls
 
