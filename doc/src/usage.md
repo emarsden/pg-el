@@ -1,8 +1,10 @@
 # Using pg-el
 
-The examples below illustrate various features of pg-el in conjunction with PostgreSQL. The examples
-all assume that you are using ielm as an Emacs Lisp shell (start with `M-x ielm`) and that you have
-a connection to PostgreSQL:
+The examples below illustrate various features of pg-el in conjunction with PostgreSQL. A more
+complete set of examples can be found in our [test suite](https://github.com/emarsden/pg-el/tree/main/test).
+
+The examples all assume that you are using ielm as an Emacs Lisp shell (start with `M-x ielm`) and
+that you have a connection to PostgreSQL:
 
 ~~~admonish example title="Connect to PostgreSQL from Emacs"
 ```lisp
@@ -74,9 +76,10 @@ ELISP> (let ((res (pg-exec *pg* "SELECT 'PT3H4M42S'::interval")))
 ~~~
 
 
-~~~admonish title="Working with boolean vectors"
+~~~admonish example title="Working with boolean vectors"
 
-Boolean vectors are only support in Emacs from version 27 onwards.
+Boolean vectors are only supported in Emacs from version 27 onwards.
+
 ```
 ELISP> (let ((res (pg-exec *pg* "SELECT '1010'::bit(4)")))
           (equal (car (pg-result res :tuple 0))
@@ -96,11 +99,11 @@ t
 
 ~~~admonish example title="Using bignums"
 ```lisp
+ELISP> (fboundp 'bignump) ;; only supported from Emacs 27.2 onwards
+t
 ELISP> (let ((res (pg-exec *pg* "SELECT factorial(25)")))
           (car (pg-result res :tuple 0)))
 15511210043330985984000000 (#o6324500606375411017360000000, #xcd4a0619fb0907bc00000)
-ELISP> (fboundp 'bignump) ;; only supported from Emacs 27.2 onwards
-t
 ```
 ~~~
 

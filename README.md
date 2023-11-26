@@ -2,13 +2,15 @@
 
 [![License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](https://www.gnu.org/licenses/old-licenses/gpl-2.0)
 [![MELPA](https://melpa.org/packages/pg-badge.svg)](https://melpa.org/#/pg)
-[![Connect-v12](https://github.com/emarsden/pg-el/workflows/test-pgv12/badge.svg)](https://github.com/emarsden/pg-el/workflows/test-pgv12/badge.svg)
+[![test-pgv16](https://github.com/emarsden/pg-el/workflows/test-pgv16/badge.svg)](https://github.com/emarsden/pg-el/workflows/test-pgv16/badge.svg)
 
 
 This module lets you access the PostgreSQL 🐘 object-relational DBMS from Emacs, using its
 socket-level frontend/backend protocol. The module is capable of automatic type coercions from a
-range of SQL types to the equivalent Emacs Lisp type. This is a low-level API, and won't be useful
-to end users.
+range of SQL types to the equivalent Emacs Lisp type.
+
+📖 You may be interested in the [user manual](https://emarsden.github.io/pg-el/).
+
 
 Including support for:
 

@@ -208,14 +208,14 @@ Boolean variable `pg-disable-type-coercion` can be set to non-nil (before initia
 to disable the library's type coercion facility. Default is `t`.
 
 
-For more information about PostgreSQL see <https://www.PostgreSQL.org/>.
 
+~~~admonish warning title="Security note"
 
-**Security note**: setting up PostgreSQL to accept TCP/IP connections has security implications;
-please consult the documentation for details. It is possible to use the port forwarding capabilities
-of ssh to establish a connection to the backend over TCP/IP, which provides both a secure
-authentication mechanism and encryption (and optionally compression) of data passing through the
-tunnel. Here's how to do it (thanks to Gene Selkov, Jr. for the description):
+Setting up PostgreSQL to accept TCP/IP connections has security implications; please consult the
+documentation for details. It is possible to use the port forwarding capabilities of ssh to
+establish a connection to the backend over TCP/IP, which provides both a secure authentication
+mechanism and encryption (and optionally compression) of data passing through the tunnel. Here's how
+to do it (thanks to Gene Selkov, Jr. for the description):
 
 1. Establish a tunnel to the backend machine, like this:
 
@@ -235,3 +235,4 @@ tunnel. Here's how to do it (thanks to Gene Selkov, Jr. for the description):
 
    You can omit the port argument if you chose 5432 as the local end of the tunnel, since pg.el
    defaults to this value.
+~~~

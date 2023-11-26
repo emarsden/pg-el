@@ -1,6 +1,6 @@
 # Quickstart to using pg-el
 
-These illustrative examples assume you have PostgreSQL user `pgeltestuser` with password `pgeltest`
+These illustrative examples assume you have a PostgreSQL user `pgeltestuser` with password `pgeltest`
 who owns a database `pgeltestdb`. To set that up with a local PostgreSQL database, use commands
 similar to the following:
 
@@ -23,8 +23,10 @@ pg
 ELISP> (defvar *pg* (pg-connect "pgeltestdb" "pgeltestuser" "pgeltest" "localhost" 5432))
 *pg*
 ```
+~~~
 
-If you don’t already have PostgreSQL installed locall, it may be convenient for you to use
+
+If you don’t already have PostgreSQL installed locally, it may be convenient for you to use
 [PostgreSQL Docker Community images](https://hub.docker.com/_/postgres/), using
 [Docker](https://www.docker.com/) or [Podman](https://podman.io/). I recommend installing Podman
 because it’s fully free software, whereas Docker is partly commercial. Podman is also able to run
