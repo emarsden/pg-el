@@ -1,4 +1,4 @@
-;;; Tests for the pg.el library   -*- coding: utf-8; -*-
+;;; Tests for the pg.el library   -*- coding: utf-8; lexical-binding: t; -*-
 ;;;
 ;;; Author: Eric Marsden <eric.marsden@risk-engineering.org>
 ;;; Copyright: (C) 2022-2023  Eric Marsden
@@ -136,22 +136,18 @@
     (pg-exec conn "DROP TABLE count_test")
     (should (not (member "count_test" (pg-tables conn))))))
 
-;; Testing for the time handling routines. Expected output is something like (in buffer *Messages*,
-;; or on the terminal if running the tests in batch mode)
-;;
-;; timestamp = (14189 17420)
-;; abstime = (14189 17420)
-;; time = 19:42:06
+;; Testing for the date/time handling routines.
 (defun pg-test-date (conn)
   (cl-flet ((scalar (sql) (car (pg-result (pg-exec conn sql) :tuple 0))))
     (let (res)
-      (pg-exec conn "CREATE TABLE date_test(a timestamp, b time)")
+      (pg-exec conn "CREATE TABLE date_test(a timestamp, b time, c date)")
       (pg-exec conn "INSERT INTO date_test VALUES "
-               "(current_timestamp, 'now')")
+               "(current_timestamp, 'now', current_date)")
       (setq res (pg-exec conn "SELECT * FROM date_test"))
       (setq res (pg-result res :tuple 0))
       (message "timestamp = %s" (cl-first res))
-      (message "time = %s" (cl-second res)))
+      (message "time = %s" (cl-second res))
+      (message "date = %s" (cl-third res)))
     (pg-exec conn "DROP TABLE date_test")
     (should (equal (scalar "SELECT 'allballs'::time") "00:00:00"))
     (should (equal (scalar "SELECT '2022-10-01'::date") (encode-time 0 0 0 1 10 2022)))
