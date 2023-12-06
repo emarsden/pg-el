@@ -196,7 +196,63 @@ ELISP> (let ((res (pg-exec *pg* "SELECT lower('FÔÖÉ' COLLATE \"french\")")))
 ~~~
 
 
-## The BYTEA type
+## Working with binary data
+
+The [BYTEA type](https://www.postgresql.org/docs/current/datatype-binary.html) allows the storage of
+binary strings, i.e. sequences of octets. They can contain NUL octets (the value zero).
+
+~~~admonish example title="Using the BYTEA type"
+```lisp
+ELISP> (let ((res (pg-exec *pg* "SELECT '\\xDEADBEEF'::bytea")))
+         (equal (car (pg-result res :tuple 0))
+                (decode-hex-string "DEADBEEF")))
+t
+ELISP> (let ((res (pg-exec *pg* "SELECT '\\001\\003\\005'::bytea")))
+         (equal (car (pg-result res :tuple 0))
+                (string 1 3 5)))
+t
+ELISP> (let ((res (pg-exec *pg* "SELECT '\\x123456'::bytea || '\\x789a00bcde'::bytea")))
+         (equal (car (pg-result res :tuple 0))
+                (decode-hex-string "123456789a00bcde")))
+t
+ELISP> (let ((res (pg-exec *pg* "SELECT 'warning\\000'::bytea")))
+         (equal (length (car (pg-result res :tuple 0))) 8))
+t
+
+```
+~~~
+
+When sending binary data to PostgreSQL, either encode all potentially problematic octets, as we did
+for NUL above, or send base64-encoded content and decode it in PostgreSQL. There are various other
+useful functions for working with binary data on PostgreSQL, such as hash functions.
+ 
+
+~~~admonish example title="Working with binary data"
+```lisp
+ELISP> (pg-result (pg-exec *pg* "CREATE TABLE bt(blob BYTEA, tag int)") :status)
+"CREATE TABLE"
+ELISP> (let* ((size 512)
+              (random-octets (make-string size 0)))
+         (dotimes (i size)
+           (setf (aref random-octets i) (random 256)))
+         (setf (aref random-octets 0) 0)
+         (pg-exec *pg* (format "INSERT INTO bt VALUES (decode('%s', 'base64'), 42)"
+                               (base64-encode-string random-octets)))
+         (equal random-octets (car (pg-result (pg-exec *pg* "SELECT blob FROM bt WHERE tag=42") :tuple 0))))
+t
+ELISP> (let* ((res (pg-exec *pg* "SELECT sha256('foobles'::bytea)"))
+              (hx (encode-hex-string (car (pg-result res :tuple 0)))))
+          (equal hx (secure-hash 'sha256 "foobles")))
+t
+ELISP> (let* ((res (pg-exec *pg* "SELECT md5('foobles')"))
+              (r (car (pg-result res :tuple 0))))
+          (equal r (md5 "foobles")))
+t
+ELISP> (let* ((res (pg-exec *pg* "SELECT encode('foobles', 'base64')"))
+              (r (car (pg-result res :tuple 0))))
+          (equal r (base64-encode-string "foobles")))
+t
+```
 
 
 

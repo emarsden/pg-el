@@ -86,7 +86,7 @@ ELISP> (let ((res (pg-exec *pg* "SELECT * FROM generate_series(50,55)")))
 ```
 ~~~
 
-An SQL query that returns no results will return nil. 
+An SQL query that returns no results will return the empty list.
 
 ```lisp
 ELISP> (let ((res (pg-exec *pg* "SELECT 3 where 1=0")))
