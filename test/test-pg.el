@@ -114,7 +114,8 @@
     (should (eql nil (row " SELECT 3 where 1=0")))
     (should (string= "abcdef" (car (row "SELECT 'abc' || 'def'"))))
     (should (string= "howdy" (car (row "SELECT 'howdy'::text"))))
-    (should (string= "gday" (car (row "SELECT 'gday'::varchar(20)"))))))
+    (should (string= "gday" (car (row "SELECT 'gday'::varchar(20)"))))
+    (should (string= (md5 "foobles") (car (row "SELECT md5('foobles')"))))))
 
 (defun pg-test-insert (conn)
   (let ((res (list))
@@ -283,7 +284,7 @@
   (cl-flet ((scalar (sql) (car (pg-result (pg-exec conn sql) :tuple 0))))
     (should (equal (byte-to-string 0) (scalar "SELECT '\\000'::bytea")))
     (should (equal (byte-to-string ?') (scalar "SELECT ''''::bytea")))
-    (should (equal "\336\255\276\357" (scalar "SELECT '\\xDEADBEEF'::bytea")))
+    (should (equal (decode-hex-string "DEADBEEF") (scalar "SELECT '\\xDEADBEEF'::bytea")))
     (should (equal (string 1 3 5) (scalar "SELECT '\\001\\003\\005'::bytea")))
     (should (equal (decode-hex-string "123456789a00bcde")
                    (scalar "SELECT '\\x123456'::bytea || '\\x789a00bcde'::bytea")))
