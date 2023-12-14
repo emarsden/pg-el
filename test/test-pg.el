@@ -111,7 +111,7 @@
 
 
 (defun pg-test-prepared (con)
-  (cl-labels ((row (query args) (pg-result (pg-exec/prepared con query args) :tuple 0))
+  (cl-labels ((row (query args) (pg-result (pg-exec-prepared con query args) :tuple 0))
               (scalar (query args) (car (row query args)))
               (approx= (x y) (< (/ (abs (- x y)) (max (abs x) (abs y))) 1e-5)))
     (should (equal (make-bool-vector 1 nil) (scalar "SELECT $1::bit" '(("0" . "bit")))))
@@ -174,15 +174,15 @@
 
 
 (cl-defun pg-test-prepared/multifetch (con &optional (rows 1000))
-  (cl-labels ((row (query args) (pg-result (pg-exec/prepared con query args) :tuple 0))
+  (cl-labels ((row (query args) (pg-result (pg-exec-prepared con query args) :tuple 0))
               (scalar (query args) (car (row query args))))
     (message "Running multiple fetch/suspended portal test")
-    (let* ((res (pg-exec/prepared con "SELECT generate_series(1, $1)"
+    (let* ((res (pg-exec-prepared con "SELECT generate_series(1, $1)"
                                   `((,rows . "int4"))
                                   :max-rows 10))
            (portal (pgresult-portal res))
            (counter 0))
-      ;; check the results from the initial pg-exec/prepared
+      ;; check the results from the initial pg-exec-prepared
       (dolist (tuple (pg-result res :tuples))
         (should (eql (cl-first tuple) (cl-incf counter))))
       ;; keep fetching and checking more rows until the portal is complete
@@ -239,7 +239,7 @@
       (should (member "count_test" (pg-tables con)))
       (should (member "val" (pg-columns con "count_test")))
       (dotimes (i count)
-        (pg-exec/prepared con "INSERT INTO count_test VALUES($1, $2)"
+        (pg-exec-prepared con "INSERT INTO count_test VALUES($1, $2)"
                           `((,i . "int4") (,(* i i) . "int4"))))
       (should (eql count (scalar "SELECT count(*) FROM count_test")))
       (should (eql (/ (* (1- count) count) 2) (scalar "SELECT sum(key) FROM count_test")))

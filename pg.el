@@ -873,7 +873,7 @@ Returns a pgresult structure (see function `pg-result')."
         (message "Received unexpected message type %s in pg-fetch" c))))))
 
 ;; Do a PARSE/BIND/EXECUTE sequence, using the Extended Query message flow.
-(cl-defun pg-exec/prepared (con query typed-arguments &key (max-rows 0))
+(cl-defun pg-exec-prepared (con query typed-arguments &key (max-rows 0))
   "Execute SQL QUERY using TYPED-ARGUMENTS on database connection CON.
 Query can contain numbered parameters ($1, $2 etc.) that are
 bound to the values in TYPED-ARGUMENTS, which is a list of the
@@ -891,7 +891,7 @@ are available, they can later be retrieved with `pg-fetch'."
     (pg-fetch con portal-name :max-rows max-rows)))
 
 (defun pg-close-portal (con portal-name)
-  "Close the portal named PORTAL-NAME that was opened by pg-exec/prepared."
+  "Close the portal named PORTAL-NAME that was opened by pg-exec-prepared."
   (let ((len (+ 4 1 (1+ (length portal-name)))))
     ;; send a Close message
     (pg-send-char con ?C)

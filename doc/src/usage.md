@@ -43,9 +43,9 @@ ELISP> (member "count_test" (pg-tables *pg*))
 ("count_test")
 ELISP> (member "val" (pg-columns *pg* "count_test"))
 ("val")
-ELISP> (cl-loop for i from 1 to 100
-         for sql = (format "INSERT INTO count_test VALUES(%s, %s)" i (* i i))
-         do (pg-exec *pg* sql))
+ELISP> (dotimes (i 100)
+         (pg-exec-prepared *pg* "INSERT INTO count_test VALUES($1, $2)"
+            `((,i . "int4") (,(* i i) . "int4"))))
 nil
 ELISP> (let ((res (pg-exec *pg* "SELECT count(*) FROM count_test")))
           (car (pg-result res :tuple 0)))
@@ -210,8 +210,9 @@ ELISP> (let* ((size 512)
          (dotimes (i size)
            (setf (aref random-octets i) (random 256)))
          (setf (aref random-octets 0) 0)
-         (pg-exec *pg* (format "INSERT INTO bt VALUES (decode('%s', 'base64'), 42)"
-                               (base64-encode-string random-octets)))
+         (pg-exec-prepared *pg*
+            "INSERT INTO bt VALUES (decode($1, 'base64'), 42)"
+            `((,(base64-encode-string random-octets) . "text")))
          (equal random-octets (car (pg-result (pg-exec *pg* "SELECT blob FROM bt WHERE tag=42") :tuple 0))))
 t
 ELISP> (let* ((res (pg-exec *pg* "SELECT sha256('foobles'::bytea)"))
@@ -240,8 +241,6 @@ t
 
 ## HSTORE
 
-
-## PREPARE / EXECUTE
 
 
 ## Special pg-el features 
