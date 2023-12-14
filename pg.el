@@ -1490,13 +1490,13 @@ PostgreSQL and Emacs. CON should no longer be used."
 (pg-register-serializer "int2"
   (lambda (v)
     (cl-assert (integerp v))
-    (cl-assert (<= (- (expt 2 15) v (expt 2 15))))
+    (cl-assert (<= (- (expt 2 15)) v (expt 2 15)))
     (bindat-pack (bindat-type sint 16 nil) v)))
 
 (pg-register-serializer "smallint"
   (lambda (v)
     (cl-assert (integerp v))
-    (cl-assert (<= (- (expt 2 15) v (expt 2 15))))
+    (cl-assert (<= (- (expt 2 15)) v (expt 2 15)))
     (bindat-pack (bindat-type sint 16 nil) v)))
 
 (pg-register-serializer "int4"
@@ -2015,7 +2015,7 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
     (with-current-buffer (process-buffer process)
       (dotimes (_i (pgcon-timeout con))
         (when (null (char-after pgcon--position))
-          (sleep-for 1.0)
+          (sleep-for 0.5)
           (accept-process-output process 1.0)))
       (when (null (char-after pgcon--position))
         (let ((msg (format "Timeout reading from %s" con)))
