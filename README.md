@@ -14,14 +14,15 @@ range of SQL types to the equivalent Emacs Lisp type.
 
 Including support for:
 
-- **SCRAM-SHA-256 authentication** (the default authentication method since PostgreSQL version 14)
+- **SCRAM-SHA-256 authentication** (the default authentication method since PostgreSQL version 14),
+  as well as MD5 and password authentication.
 
-- MD5 authentication 
+- Encrypted (**TLS**) connections with the PostgreSQL database, though currently not for
+  authentication using client-side certificates. This assumes your Emacs has been built with GnuTLS
+  support.
 
-- Encrypted (**TLS**) connections with PostgreSQL, though currently not for authentication using
-  client-side certificates. This assumes your Emacs has been built with GnuTLS support.
-
-- Connections over TCP or (on Unix machines) a local Unix socket.
+- Support for **prepared statements** using PostgreSQL's extended query protocol, to avoid SQL injection
+  attacks.
 
 - Support for the SQL **COPY protocol** to copy preformatted data to PostgreSQL from an Emacs buffer.
 
@@ -32,7 +33,10 @@ Including support for:
 - Parsing various PostgreSQL types including JSON, JSONB and HSTORE objects, array types, integer
   and numerical range types.
 
-The code has been tested with PostgreSQL versions 16.0, 15.4, 13.8, 11.17, and 10.22 on Linux. It is
+- Connections over TCP or (on Unix machines) a local Unix socket.
+
+
+The code has been tested with PostgreSQL versions 16.1, 15.4, 13.8, 11.17, and 10.22 on Linux. It is
 also tested via GitHub actions on MacOS and Windows, using the PostgreSQL version which is
 pre-installed in the virtual images (currently 14.8). This library also works against other
 databases that implement the PostgreSQL wire protocol:
@@ -50,7 +54,9 @@ databases that implement the PostgreSQL wire protocol:
 Tested with Emacs versions 29.1, 28.2, 27.2 and 26.3. Emacs versions older than 26.1 will not work
 against a recent PostgreSQL version (whose default configuration requires SCRAM-SHA-256
 authentication), because they don't include the GnuTLS support which we use to calculate HMACs. They
-may however work against a database set up to allow unauthenticated local connections.
+may however work against a database set up to allow unauthenticated local connections. Emacs
+versions older than 28.1 will not be able to use the extended query protocol (prepared statements),
+because they don't have the necessary bindat functionality.
 
 You may be interested in an alternative library [emacs-libpq](https://github.com/anse1/emacs-libpq)
 that enables access to PostgreSQL from Emacs by binding to the libpq library.
@@ -283,33 +289,6 @@ to disable the library's type coercion facility. Default is `t`.
 
 
 For more information about PostgreSQL see <https://www.PostgreSQL.org/>.
-
-
-**Security note**: setting up PostgreSQL to accept TCP/IP connections has security implications;
-please consult the documentation for details. It is possible to use the port forwarding capabilities
-of ssh to establish a connection to the backend over TCP/IP, which provides both a secure
-authentication mechanism and encryption (and optionally compression) of data passing through the
-tunnel. Here's how to do it (thanks to Gene Selkov, Jr. for the description):
-
-1. Establish a tunnel to the backend machine, like this:
-
-	ssh -L 3333:backend.dom:5432 postgres@backend.dom
-
-   The first number in the -L argument, 3333, is the port number of your end of the tunnel. The
-   second number, 5432, is the remote end of the tunnel -- the port number your backend is using.
-   The name or the address in between the port numbers belongs to the server machine, as does the
-   last argument to ssh that also includes the optional user name. Without the user name, ssh will
-   try the name you are currently logged on as on the client machine. You can use any user name the
-   server machine will accept, not necessarily those related to postgres.
-
-2. Now that you have a running ssh session, you can point pg.el to the local host at the port number
-   which you specified in step 1. For example,
-
-        (pg-connect "dbname" "user" "password" "localhost" 3333)
-
-   You can omit the port argument if you chose 5432 as the local end of the tunnel, since pg.el
-   defaults to this value.
-
 
 
 

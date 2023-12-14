@@ -3,10 +3,10 @@
 ;; Copyright: (C) 1999-2002, 2022-2023  Eric Marsden
 
 ;; Author: Eric Marsden <eric.marsden@risk-engineering.org>
-;; Version: 0.24
+;; Version: 0.25
 ;; Keywords: data comm database postgresql
 ;; URL: https://github.com/emarsden/pg-el
-;; Package-Requires: ((emacs "26.1"))
+;; Package-Requires: ((emacs "28.1"))
 ;; SPDX-License-Identifier: GPL-2.0-or-later
 ;;
 ;; This file is free software: you can redistribute it and/or modify
@@ -27,225 +27,37 @@
 ;; Overview
 ;; --------
 ;;
-;; This module lets you access the PostgreSQL object-relational DBMS from
-;; Emacs, using its socket-level frontend/backend protocol. The module is
-;; capable of automatic type coercions from a range of SQL types to the
-;; equivalent Emacs Lisp type. This is a low level API, and won't be
+;; This module lets you access the PostgreSQL object-relational DBMS from Emacs, using its
+;; socket-level frontend/backend protocol. The module is capable of automatic type coercions from a
+;; range of SQL types to the equivalent Emacs Lisp type. This is a low level API, and won't be
 ;; useful to end users.
 ;;
 ;; Supported features:
-;;  - SCRAM-SHA-256 authentication (the default method since PostgreSQL version 14)
-;;  - MD5 authentication
-;;  - Encrypted (TLS) connections
-;;  - Support for the SQL COPY protocol to copy preformatted data to PostgreSQL from an Emacs buffer
+;;
+;;  - SCRAM-SHA-256 authentication (the default method since PostgreSQL version 14) and MD5
+;;  - authentication.
+;;
+;;  - Encrypted (TLS) connections between Emacs and the PostgreSQL backend.
+;;
+;;  - Support for the SQL COPY protocol to copy preformatted data to PostgreSQL from an Emacs
+;;  - buffer.
+;;
 ;;  - Asynchronous handling of LISTEN/NOTIFY notification messages from PostgreSQL, allowing the
 ;;    implementation of publish-subscribe type architectures (PostgreSQL as an "event broker" or
 ;;    "message bus" and Emacs as event publisher and consumer.
-
+;;
+;;  - Support for PostgreSQL's extended query syntax, that allows for parameterized queries to
+;;    protect from SQL injection issues.
+;;
 
 ;; Entry points
 ;; ------------
 ;;
-;; (with-pg-connection con (dbname user [password host port]) &body body)
-;;     A macro which opens a connection to database DBNAME over a TCP socket,
-;;     executes the BODY forms then disconnects. See function `pg-connect' for
-;;     details of the connection arguments.
-;;
-;; (with-pg-connection-local con (path dbname user [password]) &body body)
-;;     A macro which opens a connection to database DBNAME over a local Unix
-;;     socket at PATH, executes the BODY forms then disconnects. See function
-;;     `pg-connect-local' for details of the connection arguments.
-;;
-;; (with-pg-transaction con &body body)
-;;     A macro which executes the BODY forms wrapped in an SQL transaction.
-;;     CON is a connection to the database. If an error occurs during the
-;;     execution of the forms, a ROLLBACK instruction is executed.
-;;
-;; (pg-connect dbname user [password host port tls]) -> connection
-;;     Connect to the database DBNAME on HOST (defaults to localhost) at PORT
-;;     (defaults to 5432) via TCP/IP and log in as USER. PASSWORD is used for
-;;     authentication with the backend (defaults to the empty string). If TLS is
-;;     non-NIL, attempt to upgrade the connection to TLS. Set the output date
-;;     type to 'ISO', and initialize our type parser tables.
-;;
-;; (pg-connect-local path dbname user [password]) -> connection
-;;     Connect to the database DBNAME over local Unix socket at PATH and log in
-;;     as USER. PASSWORD is used for authentication with the backend (defaults
-;;     to the empty string). Set the output date type to 'ISO', and initialize
-;;     our type parser tables.
-;;
-;; (pg-exec connection &rest sql) -> pgresult
-;;     Concatenate the SQL strings and send to the backend. Retrieve
-;;     all the information returned by the database and return it in
-;;     an opaque record PGRESULT.
-;;
-;; (pg-result pgresult what &rest args) -> info
-;;     Extract information from the PGRESULT. The WHAT keyword can be
-;;     one of
-;;          * :connection
-;;          * :status
-;;          * :attributes
-;;          * :tuples
-;;          * :tuple tupleNumber
-;;          * :oid
-;;     `:connection' allows you to retrieve the database connection.
-;;     `:status' is a string returned by the backend to indicate the
-;;     status of the command; it is something like "SELECT" for a
-;;     select command, "DELETE 1" if the deletion affected a single
-;;     row, etc. `:attributes' is a list of tuples providing metadata:
-;;     the first component of each tuple is the attribute's name as a
-;;     string, the second an integer representing its PostgreSQL type,
-;;     and the third an integer representing the size of that type.
-;;     `:tuples' returns all the data retrieved from the database, as a
-;;     list of lists, each list corresponding to one row of data
-;;     returned by the backend. `:tuple num' can be used to extract a
-;;     specific tuple (numbering starts at 0). `:oid' allows you to
-;;     retrieve the OID returned by the backend if the command was an
-;;     insertion; the OID is a unique identifier for that row in the
-;;     database (this is PostgreSQL-specific, please refer to the
-;;     documentation for more details).
-;;
-;; (pg-cancel connection) -> nil
-;;     Ask the server to cancel the command being processed by the backend.
-;;     The cancellation request concerns the command requested over
-;;     database connection CONNECTION.
-;;
-;; (pg-disconnect connection) -> nil
-;;     Close the database connection.
-;;
-;; (pg-for-each connection select-form callback)
-;;     Calls CALLBACK on each tuple returned by SELECT-FORM. Declares
-;;     a cursor for SELECT-FORM, then fetches tuples using repeated
-;;     executions of FETCH 1, until no results are left. The cursor is
-;;     then closed. The work is performed within a transaction. When
-;;     you have a large amount of data to handle, this usage is more
-;;     efficient than fetching all the tuples in one go.
-;;
-;;     If you wish to browse the results, each one in a separate
-;;     buffer, you could have the callback insert each tuple into a
-;;     buffer created with (generate-new-buffer "myprefix"), then use
-;;     ibuffer's "/ n" to list/visit/delete all buffers whose names
-;;     match myprefix.
-;;
-;; (pg-databases connection) -> list of strings
-;;     Return a list of the databases available at this site (a
-;;     database is a set of tables; in a fresh PostgreSQL
-;;     installation there is a single database named "template1").
-;;
-;; (pg-tables connection) -> list of strings
-;;     Return a list of the tables present in the database to which we
-;;     are currently connected. Only include user tables: system
-;;     tables are excluded.
-;;
-;; (pg-columns connection table) -> list of strings
-;;     Return a list of the columns (or attributes) in TABLE, which
-;;     must be a table in the database to which we are currently
-;;     connected. We only include the column names; if you want more
-;;     detailed information (attribute types, for example), it can be
-;;     obtained from `pg-result' on a SELECT statement for that table.
-;;
-;; (pg-hstore-setup conn)
-;;     Prepare for the use of HSTORE datatypes. This function must be called
-;;     before using the HSTORE extension. It loads the extension if necessary,
-;;     and sets up the parsing support for HSTORE datatypes.
-;;
-;; (pg-lo-create conn . args) -> oid
-;;     Create a new large object (BLOB, or binary large object in
-;;     other DBMSes parlance) in the database to which we are
-;;     connected via CONN. Returns an OID (which is represented as an
-;;     elisp integer) which will allow you to use the large object.
-;;     Optional ARGS are a Unix-style mode string which determines the
-;;     permissions of the newly created large object, one of "r" for
-;;     read-only permission, "w" for write-only, "rw" for read+write.
-;;     Default is "r".
-;;
-;;     Large-object functions MUST be used within a transaction (see
-;;     the macro `with-pg-transaction').
-;;
-;; (pg-lo-open conn oid . args) -> fd
-;;     Open a large object whose unique identifier is OID (an elisp
-;;     integer) in the database to which we are connected via CONN.
-;;     Optional ARGS is a Unix-style mode string as for pg-lo-create;
-;;     which defaults to "r" read-only permissions. Returns a file
-;;     descriptor (an elisp integer) which can be used in other
-;;     large-object functions.
-;;
-;; (pg-lo-close conn fd)
-;;     Close the file descriptor FD which was associated with a large
-;;     object. Note that this does not delete the large object; use
-;;     `pg-lo-unlink' for that.
-;;
-;; (pg-lo-read conn fd bytes) -> string
-;;     Read BYTES from the file descriptor FD which is associated with
-;;     a large object. Return an elisp string which should be BYTES
-;;     characters long.
-;;
-;; (pg-lo-write connection fd buf)
-;;     Write the bytes contained in the elisp string BUF to the
-;;     large object associated with the file descriptor FD.
-;;
-;; (pg-lo-lseek conn fd offset whence)
-;;     Do the equivalent of a lseek(2) on the file descriptor FD which
-;;     is associated with a large object; ie reposition the read/write
-;;     file offset for that large object to OFFSET (an elisp
-;;     integer). WHENCE has the same significance as in lseek(); it
-;;     should be one of SEEK_SET (set the offset to the absolute
-;;     position), SEEK_CUR (set the offset relative to the current
-;;     offset) or SEEK_END (set the offset relative to the end of the
-;;     file). WHENCE should be an elisp integer whose values can be
-;;     obtained from the header file <unistd.h> (probably 0, 1 and 2
-;;     respectively).
-;;
-;; (pg-lo-tell conn oid) -> integer
-;;     Do the equivalent of an ftell(3) on the file associated with
-;;     the large object whose unique identifier is OID. Returns the
-;;     current position of the file offset for the object's associated
-;;     file descriptor, as an elisp integer.
-;;
-;; (pg-lo-unlink conn oid)
-;;     Remove the large object whose unique identifier is OID from the
-;;     system (in the current implementation of large objects in
-;;     PostgreSQL, each large object is associated with an object in
-;;     the filesystem).
-;;
-;; (pg-lo-import conn filename) -> oid
-;;     Create a new large object and initialize it to the data
-;;     contained in the file whose name is FILENAME. Returns an OID
-;;     (as an elisp integer). Note that is operation is only syntactic
-;;     sugar around the basic large-object operations listed above.
-;;
-;; (pg-lo-export conn oid filename)
-;;     Create a new file named FILENAME and fill it with the contents
-;;     of the large object whose unique identifier is OID. This
-;;     operation is also syntactic sugar.
-;;
-;;
-;; Variable `pg-parameter-change-functions' is a list of handlers to be called
-;; when the backend informs us of a parameter change, for example a change to
-;; the session time zone. Each handler is called with three arguments: the
-;; connection to the backend, the parameter name and the parameter value.
-;;
-;; Variable `pg-handle-notice-functions' is a list of handlers to be called when
-;; the backend sends us a `NOTICE' message. Each handler is called with one
-;; argument, the notice, as a pgerror struct.
-;;
-;; Boolean variable `pg-disable-type-coercion' can be set to non-nil (before
-;; initiating a connection) to disable the library's type coercion facility.
-;; Default is t.
-;;
-;;
-;; For more information about PostgreSQL see <https://www.PostgreSQL.org/>.
-;;
+;; See the online documentation at <https://emarsden.github.io/pg-el/API.html>.
+
 ;; Thanks to Eric Ludlam for discovering a bug in the date parsing routines, to
 ;; Hartmut Pilch and Yoshio Katayama for adding multibyte support, and to Doug
 ;; McNaught and Pavel Janik for bug fixes.
-
-
-;;; INSTALL
-;;
-;; Place this file in a directory somewhere in the load-path, then
-;; byte-compile it (do a `B' on it in Dired, for example). Place a
-;; line such as `(require 'pg)' in your Emacs initialization file.
 
 
 ;;; TODO
@@ -256,16 +68,16 @@
 ;; * Implement the SASLPREP algorithm for usernames and passwords that contain
 ;;   unprintable characters (used for SCRAM-SHA-256 authentication).
 ;;
-;; * Add a mechanism for parsing user-defined types. The user should
-;;   be able to define a parse function and a type-name; we query
-;;   pg_type to get the type's OID and add the information to
-;;   pg-parsers.
+;; * Add a mechanism for parsing user-defined types. The user should be able to define a parse
+;;   function and a type-name; we query pg_type to get the type's OID and add the information to
+;;   pg--parsers.
 
 
 ;;; Code:
 
 (require 'cl-lib)
 (require 'hex-util)
+(require 'bindat)
 
 (defvar pg-application-name "pg.el"
   "The application_name sent to the PostgreSQL backend.
@@ -301,31 +113,16 @@ struct.")
 (define-error 'pg-copy-failed "PostgreSQL COPY failed" 'pg-error)
 
 
-(defconst pg-PG_PROTOCOL_MAJOR 3)
-(defconst pg-PG_PROTOCOL_MINOR 0)
+;; alist of (oid . parser) pairs. This is built dynamically at initialization of the connection with
+;; the database (once generated, the information is shared between connections).
+(defvar pg--parsers (list))
 
-(defconst pg-AUTH_REQ_OK       0)
-(defconst pg-AUTH_REQ_KRB4     1)
-(defconst pg-AUTH_REQ_KRB5     2)
-(defconst pg-AUTH_REQ_PASSWORD 3)   ; AuthenticationCleartextPassword
-(defconst pg-AUTH_REQ_CRYPT    4)
+;; maps from type-name to a function that converts from text representation to wire-level binary
+;; representation.
+(defvar pg--serializers (make-hash-table :test #'equal))
 
-(defconst pg-STARTUP_MSG            7)
-(defconst pg-STARTUP_KRB4_MSG      10)
-(defconst pg-STARTUP_KRB5_MSG      11)
-(defconst pg-STARTUP_PASSWORD_MSG  14)
-
-(defconst pg-MAX_MESSAGE_LEN    8192)   ; libpq-fe.h
-
-(defconst pg-INV_ARCHIVE 65536)         ; fe-lobj.c
-(defconst pg-INV_WRITE   131072)
-(defconst pg-INV_READ    262144)
-(defconst pg-LO_BUFIZE   1024)
-
-;; alist of (oid . parser) pairs. This is built dynamically at
-;; initialization of the connection with the database (once generated,
-;; the information is shared between connections).
-(defvar pg-parsers '())
+;; maps from type-name to PostgreSQL oid
+(defvar pg--types (make-hash-table :test #'equal))
 
 
 (cl-defstruct pgcon
@@ -337,32 +134,33 @@ struct.")
   (timeout 10)
   (binaryp nil)
   connect-info
+  (portal-counter 0)
   (notification-handlers (list)))
 
 ;; Used to save the connection-specific position in our input buffer.
-(defvar-local pgcon-position 1)
+(defvar-local pgcon--position 1)
 
 ;; Used to check whether the connection is currently "busy", so that we can determine whether a
 ;; message was received asynchronously or synchronously.
-(defvar-local pgcon-busy t)
+(defvar-local pgcon--busy t)
 
 (defvar-local pgcon-notification-handlers (list))
 
 
-(defun pg-connection-set-busy (connection busy)
-  (with-current-buffer (process-buffer (pgcon-process connection))
-    (setq-local pgcon-busy busy)))
+(defun pg-connection-set-busy (con busy)
+  (with-current-buffer (process-buffer (pgcon-process con))
+    (setq-local pgcon--busy busy)))
 
-(defun pg-connection-busy-p (connection)
-  (with-current-buffer (process-buffer (pgcon-process connection))
-    pgcon-busy))
+(defun pg-connection-busy-p (con)
+  (with-current-buffer (process-buffer (pgcon-process con))
+    pgcon--busy))
 
 
 (cl-defstruct pgresult
-  connection status attributes tuples portal)
+  connection status attributes tuples portal (incomplete nil))
 
-(defsubst pg-flush (connection)
-  (accept-process-output (pgcon-process connection) 1))
+(defsubst pg-flush (con)
+  (accept-process-output (pgcon-process con) 0.1))
 
 ;; this is ugly because lambda lists don't do destructuring
 (defmacro with-pg-connection (con connect-args &rest body)
@@ -435,7 +233,7 @@ tag called pg-finished."
 ;; which places the data in the process buffer for normal (synchronous) handling.
 (defun pg-process-filter (process data)
   (with-current-buffer (process-buffer process)
-    (unless pgcon-busy
+    (unless pgcon--busy
       (when (and (eql ?A (aref data 0))
                  (eql 0 (aref data 1)))
         (let ((msglen 0))
@@ -461,21 +259,34 @@ tag called pg-finished."
 ;; filter returns non-nil when it has detected, parsed and handled an asynchronous notification and
 ;; nil otherwise. This allows us to avoid duplicate processing of asynchronous notifications, once
 ;; by #'pg-process-filter and once by the notification handling code in pg-exec.
-(defun pg-enable-async-notification-handlers (connection)
-  (add-function :before-until (process-filter (pgcon-process connection)) #'pg-process-filter))
+(defun pg-enable-async-notification-handlers (con)
+  (add-function :before-until (process-filter (pgcon-process con)) #'pg-process-filter))
 
-(defun pg-disable-async-notification-handlers (connection)
-  (remove-function (process-filter (pgcon-process connection)) #'pg-process-filter))
+(defun pg-disable-async-notification-handlers (con)
+  (remove-function (process-filter (pgcon-process con)) #'pg-process-filter))
 
 
+(defconst pg--AUTH_REQ_OK       0)
+(defconst pg--AUTH_REQ_KRB4     1)
+(defconst pg--AUTH_REQ_KRB5     2)
+(defconst pg--AUTH_REQ_PASSWORD 3)   ; AuthenticationCleartextPassword
+(defconst pg--AUTH_REQ_CRYPT    4)
+
+(defconst pg--STARTUP_MSG            7)
+(defconst pg--STARTUP_KRB4_MSG      10)
+(defconst pg--STARTUP_KRB5_MSG      11)
+(defconst pg--STARTUP_PASSWORD_MSG  14)
+
+(defconst pg--MAX_MESSAGE_LEN    8192)   ; libpq-fe.h
 
 ;; Run the startup interaction with the PostgreSQL database. Authenticate and read the connection
 ;; parameters. This function allows us to share code common to TCP and Unix socket connections to
 ;; the backend.
-(cl-defun pg-do-startup (connection dbname user password)
-  "Handle the startup sequence to authenticate with PostgreSQL over CONNECTION."
+(cl-defun pg-do-startup (con dbname user password)
+  "Handle the startup sequence to authenticate with PostgreSQL over CON.
+Uses database DBNAME, user USER and password PASSWORD."
   ;; send the StartupMessage, as per https://www.postgresql.org/docs/current/protocol-message-formats.html
-  (pg-connection-set-busy connection t)
+  (pg-connection-set-busy con t)
   (let ((packet-octets (+ 4 2 2
                           (1+ (length "user"))
                           (1+ (length user))
@@ -484,106 +295,108 @@ tag called pg-finished."
                           (1+ (length "application_name"))
                           (1+ (length pg-application-name))
                           1)))
-    (pg-send-int connection packet-octets 4)
-    (pg-send-int connection pg-PG_PROTOCOL_MAJOR 2)
-    (pg-send-int connection pg-PG_PROTOCOL_MINOR 2)
-    (pg-send-string connection "user")
-    (pg-send-string connection user)
-    (pg-send-string connection "database")
-    (pg-send-string connection dbname)
-    (pg-send-string connection "application_name")
-    (pg-send-string connection pg-application-name)
+    (pg-send-uint con packet-octets 4)
+    (pg-send-uint con 3 2)              ; Protocol major version = 3
+    (pg-send-uint con 0 2)              ; Protocol minor version = 0
+    (pg-send-string con "user")
+    (pg-send-string con user)
+    (pg-send-string con "database")
+    (pg-send-string con dbname)
+    (pg-send-string con "application_name")
+    (pg-send-string con pg-application-name)
     ;; A zero byte is required as a terminator after the last name/value pair.
-    (pg-send-int connection 0 1)
-    (pg-flush connection))
-  (cl-loop for c = (pg-read-char connection) do
-           (cond ((eq ?E c)
-                  ;; an ErrorResponse message
-                  (pg-handle-error-response connection "after StartupMessage"))
+    (pg-send-uint con 0 1)
+    (pg-flush con))
+  (cl-loop
+   for c = (pg-read-char con) do
+   (cl-case c
+     (?E
+      ;; an ErrorResponse message
+      (pg-handle-error-response con "after StartupMessage"))
 
-                 ;; NegotiateProtocolVersion
-                 ((eq ?v c)
-                  (let ((_msglen (pg-read-net-int connection 4))
-                        (protocol-supported (pg-read-net-int connection 4))
-                        (unrec-options (pg-read-net-int connection 4))
-                        (unrec (list)))
-                    ;; read the list of protocol options not supported by the server
-                    (dotimes (_i unrec-options)
-                      (push (pg-read-string connection 4096) unrec))
-                    (let ((msg (format "Server only supports protocol minor version <= %s" protocol-supported)))
-                      (signal 'pg-protocol-error (list msg)))))
+     ;; NegotiateProtocolVersion
+     (?v
+      (let ((_msglen (pg-read-net-int con 4))
+            (protocol-supported (pg-read-net-int con 4))
+            (unrec-options (pg-read-net-int con 4))
+            (unrec (list)))
+        ;; read the list of protocol options not supported by the server
+        (dotimes (_i unrec-options)
+          (push (pg-read-string con 4096) unrec))
+        (let ((msg (format "Server only supports protocol minor version <= %s" protocol-supported)))
+          (signal 'pg-protocol-error (list msg)))))
 
-                 ;; BackendKeyData
-                 ((eq ?K c)
-                  (let ((_msglen (pg-read-net-int connection 4)))
-                    (setf (pgcon-pid connection) (pg-read-net-int connection 4))
-                    (setf (pgcon-secret connection) (pg-read-net-int connection 4))))
+     ;; BackendKeyData
+     (?K
+      (let ((_msglen (pg-read-net-int con 4)))
+        (setf (pgcon-pid con) (pg-read-net-int con 4))
+        (setf (pgcon-secret con) (pg-read-net-int con 4))))
 
-                 ;; NoticeResponse
-                 ((eq ?N c)
-                  ;; a Notice response has the same structure and fields as an ErrorResponse
-                  (let ((notice (pg-read-error-response connection)))
-                    (dolist (handler pg-handle-notice-functions)
-                      (funcall handler notice))))
+     ;; NoticeResponse
+     (?N
+      ;; a Notice response has the same structure and fields as an ErrorResponse
+      (let ((notice (pg-read-error-response con)))
+        (dolist (handler pg-handle-notice-functions)
+          (funcall handler notice))))
 
-                 ;; ReadyForQuery message
-                 ((eq ?Z c)
-                  (let ((_msglen (pg-read-net-int connection 4))
-                        (_status (pg-read-char connection)))
-                    ;; status is 'I' or 'T' or 'E'
-                    (and (not pg-disable-type-coercion)
-                         (null pg-parsers)
-                         (pg-initialize-parsers connection))
-                    (pg-exec connection "SET datestyle = 'ISO'")
-                    (pg-connection-set-busy connection nil)
-                    (cl-return-from pg-do-startup connection)))
+     ;; ReadyForQuery message
+     (?Z
+      (let ((_msglen (pg-read-net-int con 4))
+            (_status (pg-read-char con)))
+        ;; status is 'I' or 'T' or 'E'
+        (and (not pg-disable-type-coercion)
+             (null pg--parsers)
+             (pg-initialize-parsers con))
+        (pg-exec con "SET datestyle = 'ISO'")
+        (pg-connection-set-busy con nil)
+        (cl-return-from pg-do-startup con)))
 
-                 ;; an authentication request
-                 ((eq ?R c)
-                  (let ((_msglen (pg-read-net-int connection 4))
-                        (areq (pg-read-net-int connection 4)))
-                    (cond
-                     ;; AuthenticationOK message
-                     ((= areq pg-AUTH_REQ_OK)
-                      ;; Continue processing server messages and wait for the ReadyForQuery
-                      ;; message
-                      nil)
+     ;; an authentication request
+     (?R
+      (let ((_msglen (pg-read-net-int con 4))
+            (areq (pg-read-net-int con 4)))
+        (cond
+         ;; AuthenticationOK message
+         ((= areq pg--AUTH_REQ_OK)
+          ;; Continue processing server messages and wait for the ReadyForQuery
+          ;; message
+          nil)
 
-                     ((= areq pg-AUTH_REQ_PASSWORD)
-                      ;; send a PasswordMessage
-                      (pg-send-char connection ?p)
-                      (pg-send-int connection (+ 5 (length password)) 4)
-                      (pg-send-string connection password)
-                      (pg-flush connection))
-                     ;; AuthenticationSASL request
-                     ((= areq 10)
-                      (pg-do-sasl-authentication connection user password))
-                     ((= areq 5)
-                      (pg-do-md5-authentication connection user password))
-                     ((= areq pg-AUTH_REQ_CRYPT)
-                      (signal 'pg-protocol-error '("Crypt authentication not supported")))
-                     ((= areq pg-AUTH_REQ_KRB4)
-                      (signal 'pg-protocol-error '("Kerberos4 authentication not supported")))
-                     ((= areq pg-AUTH_REQ_KRB5)
-                      (signal 'pg-protocol-error '("Kerberos5 authentication not supported")))
-                     (t
-                      (let ((msg (format "Can't do that type of authentication: %s" areq)))
-                        (signal 'pg-protocol-error (list msg)))))))
+         ((= areq pg--AUTH_REQ_PASSWORD)
+          ;; send a PasswordMessage
+          (pg-send-char con ?p)
+          (pg-send-uint con (+ 5 (length password)) 4)
+          (pg-send-string con password)
+          (pg-flush con))
+         ;; AuthenticationSASL request
+         ((= areq 10)
+          (pg-do-sasl-authentication con user password))
+         ((= areq 5)
+          (pg-do-md5-authentication con user password))
+         ((= areq pg--AUTH_REQ_CRYPT)
+          (signal 'pg-protocol-error '("Crypt authentication not supported")))
+         ((= areq pg--AUTH_REQ_KRB4)
+          (signal 'pg-protocol-error '("Kerberos4 authentication not supported")))
+         ((= areq pg--AUTH_REQ_KRB5)
+          (signal 'pg-protocol-error '("Kerberos5 authentication not supported")))
+         (t
+          (let ((msg (format "Can't do that type of authentication: %s" areq)))
+            (signal 'pg-protocol-error (list msg)))))))
 
-                 ;; ParameterStatus
-                 ((eq ?S c)
-                  (let* ((msglen (pg-read-net-int connection 4))
-                         (msg (pg-read-chars connection (- msglen 4)))
-                         (items (split-string msg (string 0))))
-                    ;; ParameterStatus items sent by the backend include application_name,
-                    ;; DateStyle, in_hot_standby, integer_datetimes
-                    (when (> (length (cl-first items)) 0)
-                      (dolist (handler pg-parameter-change-functions)
-                        (funcall handler connection (cl-first items) (cl-second items))))))
+     ;; ParameterStatus
+     (?S
+      (let* ((msglen (pg-read-net-int con 4))
+             (msg (pg-read-chars con (- msglen 4)))
+             (items (split-string msg (string 0))))
+        ;; ParameterStatus items sent by the backend include application_name,
+        ;; DateStyle, in_hot_standby, integer_datetimes
+        (when (> (length (cl-first items)) 0)
+          (dolist (handler pg-parameter-change-functions)
+            (funcall handler con (cl-first items) (cl-second items))))))
 
-                 (t
-                  (let ((msg (format "Problem connecting: expected an authentication response, got %s" c)))
-                    (signal 'pg-protocol-error (list msg)))))))
+     (t
+      (let ((msg (format "Problem connecting: expected an authentication response, got %s" c)))
+        (signal 'pg-protocol-error (list msg)))))))
 
 
 ;; Avoid warning from the bytecode compiler
@@ -603,16 +416,17 @@ database (as an opaque type). PORT defaults to 5432, HOST to
 \"localhost\", and PASSWORD to an empty string. If TLS is non-NIL,
 attempt to establish an encrypted connection to PostgreSQL."
   (let* ((buf (generate-new-buffer " *PostgreSQL*"))
-         (process (open-network-stream "postgres" buf host port :coding nil))
-         (connection (make-pgcon :dbname dbname :process process)))
+         (process (open-network-stream "postgres" buf host port :coding nil
+                                       :nowait t :nogreeting t))
+         (con (make-pgcon :dbname dbname :process process)))
     (with-current-buffer buf
       (set-process-coding-system process 'binary 'binary)
       (set-buffer-multibyte nil)
-      (setq-local pgcon-position 1)
-      (setq-local pgcon-busy t)
+      (setq-local pgcon--position 1)
+      (setq-local pgcon--busy t)
       (setq-local pgcon-notification-handlers (list)))
     ;; Save connection info in the pgcon object, for possible later use by pg-cancel
-    (setf (pgcon-connect-info connection) (list :tcp host port dbname user password))
+    (setf (pgcon-connect-info con) (list :tcp host port dbname user password))
     ;; TLS connections to PostgreSQL are based on a custom STARTTLS-like connection upgrade
     ;; handshake. The frontend establishes an unencrypted network connection to the backend over the
     ;; standard port (normally 5432). It then sends an SSLRequest message, indicating the desire to
@@ -625,10 +439,10 @@ attempt to establish an encrypted connection to PostgreSQL."
       (unless (gnutls-available-p)
         (signal 'pg-error '("Connecting over TLS requires GnuTLS support in Emacs")))
       ;; send the SSLRequest message
-      (pg-send-int connection 8 4)
-      (pg-send-int connection 80877103 4)
-      (pg-flush connection)
-      (unless (eql ?S (pg-read-char connection))
+      (pg-send-uint con 8 4)
+      (pg-send-uint con 80877103 4)
+      (pg-flush con)
+      (unless (eql ?S (pg-read-char con))
         (signal 'pg-protocol-error (list "Couldn't establish TLS connection to PostgreSQL")))
       (let ((cert (network-stream-certificate host port nil)))
         (condition-case err
@@ -640,7 +454,7 @@ attempt to establish an encrypted connection to PostgreSQL."
            (let ((msg (format "TLS error connecting to PostgreSQL: %s" (error-message-string err))))
              (signal 'pg-protocol-error (list msg)))))))
     ;; the remainder of the startup sequence is common to TCP and Unix socket connections
-    (pg-do-startup connection dbname user password)))
+    (pg-do-startup con dbname user password)))
 
 (cl-defun pg-connect-local (path dbname user &optional (password ""))
   "Initiate a connection with the PostgreSQL backend over local Unix socket PATH.
@@ -655,8 +469,8 @@ opaque type). PASSWORD defaults to an empty string."
     (with-current-buffer buf
       (set-process-coding-system process 'binary 'binary)
       (set-buffer-multibyte nil)
-      (setq-local pgcon-position 1)
-      (setq-local pgcon-busy t)
+      (setq-local pgcon--position 1)
+      (setq-local pgcon--busy t)
       (setq-local pgcon-notification-handlers (list)))
     (pg-do-startup connection dbname user password)))
 
@@ -664,149 +478,150 @@ opaque type). PASSWORD defaults to an empty string."
 ;; Called from pg-parameter-change-functions when we receive a ParameterStatus
 ;; message of type name=value from the backend. If the status message concerns
 ;; the client encoding, update the value recorded in the connection.
-(defun pg-handle-parameter-client-encoding (connection name value)
+(defun pg-handle-parameter-client-encoding (con name value)
   (when (string= "client_encoding" name)
     (let ((ce (pg-normalize-encoding-name value)))
       (if ce
-          (setf (pgcon-client-encoding connection) ce)
+          (setf (pgcon-client-encoding con) ce)
         (let ((msg (format "Don't know the Emacs equivalent for client encoding %s" value)))
           (signal 'pg-error (list msg)))))))
 
-(defun pg-add-notification-handler (connection handler)
-  "Add HANDLER to the list of handlers for NotificationResponse messages on CONNECTION.
+(defun pg-add-notification-handler (con handler)
+  "Register HANDLER for NotificationResponse messages on CON.
 A handler takes two arguments: the channel and the payload. These correspond to SQL-level
 NOTIFY channel, \\='payload\\='."
-  (with-current-buffer (process-buffer (pgcon-process connection))
+  (with-current-buffer (process-buffer (pgcon-process con))
     (push handler pgcon-notification-handlers)))
 
-(cl-defun pg-exec (connection &rest args)
-  "Execute the SQL command given by concatenating ARGS on database CONNECTION.
+(cl-defun pg-exec (con &rest args)
+  "Execute the SQL command given by concatenating ARGS on database CON.
 Return a result structure which can be decoded using `pg-result'."
-  (pg-connection-set-busy connection t)
+  (pg-connection-set-busy con t)
   (let* ((sql (apply #'concat args))
-         (tuples '())
-         (attributes '())
-         (result (make-pgresult :connection connection))
-         (ce (pgcon-client-encoding connection))
+         (tuples (list))
+         (attributes (list))
+         (result (make-pgresult :connection con))
+         (ce (pgcon-client-encoding con))
          (encoded (if ce (encode-coding-string sql ce t) sql)))
     ;; (message "pg-exec: %s" sql)
-    (when (> (length encoded) pg-MAX_MESSAGE_LEN)
+    (when (> (length encoded) pg--MAX_MESSAGE_LEN)
       (let ((msg (format "SQL statement too long: %s" sql)))
         (signal 'pg-error (list msg))))
-    (pg-send-char connection ?Q)
-    (pg-send-int connection (+ 4 (length encoded) 1) 4)
-    (pg-send-string connection encoded)
-    (pg-flush connection)
-    (cl-loop for c = (pg-read-char connection) do
+    (pg-send-char con ?Q)
+    (pg-send-uint con (+ 4 (length encoded) 1) 4)
+    (pg-send-string con encoded)
+    (pg-flush con)
+    (cl-loop for c = (pg-read-char con) do
        ;; (message "pg-exec message-type = %c" c)
        (cl-case c
             ;; NoData
             (?n
-             (let ((_msglen (pg-read-net-int connection 4)))
+             (let ((_msglen (pg-read-net-int con 4)))
                nil))
 
             ;; NotificationResponse
             (?A
-             (let* ((_msglen (pg-read-net-int connection 4))
+             (let* ((_msglen (pg-read-net-int con 4))
                     ;; PID of the notifying backend
-                    (_pid (pg-read-int connection 4))
-                    (channel (pg-read-string connection pg-MAX_MESSAGE_LEN))
-                    (payload (pg-read-string connection pg-MAX_MESSAGE_LEN))
-                    (buf (process-buffer (pgcon-process connection)))
+                    (_pid (pg-read-int con 4))
+                    (channel (pg-read-string con pg--MAX_MESSAGE_LEN))
+                    (payload (pg-read-string con pg--MAX_MESSAGE_LEN))
+                    (buf (process-buffer (pgcon-process con)))
                     (handlers (with-current-buffer buf pgcon-notification-handlers)))
                (dolist (handler handlers)
                  (funcall handler channel payload))))
 
             ;; Bind -- should not receive this
             (?B
-             (setf (pgcon-binaryp connection) t)
+             (setf (pgcon-binaryp con) t)
              (unless attributes
                (signal 'pg-protocol-error (list "Tuple received before metadata")))
-             (push (pg-read-tuple connection attributes) tuples))
+             (let ((_msglen (pg-read-net-int con 4)))
+               (push (pg-read-tuple con attributes) tuples)))
 
             ;; CommandComplete -- one SQL command has completed
             (?C
-             (let* ((msglen (pg-read-net-int connection 4))
-                    (msg (pg-read-chars connection (- msglen 5)))
-                    (_null (pg-read-char connection)))
+             (let* ((msglen (pg-read-net-int con 4))
+                    (msg (pg-read-chars con (- msglen 5)))
+                    (_null (pg-read-char con)))
                (setf (pgresult-status result) msg)))
                ;; now wait for the ReadyForQuery message
 
             ;; DataRow
             (?D
-             (setf (pgcon-binaryp connection) nil)
-             (let ((_msglen (pg-read-net-int connection 4)))
-               (push (pg-read-tuple connection attributes) tuples)))
+             (setf (pgcon-binaryp con) nil)
+             (let ((_msglen (pg-read-net-int con 4)))
+               (push (pg-read-tuple con attributes) tuples)))
 
             ;; ErrorResponse
             (?E
-             (pg-handle-error-response connection))
+             (pg-handle-error-response con))
 
             ;; EmptyQueryResponse -- response to an empty query string
             (?I
-             (let ((_msglen (pg-read-net-int connection 4)))
+             (let ((_msglen (pg-read-net-int con 4)))
                nil))
 
             ;; BackendKeyData
             (?K
-             (let ((_msglen (pg-read-net-int connection 4)))
-               (setf (pgcon-pid connection) (pg-read-net-int connection 4))
-               (setf (pgcon-secret connection) (pg-read-net-int connection 4))))
+             (let ((_msglen (pg-read-net-int con 4)))
+               (setf (pgcon-pid con) (pg-read-net-int con 4))
+               (setf (pgcon-secret con) (pg-read-net-int con 4))))
 
             ;; NoticeResponse
             (?N
              ;; a Notice response has the same structure and fields as an ErrorResponse
-             (let ((notice (pg-read-error-response connection)))
+             (let ((notice (pg-read-error-response con)))
                (dolist (handler pg-handle-notice-functions)
                  (funcall handler notice))))
 
             ;; CursorResponse
             (?P
-             (let ((portal (pg-read-string connection pg-MAX_MESSAGE_LEN)))
+             (let ((portal (pg-read-string con pg--MAX_MESSAGE_LEN)))
                (setf (pgresult-portal result) portal)))
 
             ;; ParameterStatus sent in response to a user update over the connection
             (?S
-             (let* ((msglen (pg-read-net-int connection 4))
-                    (msg (pg-read-chars connection (- msglen 4)))
+             (let* ((msglen (pg-read-net-int con 4))
+                    (msg (pg-read-chars con (- msglen 4)))
                     (items (split-string msg (string 0))))
                ;; ParameterStatus items sent by the backend include application_name,
                ;; DateStyle, TimeZone, in_hot_standby, integer_datetimes
                (when (> (length (cl-first items)) 0)
                  (dolist (handler pg-parameter-change-functions)
-                   (funcall handler connection (cl-first items) (cl-second items))))))
+                   (funcall handler con (cl-first items) (cl-second items))))))
 
             ;; RowDescription
             (?T
              (when attributes
                (signal 'pg-protocol-error (list "Cannot handle multiple result group")))
-             (setq attributes (pg-read-attributes connection)))
+             (setq attributes (pg-read-attributes con)))
 
             ;; CopyFail
             (?f
-             (let* ((msglen (pg-read-net-int connection 4))
-                    (msg (pg-read-chars connection (- msglen 4))))
+             (let* ((msglen (pg-read-net-int con 4))
+                    (msg (pg-read-chars con (- msglen 4))))
                (message "Got CopyFail message %s" msg)))
 
             ;; BindComplete
             (?2
-             (let ((_msglen (pg-read-net-int connection 4)))
+             (let ((_msglen (pg-read-net-int con 4)))
                nil))
 
             ;; CloseComplete
             (?3
-             (let ((_msglen (pg-read-net-int connection 4)))
+             (let ((_msglen (pg-read-net-int con 4)))
                nil))
 
             ;; ReadyForQuery
             (?Z
-             (let ((_msglen (pg-read-net-int connection 4))
-                   (_status (pg-read-char connection)))
+             (let ((_msglen (pg-read-net-int con 4))
+                   (_status (pg-read-char con)))
                ;; status is 'I' or 'T' or 'E'
                ;; (message "Got ReadyForQuery with status %c" status)
                (setf (pgresult-tuples result) (nreverse tuples))
                (setf (pgresult-attributes result) attributes)
-               (pg-connection-set-busy connection nil)
+               (pg-connection-set-busy con nil)
                (cl-return-from pg-exec result)))
 
             (t
@@ -820,33 +635,300 @@ and the keyword WHAT should be one of
    :connection -> return the connection object
    :status -> return the status string provided by the database
    :attributes -> return the metadata, as a list of lists
+   :incomplete -> are more rows pending in the portal
    :tuples -> return the data, as a list of lists
    :tuple n -> return the nth component of the data
    :oid -> return the OID (a unique identifier generated by PostgreSQL
            for each row resulting from an insertion)"
-  (cond ((eq :connection what) (pgresult-connection result))
-        ((eq :status what)     (pgresult-status result))
-        ((eq :attributes what) (pgresult-attributes result))
-        ((eq :tuples what)     (pgresult-tuples result))
-        ((eq :tuple what)
-         (let ((which (if (integerp (car arg)) (car arg)
-                        (let ((msg (format "%s is not an integer" arg)))
-                          (signal 'pg-error (list msg)))))
-               (tuples (pgresult-tuples result)))
-           (nth which tuples)))
-        ((eq :oid what)
-         (let ((status (pgresult-status result)))
-           (if (string= "INSERT" (substring status 0 6))
-               (string-to-number (substring status 7 (cl-position ? status :start 7)))
-             (let ((msg (format "Only INSERT commands generate an oid: %s" status)))
-               (signal 'pg-error (list msg))))))
-        (t
-         (let ((msg (format "Unknown result request %s" what)))
+  (cl-case what
+    (:connection (pgresult-connection result))
+    (:status     (pgresult-status result))
+    (:attributes (pgresult-attributes result))
+    (:incomplete (pgresult-incomplete result))
+    (:tuples     (pgresult-tuples result))
+    (:tuple
+     (let ((which (if (integerp (car arg)) (car arg)
+                    (let ((msg (format "%s is not an integer" arg)))
+                      (signal 'pg-error (list msg)))))
+           (tuples (pgresult-tuples result)))
+       (nth which tuples)))
+    (:oid
+     (let ((status (pgresult-status result)))
+       (if (string= "INSERT" (substring status 0 6))
+           (string-to-number (substring status 7 (cl-position ? status :start 7)))
+         (let ((msg (format "Only INSERT commands generate an oid: %s" status)))
            (signal 'pg-error (list msg))))))
+    (t
+     (let ((msg (format "Unknown result request %s" what)))
+       (signal 'pg-error (list msg))))))
+
+
+(defun pg--lookup-oid (type-name)
+  (or (gethash type-name pg--types)
+      (signal 'pg-error (format "Undefined PostgreSQL type %s" type-name))))
+
+
+(cl-defun pg-prepare (con query argument-types &key (name ""))
+  "Prepare statement QUERY with ARGUMENT-TYPES on connection CON.
+The prepared statement may be given optional NAME (defaults to an
+unnamed prepared statement). ARGUMENT-TYPES is a list of
+PostgreSQL type names of the form (\"int4\" \"text\" \"bool\")."
+  (let* ((ce (pgcon-client-encoding con))
+         (query/enc (if ce (encode-coding-string query ce t) query))
+         (oids (mapcar #'pg--lookup-oid argument-types))
+         (len (+ 4 (1+ (length name)) (1+ (length query/enc)) 2 (* 4 (length oids)))))
+    ;; send a Parse message
+    (pg-connection-set-busy con t)
+    (pg-send-char con ?P)
+    (pg-send-uint con len 4)
+    (pg-send-string con name)
+    (pg-send-string con query/enc)
+    (pg-send-uint con (length oids) 2)
+    (dolist (oid oids)
+      (pg-send-uint con oid 4))
+    ;; send a Flush message
+    (pg-send-char con ?H)
+    (pg-send-uint con 4 4)
+    (pg-flush con)
+    (cl-loop
+     for c = (pg-read-char con) do
+     (cl-case c
+       ;; ParseComplete
+       (?1
+        (pg-read-net-int con 4)
+        (cl-return name))
+
+       ;; ErrorResponse
+       (?E
+        (pg-handle-error-response con))))))
+
+(defun pg-bind (con statement-name typed-arguments)
+  "Bind the SQL prepared statement STATEMENT-NAME to arguments TYPED-ARGUMENTS.
+The STATEMENT-NAME should have been returned by function `pg-prepare'.
+TYPE-ARGUMENTS is a list of the form ((42 . \"int4\") (\"foo\" . \"text\")).
+Uses PostgreSQL connection CON."
+  (let* ((ce (pgcon-client-encoding con))
+         (argument-values (mapcar #'car typed-arguments))
+         (argument-types (mapcar #'cdr typed-arguments))
+         (serialized-values
+          (cl-loop
+           for typ in argument-types
+           for v in argument-values
+           for serializer = (gethash typ pg--serializers)
+           collect (if serializer
+                       ;; this argument will be sent in binary format
+                       (cons (funcall serializer v) 1)
+                     ;; this argument will be sent in text format
+                     (let* ((raw (if (stringp v) v (format "%s" v)))
+                            (encoded (if ce (encode-coding-string raw ce t) raw)))
+                       (cons encoded 0)))))
+         (portal-name (format "portal%d" (cl-incf (pgcon-portal-counter con))))
+         (len (+ 4
+                 (1+ (length portal-name))
+                 (1+ (length statement-name))
+                 2
+                 (* 2 (length argument-types))
+                 2
+                 (cl-loop for v in (mapcar #'car serialized-values) sum (+ 4 (length v)))
+                 2)))
+    ;; send a Bind message
+    (pg-send-char con ?B)
+    (pg-send-uint con len 4)
+    ;; the destination portal
+    (pg-send-string con portal-name)
+    (pg-send-string con statement-name)
+    (pg-send-uint con (length argument-types) 2)
+    (cl-loop for (_ . binary-p) in serialized-values
+             do (pg-send-uint con binary-p 2))
+    (pg-send-uint con (length argument-values) 2)
+    (cl-loop
+     for (v . _) in serialized-values
+     do (if (null v)
+            ;; for a null value, send -1 followed by zero octets for the value
+            (pg-send-uint con -1 4)
+          (pg-send-uint con (length v) 4)
+          (pg-send-octets con v)))
+    ;; the number of result-column format codes: we use zero to indicate that result columns can use
+    ;; text format
+    (pg-send-uint con 0 2)
+    ;; send a Flush message
+    (pg-send-char con ?H)
+    (pg-send-uint con 4 4)
+    (pg-flush con)
+    ;; There is a tradeoff here between efficiency and prompt error handling. We could obtain better
+    ;; throughput by not sending the Flush message and reading the backend response here, instead
+    ;; waiting until the pg-fetch message to retrieve the result.
+    (cl-loop
+     for c = (pg-read-char con) do
+     (cl-case c
+       ;; BindComplete
+       (?2
+        (pg-read-net-int con 4)
+        (cl-return portal-name))
+
+       ;; ErrorResponse
+       (?E
+        (pg-handle-error-response con))))))
+
+(defun pg-describe-portal (con portal-name)
+  (let ((len (+ 4 1 (1+ (length portal-name)))))
+    ;; send a Describe message for this portal
+    (pg-send-char con ?D)
+    (pg-send-uint con len 4)
+    (pg-send-char con ?P)
+    (pg-send-string con portal-name)))
+
+(cl-defun pg-execute (con portal-name &key (max-rows 0))
+  (let* ((ce (pgcon-client-encoding con))
+         (pn/encoded (if ce (encode-coding-string portal-name ce t) portal-name))
+         (len (+ 4 (1+ (length pn/encoded)) 4)))
+    ;; send an Execute message
+    (pg-send-char con ?E)
+    (pg-send-uint con len 4)
+    ;; the destination portal
+    (pg-send-string con pn/encoded)
+    ;; Maximum number of rows to return; zero means "no limit"
+    (pg-send-uint con max-rows 4)))
+
+(cl-defun pg-fetch (con portal-name &key (max-rows 0))
+  "Fetch pending results from PORTAL-NAME on database connection CON.
+Retrieve at most MAX-ROWS rows (default value of zero means no limit).
+Returns a pgresult structure (see function `pg-result')."
+  (let* ((tuples (list))
+         (attributes (list))
+         (result (make-pgresult :connection con :portal portal-name)))
+    (pg-describe-portal con portal-name)
+    (pg-execute con portal-name :max-rows max-rows)
+    ;; send a Flush message
+    (pg-send-char con ?H)
+    (pg-send-uint con 4 4)
+    (pg-flush con)
+    (cl-loop
+     for c = (pg-read-char con) do
+     (cl-case c
+       ;; PortalSuspended -- the row-count limit for the Execute message was reached; more data is
+       ;; available with another Execute message.
+       (?s
+        (pg-read-net-int con 4)
+        (setf (pgresult-incomplete result) t)
+        (setf (pgresult-tuples result) (nreverse tuples))
+        (setf (pgresult-attributes result) attributes)
+        (setf (pgresult-status result) "SUSPENDED")
+        (pg-connection-set-busy con nil)
+        (cl-return result))
+
+       ;; CommandComplete -- one SQL command has completed (portal's execution is completed)
+       (?C
+        (let* ((msglen (pg-read-net-int con 4))
+               (msg (pg-read-chars con (- msglen 5)))
+               (_null (pg-read-char con)))
+          (setf (pgresult-status result) msg))
+        (setf (pgresult-incomplete result) nil)
+        (setf (pgresult-tuples result) (nreverse tuples))
+        (setf (pgresult-attributes result) attributes)
+        (pg-connection-set-busy con nil)
+        (cl-return result))
+
+       ;; DataRow message
+       (?D
+        (setf (pgcon-binaryp con) nil)
+        (let ((_msglen (pg-read-net-int con 4)))
+          (push (pg-read-tuple con attributes) tuples)))
+
+       ;; EmptyQueryResponse -- the response to an empty query string
+       (?I
+        (pg-read-net-int con 4))
+
+       (?n
+        (pg-read-net-int con 4))
+
+       ;; ErrorResponse
+       (?E
+        (pg-handle-error-response con))
+
+       ;; NoticeResponse
+       (?N
+        (let ((notice (pg-read-error-response con)))
+          (dolist (handler pg-handle-notice-functions)
+            (funcall handler notice))))
+
+       ;; RowDescription
+       (?T
+        (when attributes
+          (signal 'pg-protocol-error (list "Cannot handle multiple result group")))
+        (setq attributes (pg-read-attributes con)))
+
+       ;; ReadyForQuery
+       (?Z
+        (let ((_msglen (pg-read-net-int con 4))
+              (_status (pg-read-char con)))
+          ;; status is 'I' or 'T' or 'E'
+          ;; (message "Got ReadyForQuery with status %c" status)
+          (setf (pgresult-tuples result) (nreverse tuples))
+          (setf (pgresult-attributes result) attributes)
+          (pg-connection-set-busy con nil)
+          (cl-return result)))
+
+       (t
+        (message "Received unexpected message type %s in pg-fetch" c))))))
+
+;; Do a PARSE/BIND/EXECUTE sequence, using the Extended Query message flow.
+(cl-defun pg-exec/prepared (con query typed-arguments &key (max-rows 0))
+  "Execute SQL QUERY using TYPED-ARGUMENTS on database connection CON.
+Query can contain numbered parameters ($1, $2 etc.) that are
+bound to the values in TYPED-ARGUMENTS, which is a list of the
+form \\='((42 . \"int4\") (\"42\" . \"text\")).
+
+This uses PostgreSQL's parse/bind/execute extended query protocol
+for prepared statements, which allows parameterized queries to
+avoid SQL injection attacks. Returns a pgresult structure that
+can be decoded with function `pg-result'. It returns at most
+MAX-ROWS rows (a value of zero indicates no limit). If more rows
+are available, they can later be retrieved with `pg-fetch'."
+  (let* ((argument-types (mapcar #'cdr typed-arguments))
+         (ps-name (pg-prepare con query argument-types))
+         (portal-name (pg-bind con ps-name typed-arguments)))
+    (pg-fetch con portal-name :max-rows max-rows)))
+
+(defun pg-close-portal (con portal-name)
+  "Close the portal named PORTAL-NAME that was opened by pg-exec/prepared."
+  (let ((len (+ 4 1 (1+ (length portal-name)))))
+    ;; send a Close message
+    (pg-send-char con ?C)
+    (pg-send-uint con len 4)
+    (pg-send-char con ?P)
+    (pg-send-string con portal-name)
+    ;; send a Sync message
+    (pg-send-char con ?S)
+    (pg-send-uint con 4 4)
+    (cl-loop
+     for c = (pg-read-char con) do
+     (cl-case c
+       ;; CloseComplete
+       (?3
+        (pg-read-net-int con 4))
+
+       ;; ErrorResponse
+       (?E
+        (pg-handle-error-response con))
+
+       ;; NoticeResponse
+       (?N
+        (let ((notice (pg-read-error-response con)))
+          (dolist (handler pg-handle-notice-functions)
+            (funcall handler notice))))
+
+       ;; ReadyForQuery
+       (?Z
+        (let ((_msglen (pg-read-net-int con 4))
+              (_status (pg-read-char con)))
+          (cl-return nil)))))))
+
 
 (cl-defun pg-copy-from-buffer (con query buf)
   "Execute COPY FROM STDIN on the contents of BUF, according to QUERY.
-Return a result structure which can be decoded using `pg-result'."
+Uses PostgreSQL connection CON. Returns a result structure which
+can be decoded using `pg-result'."
   (unless (string-equal "COPY" (upcase (cl-subseq query 0 4)))
     (signal 'pg-error (list "Invalid COPY query")))
   (unless (cl-search "FROM STDIN" query)
@@ -854,125 +936,126 @@ Return a result structure which can be decoded using `pg-result'."
   (pg-connection-set-busy con t)
   (let ((result (make-pgresult :connection con)))
     (pg-send-char con ?Q)
-    (pg-send-int con (+ 4 (length query) 1) 4)
+    (pg-send-uint con (+ 4 (length query) 1) 4)
     (pg-send-string con query)
     (pg-flush con)
     (let ((more-pending t))
       (while more-pending
         (let ((c (pg-read-char con)))
-          (cond ((eq c ?G)
-                 ;; CopyInResponse
-                 (let ((_msglen (pg-read-net-int con 4))
-                       (status (pg-read-net-int con 1))
-                       (cols (pg-read-net-int con 2))
-                       (format-codes (list)))
-                   ;; status=0, which will be returned by recent backend versions: the backend is
-                   ;; expecting data in textual format (rows separated by newlines, columns separated by
-                   ;; separator characters, etc.).
-                   ;;
-                   ;; status=1: the backend is expecting binary format (which is similar to DataRow
-                   ;; format, and which we don't implement here).
-                   (dotimes (_c cols)
-                     (push (pg-read-net-int con 2) format-codes))
-                   (unless (zerop status)
-                     (signal 'pg-error (list "BINARY format for COPY is not implemented")))
-                   (setq more-pending nil)))
+          (cl-case c
+            (?G
+             ;; CopyInResponse
+             (let ((_msglen (pg-read-net-int con 4))
+                   (status (pg-read-net-int con 1))
+                   (cols (pg-read-net-int con 2))
+                   (format-codes (list)))
+               ;; status=0, which will be returned by recent backend versions: the backend is
+               ;; expecting data in textual format (rows separated by newlines, columns separated by
+               ;; separator characters, etc.).
+               ;;
+               ;; status=1: the backend is expecting binary format (which is similar to DataRow
+               ;; format, and which we don't implement here).
+               (dotimes (_c cols)
+                 (push (pg-read-net-int con 2) format-codes))
+               (unless (zerop status)
+                 (signal 'pg-error (list "BINARY format for COPY is not implemented")))
+               (setq more-pending nil)))
 
-                ;; NotificationResponse
-                ((eq c ?A)
-                 (let* ((_msglen (pg-read-net-int con 4))
-                        ;; PID of the notifying backend
-                        (_pid (pg-read-int con 4))
-                        (channel (pg-read-string con pg-MAX_MESSAGE_LEN))
-                        (payload (pg-read-string con pg-MAX_MESSAGE_LEN))
-                        (buf (process-buffer (pgcon-process con)))
-                        (handlers (with-current-buffer buf pgcon-notification-handlers)))
-                   (dolist (handler handlers)
-                     (funcall handler channel payload))))
+            ;; NotificationResponse
+            (?A
+             (let* ((_msglen (pg-read-net-int con 4))
+                    ;; PID of the notifying backend
+                    (_pid (pg-read-int con 4))
+                    (channel (pg-read-string con pg--MAX_MESSAGE_LEN))
+                    (payload (pg-read-string con pg--MAX_MESSAGE_LEN))
+                    (buf (process-buffer (pgcon-process con)))
+                    (handlers (with-current-buffer buf pgcon-notification-handlers)))
+               (dolist (handler handlers)
+                 (funcall handler channel payload))))
 
-                ;; ErrorResponse
-                ((eq ?E c)
-                 (pg-handle-error-response con))
+            ;; ErrorResponse
+            (?E
+             (pg-handle-error-response con))
 
-                ;; ParameterStatus sent in response to a user update over the connection
-                ((eq ?S c)
-                 (let* ((msglen (pg-read-net-int con 4))
-                        (msg (pg-read-chars con (- msglen 4)))
-                        (items (split-string msg (string 0))))
-                   (when (> (length (cl-first items)) 0)
-                     (dolist (handler pg-parameter-change-functions)
-                       (funcall handler con (cl-first items) (cl-second items))))))
+            ;; ParameterStatus sent in response to a user update over the connection
+            (?S
+             (let* ((msglen (pg-read-net-int con 4))
+                    (msg (pg-read-chars con (- msglen 4)))
+                    (items (split-string msg (string 0))))
+               (when (> (length (cl-first items)) 0)
+                 (dolist (handler pg-parameter-change-functions)
+                   (funcall handler con (cl-first items) (cl-second items))))))
 
-                (t
-                 (let ((msg (format "Unknown response type from backend: %s" c)))
-                   (signal 'pg-protocol-error (list msg))))))))
+            (t
+             (let ((msg (format "Unknown response type from backend: %s" c)))
+               (signal 'pg-protocol-error (list msg))))))))
     (let ((data (with-current-buffer buf (buffer-string))))
       (pg-send-char con ?d)
-      (pg-send-int con (+ 4 (length data)) 4)
+      (pg-send-uint con (+ 4 (length data)) 4)
       (pg-send-octets con data))
     ;; send CopyDone message
     (pg-send-char con ?c)
-    (pg-send-int con 4 4)
+    (pg-send-uint con 4 4)
     (pg-flush con)
     ;; Backend sends us either CopyDone or CopyFail, followed by CommandComplete + ReadyForQuery
     (cl-loop
      for c = (pg-read-char con) do
-     (cond ((eq ?c c)
-            ;; CopyDone
-            (let ((_msglen (pg-read-net-int con 4)))
-              nil))
+     (cl-case c
+       (?c
+        ;; CopyDone
+        (let ((_msglen (pg-read-net-int con 4)))
+          nil))
 
-           ;; CopyFail
-           ((eq ?f c)
-            (let* ((msglen (pg-read-net-int con 4))
-                   (msg (pg-read-chars con (- msglen 4)))
-                   (emsg (format "COPY failed: %s" msg)))
-              (signal 'pg-copy-failed (list emsg))))
+       ;; CopyFail
+       (?f
+        (let* ((msglen (pg-read-net-int con 4))
+               (msg (pg-read-chars con (- msglen 4)))
+               (emsg (format "COPY failed: %s" msg)))
+          (signal 'pg-copy-failed (list emsg))))
 
-           ;; CommandComplete -- SQL command has completed. After this we expect a ReadyForQuery message.
-           ((eq ?C c)
-            (let* ((msglen (pg-read-net-int con 4))
-                   (msg (pg-read-chars con (- msglen 5)))
-                   (_null (pg-read-char con)))
-              (setf (pgresult-status result) msg)))
+       ;; CommandComplete -- SQL command has completed. After this we expect a ReadyForQuery message.
+       (?C
+        (let* ((msglen (pg-read-net-int con 4))
+               (msg (pg-read-chars con (- msglen 5)))
+               (_null (pg-read-char con)))
+          (setf (pgresult-status result) msg)))
 
-           ;; NotificationResponse
-           ((eq ?A c)
-            (let* ((_msglen (pg-read-net-int con 4))
-                   ;; PID of the notifying backend
-                   (_pid (pg-read-int con 4))
-                   (channel (pg-read-string con pg-MAX_MESSAGE_LEN))
-                   (payload (pg-read-string con pg-MAX_MESSAGE_LEN))
-                   (buf (process-buffer (pgcon-process con)))
-                   (handlers (with-current-buffer buf pgcon-notification-handlers)))
-              (dolist (handler handlers)
-                (funcall handler channel payload))))
+       ;; NotificationResponse
+       (?A
+        (let* ((_msglen (pg-read-net-int con 4))
+               ;; PID of the notifying backend
+               (_pid (pg-read-int con 4))
+               (channel (pg-read-string con pg--MAX_MESSAGE_LEN))
+               (payload (pg-read-string con pg--MAX_MESSAGE_LEN))
+               (buf (process-buffer (pgcon-process con)))
+               (handlers (with-current-buffer buf pgcon-notification-handlers)))
+          (dolist (handler handlers)
+            (funcall handler channel payload))))
 
-           ;; ErrorResponse
-           ((eq ?E c)
-            (pg-handle-error-response con))
+       ;; ErrorResponse
+       (?E
+        (pg-handle-error-response con))
 
-           ;; ReadyForQuery message
-           ((eq ?Z c)
-            (let ((_msglen (pg-read-net-int con 4))
-                  (_status (pg-read-char con)))
-              (pg-connection-set-busy con nil)
-              (cl-return-from pg-copy-from-buffer result)))
+       ;; ReadyForQuery message
+       (?Z
+        (let ((_msglen (pg-read-net-int con 4))
+              (_status (pg-read-char con)))
+          (pg-connection-set-busy con nil)
+          (cl-return-from pg-copy-from-buffer result)))
 
-           (t
-            (let ((msg (format "Unknown response type from backend (2): %s" c)))
-              (signal 'pg-protocol-error (list msg))))))))
+       (t
+        (let ((msg (format "Unknown response type from backend (2): %s" c)))
+          (signal 'pg-protocol-error (list msg))))))))
 
 (defun pg-sync (con)
   (pg-connection-set-busy con t)
   (pg-send-char con ?S)
-  (pg-send-int con 4 4)
+  (pg-send-uint con 4 4)
   (pg-flush con)
   ;; discard any content in our process buffer
   (with-current-buffer (process-buffer (pgcon-process con))
-    (setq-local pgcon-position (point-max)))
+    (setq-local pgcon--position (point-max)))
   (pg-connection-set-busy con nil))
-
 
 
 (defun pg-cancel (con)
@@ -994,9 +1077,9 @@ The cancellation request concerns the command requested over connection CON."
                     (with-current-buffer buf
                       (set-process-coding-system process 'binary 'binary)
                       (set-buffer-multibyte nil)
-                      (setq-local pgcon-position 1)
-                      (setq-local pgcon-busy t)
-                      (setq-local pgcon-notification-handlers (list)))
+                      (setq-local pgcon--position 1)
+                      (setq-local pgcon--busy t)
+                      (setq-local pgcon--notification-handlers (list)))
                     connection))
                  ;; :local path dbname user password
                  (:local
@@ -1011,25 +1094,25 @@ The cancellation request concerns the command requested over connection CON."
                     (with-current-buffer buf
                       (set-process-coding-system process 'binary 'binary)
                       (set-buffer-multibyte nil)
-                      (setq-local pgcon-position 1)
-                      (setq-local pgcon-busy t)
+                      (setq-local pgcon--position 1)
+                      (setq-local pgcon--busy t)
                       (setq-local pgcon-notification-handlers (list)))
                     connection)))))
-    (pg-send-int ccon 16 4)
-    (pg-send-int ccon 80877102 4)
-    (pg-send-int ccon (pgcon-pid con) 4)
-    (pg-send-int ccon (pgcon-secret con) 4)
+    (pg-send-uint ccon 16 4)
+    (pg-send-uint ccon 80877102 4)
+    (pg-send-uint ccon (pgcon-pid con) 4)
+    (pg-send-uint ccon (pgcon-secret con) 4)
     (pg-disconnect ccon)))
 
 (defun pg-disconnect (con)
-  "Close the database connection CON.
+  "Close the PostgreSQL connection CON.
 This command should be used when you have finished with the database.
 It will release memory used to buffer the data transfered between
 PostgreSQL and Emacs. CON should no longer be used."
   ;; send a Terminate message
   (pg-connection-set-busy con t)
   (pg-send-char con ?X)
-  (pg-send-int con 4 4)
+  (pg-send-uint con 4 4)
   (pg-flush con)
   (delete-process (pgcon-process con))
   (kill-buffer (process-buffer (pgcon-process con))))
@@ -1068,7 +1151,7 @@ PostgreSQL and Emacs. CON should no longer be used."
   `(("bool"         . ,'pg-bool-parser)
     ("bit"          . ,'pg-bit-parser)
     ("varbit"       . ,'pg-bit-parser)
-    ("char"         . ,'pg-text-parser)
+    ("char"         . ,'pg-char-parser)
     ("char2"        . ,'pg-text-parser)
     ("char4"        . ,'pg-text-parser)
     ("bpchar"       . ,'pg-text-parser)
@@ -1085,6 +1168,9 @@ PostgreSQL and Emacs. CON should no longer be used."
     ;; upon startup, so we need to call `pg-hstore-setup' before using HSTORE datatypes.
     ("hstore"       . ,'pg-hstore-parser)
     ("count"        . ,'pg-number-parser)
+    ("smallint"     . ,'pg-number-parser)
+    ("integer"      . ,'pg-number-parser)
+    ("bigint"       . ,'pg-number-parser)
     ("int2"         . ,'pg-number-parser)
     ("int4"         . ,'pg-number-parser)
     ("int8"         . ,'pg-number-parser)
@@ -1216,6 +1302,10 @@ PostgreSQL and Emacs. CON should no longer be used."
       (decode-coding-string str encoding)
     str))
 
+(defun pg-char-parser (str _encoding)
+  "Parse PostgreSQL value STR as a character."
+  (aref str 0))
+
 ;; BYTEA binary strings (sequence of octets), that use hex escapes. Note
 ;; PostgreSQL setting variable bytea_output which selects between hex escape
 ;; format (the default in recent version) and traditional escape format. We
@@ -1277,7 +1367,7 @@ PostgreSQL and Emacs. CON should no longer be used."
         (day   (string-to-number (substring str 8 10))))
     (encode-time 0 0 0 day month year)))
 
-(defconst pg-ISODATE_REGEX
+(defconst pg--ISODATE_REGEX
   (concat "\\([0-9]+\\)-\\([0-9][0-9]\\)-\\([0-9][0-9]\\) " ; Y-M-D
           "\\([0-9][0-9]\\):\\([0-9][0-9]\\):\\([.0-9]+\\)" ; H:M:S.S
           "\\([-+][0-9]+\\)?")) ; TZ
@@ -1289,7 +1379,7 @@ PostgreSQL and Emacs. CON should no longer be used."
 ;; handles)
 (defun pg-isodate-parser (str _encoding)
   "Parse PostgreSQL value STR as an ISO-formatted date."
-  (if (string-match pg-ISODATE_REGEX str)  ; is non-null
+  (if (string-match pg--ISODATE_REGEX str)  ; is non-null
       (let ((year    (string-to-number (match-string 1 str)))
             (month   (string-to-number (match-string 2 str)))
             (day     (string-to-number (match-string 3 str)))
@@ -1302,22 +1392,26 @@ PostgreSQL and Emacs. CON should no longer be used."
       (signal 'pg-protocol-error (list msg)))))
 
 
-(defun pg-initialize-parsers (conn)
-  "Initialize the datatype parsers on PostgreSQL connection CONN."
-  (setq pg-parsers '())
-  (let* ((pgtypes (pg-exec conn "SELECT typname,oid FROM pg_type"))
+(defun pg-initialize-parsers (con)
+  "Initialize the datatype parsers on PostgreSQL connection CON."
+  (setq pg--parsers (list))
+  ;; FIXME this query is retrieving more oids that we we really need
+  (let* ((pgtypes (pg-exec con "SELECT typname,oid FROM pg_type"))
          (tuples (pg-result pgtypes :tuples)))
     (mapcar
      (lambda (tuple)
        (let* ((typname (cl-first tuple))
+              ;; we need to parse this explicitly, because the value parsing infrastructure is not
+              ;; yet set up
               (oid (string-to-number (cl-second tuple)))
               (type (cl-assoc typname pg-type-parsers :test #'string=)))
-         (if (consp type)
-             (push (cons oid (cdr type)) pg-parsers))))
+         (when (consp type)
+           (push (cons oid (cdr type)) pg--parsers))
+         (puthash typname oid pg--types)))
      tuples)))
 
 (defun pg-parse (str oid encoding)
-  (let ((parser (cl-assoc oid pg-parsers :test #'eq)))
+  (let ((parser (cl-assoc oid pg--parsers :test #'eq)))
     (if (consp parser)
         (funcall (cdr parser) str encoding)
       str)))
@@ -1325,17 +1419,17 @@ PostgreSQL and Emacs. CON should no longer be used."
 ;; This function must be called before using the HSTORE extension. It loads the extension if
 ;; necessary, and sets up the parsing support for HSTORE datatypes. This is necessary because
 ;; the hstore type is not defined on startup in the pg_type table.
-(defun pg-hstore-setup (conn)
-  "Prepare for using and parsing HSTORE datatypes on PostgreSQL connection CONN."
-  (pg-exec conn "CREATE EXTENSION IF NOT EXISTS hstore")
-  (let* ((res (pg-exec conn "SELECT oid FROM pg_type WHERE typname='hstore'"))
+(defun pg-hstore-setup (con)
+  "Prepare for using and parsing HSTORE datatypes on PostgreSQL connection CON."
+  (pg-exec con "CREATE EXTENSION IF NOT EXISTS hstore")
+  (let* ((res (pg-exec con "SELECT oid FROM pg_type WHERE typname='hstore'"))
          (oid (car (pg-result res :tuple 0))))
-    (push (cons oid #'pg-hstore-parser) pg-parsers)))
+    (push (cons oid #'pg-hstore-parser) pg--parsers)))
 
 
 ;; Map between PostgreSQL names for encodings and their Emacs name.
 ;; For Emacs, see coding-system-alist.
-(defconst pg-encoding-names
+(defconst pg--encoding-names
   '(("UTF8"    . utf-8)
     ("UTF16"   . utf-16)
     ("LATIN1"  . latin-1)
@@ -1368,27 +1462,92 @@ PostgreSQL and Emacs. CON should no longer be used."
 
 (defun pg-normalize-encoding-name (name)
   "Convert PostgreSQL encoding NAME to an Emacs encoding name."
-  (let ((m (assoc name pg-encoding-names #'string=)))
+  (let ((m (assoc name pg--encoding-names #'string=)))
     (when m (cdr m))))
 
 
-(defun pg-serialize-binary (_bytestring)
-  )
+;; We don't register a serializer for "text" and "varchar", because they are sent in text mode, and
+;; therefore correctly encoded according to the connection encoding.
+(defun pg-register-serializer (type-name serializer)
+  (puthash type-name serializer pg--serializers))
+(put 'pg-register-serializer 'lisp-indent-function 'defun)
 
-(defun pg-serialize-json (_json)
-  )
+;; (pg-register-serializer "text" #'identity)
+;; (pg-register-serializer "varchar" #'identity)
+(pg-register-serializer "bytea" #'identity)
+(pg-register-serializer "jsonb" #'identity)
 
-(defun pg-serialize-xml (_xml)
-  )
+(pg-register-serializer "bool" (lambda (v) (if v (string 1) (string 0))))
 
-(defun pg-serialize-array (_array)
-  )
+;; for the bit type, use text serialization
 
-(defun pg-serialize-string (_string)
-  ;; quoting/escaping characters as necessary (eg NULL)
-  )
+(pg-register-serializer "char"
+  (lambda (v)
+    (cl-assert (<= 0 v 255))
+    (string v)))
 
+;; see https://www.postgresql.org/docs/current/datatype-numeric.html
+(pg-register-serializer "int2"
+  (lambda (v)
+    (cl-assert (integerp v))
+    (cl-assert (<= (- (expt 2 15) v (expt 2 15))))
+    (bindat-pack (bindat-type sint 16 nil) v)))
 
+(pg-register-serializer "smallint"
+  (lambda (v)
+    (cl-assert (integerp v))
+    (cl-assert (<= (- (expt 2 15) v (expt 2 15))))
+    (bindat-pack (bindat-type sint 16 nil) v)))
+
+(pg-register-serializer "int4"
+  (lambda (v)
+    (cl-assert (integerp v))
+    (bindat-pack (bindat-type sint 32 nil) v)))
+
+(pg-register-serializer "integer"
+  (lambda (v)
+    (cl-assert (integerp v))
+    (bindat-pack (bindat-type sint 32 nil) v)))
+
+;; see https://www.postgresql.org/docs/current/datatype-oid.html
+(pg-register-serializer "oid"
+  (lambda (v)
+    (cl-assert (integerp v))
+    (bindat-pack (bindat-type uint 32 nil) v)))
+
+(pg-register-serializer "int8"
+  (lambda (v)
+    (cl-assert (integerp v))
+    (bindat-pack (bindat-type sint 64 nil) v)))
+
+(pg-register-serializer "bigint"
+  (lambda (v)
+    (cl-assert (integerp v))
+    (bindat-pack (bindat-type sint 64 nil) v)))
+
+(pg-register-serializer "smallserial"
+  (lambda (v)
+    (cl-assert (integerp v))
+    (bindat-pack (bindat-type uint 16 nil) v)))
+
+(pg-register-serializer "serial"
+  (lambda (v)
+    (cl-assert (integerp v))
+    (bindat-pack (bindat-type uint 32 nil) v)))
+
+(pg-register-serializer "bigserial"
+  (lambda (v)
+    (cl-assert (integerp v))
+    (bindat-pack (bindat-type uint 64 nil) v)))
+
+;; for float4 and float8, we don't know how to access the binary representation from Emacs Lisp. 
+;; here a possible conversion routine
+;; https://lists.gnu.org/archive/html/help-gnu-emacs/2002-10/msg00724.html
+
+(if (fboundp 'json-serialize)
+    (pg-register-serializer "json" #'json-serialize)
+  (require 'json)
+  (pg-register-serializer "json" #'json-encode))
 
 
 ;; pwdhash = md5(password + username).hexdigest()
@@ -1400,7 +1559,7 @@ Authenticate as USER with PASSWORD."
          (pwdhash (md5 (concat password user)))
          (hash (concat "md5" (md5 (concat pwdhash salt)))))
     (pg-send-char con ?p)
-    (pg-send-int con (+ 5 (length hash)) 4)
+    (pg-send-uint con (+ 5 (length hash)) 4)
     (pg-send-string con hash)
     (pg-flush con)))
 
@@ -1456,7 +1615,8 @@ Authenticate as USER with PASSWORD."
 
 ;; use NIL to generate a new client nonce on each authentication attempt (normal practice)
 ;; or specify a string here to force a particular value for test purposes (compare test vectors)
-(defvar pg-*force-client-nonce* "rOprNGfwEbeRWgbNEkqO")
+;; Example value: "rOprNGfwEbeRWgbNEkqO"
+(defvar pg--*force-client-nonce* nil)
 
 
 ;; SCRAM authentication methods use a password as a shared secret, which can then be used for mutual
@@ -1469,7 +1629,7 @@ Authenticate as USER with PASSWORD."
   "Attempt SCRAM-SHA-256 authentication with PostgreSQL over connection CON.
 Authenticate as USER with PASSWORD."
   (let* ((mechanism "SCRAM-SHA-256")
-         (client-nonce (or pg-*force-client-nonce*
+         (client-nonce (or pg--*force-client-nonce*
                            (apply #'string (cl-loop for i below 32 collect (+ ?A (random 25))))))
          (client-first (format "n,,n=%s,r=%s" user client-nonce))
          (len-cf (length client-first))
@@ -1477,88 +1637,90 @@ Authenticate as USER with PASSWORD."
          (len-packet (+ 4 (1+ (length mechanism)) 4 len-cf)))
     ;; send the SASLInitialResponse message
     (pg-send-char con ?p)
-    (pg-send-int con len-packet 4)
+    (pg-send-uint con len-packet 4)
     (pg-send-string con mechanism)
-    (pg-send-int con len-cf 4)
+    (pg-send-uint con len-cf 4)
     (pg-send-octets con client-first)
     (pg-flush con)
     (let ((c (pg-read-char con)))
-      (cond ((eq ?E c)
-             ;; an ErrorResponse message
-             (pg-handle-error-response con "during SASL auth"))
+      (cl-case c
+        (?E
+         ;; an ErrorResponse message
+         (pg-handle-error-response con "during SASL auth"))
 
-            ;; AuthenticationSASLContinue message, what we are hoping for
-            ((eq ?R c)
-             (let* ((len (pg-read-net-int con 4))
-                    (type (pg-read-net-int con 4))
-                    (server-first-msg (pg-read-chars con (- len 8))))
-               (unless (eql type 11)
-                 (let ((msg (format "Unexpected AuthenticationSASLContinue type %d" type)))
-                   (signal 'pg-protocol-error (list msg))))
-               (let* ((components (split-string server-first-msg ","))
-                      (r= (cl-find "r=" components :key (lambda (s) (substring s 0 2)) :test #'string=))
-                      (r (substring r= 2))
-                      (s= (cl-find "s=" components :key (lambda (s) (substring s 0 2)) :test #'string=))
-                      (s (substring s= 2))
-                      (salt (base64-decode-string s))
-                      (i= (cl-find "i=" components :key (lambda (s) (substring s 0 2)) :test #'string=))
-                      (iterations (string-to-number (substring i= 2)))
-                      (salted-password (pg-pbkdf2-hash-sha256 password salt iterations))
-                      ;; beware: gnutls-hash-mac will zero out its first argument (the "secret")!
-                      (client-key (gnutls-hash-mac 'SHA256 (cl-copy-seq salted-password) "Client Key"))
-                      (server-key (gnutls-hash-mac 'SHA256 (cl-copy-seq salted-password) "Server Key"))
-                      (stored-key (secure-hash 'sha256 client-key nil nil t))
-                      (client-first-bare (concat "n=" (pg-sasl-prep user) ",r=" client-nonce))
-                      (client-final-bare (concat "c=biws,r=" r))
-                      (auth-message (concat client-first-bare "," server-first-msg "," client-final-bare))
-                      (client-sig (gnutls-hash-mac 'SHA256 stored-key auth-message))
-                      (client-proof (pg-logxor-string client-key client-sig))
-                      (server-sig (gnutls-hash-mac 'SHA256 server-key auth-message))
-                      (client-final-msg (concat client-final-bare ",p=" (base64-encode-string client-proof t))))
-                 (when (zerop iterations)
-                   (let ((msg (format "SCRAM-SHA-256: server supplied invalid iteration count %s" i=)))
-                     (signal 'pg-protocol-error (list msg))))
-                 (unless (string= client-nonce (substring r 0 (length client-nonce)))
-                   (signal 'pg-protocol-error
-                           (list "SASL response doesn't include correct client nonce")))
-                 ;; we send a SASLResponse message with SCRAM client-final-message as content
-                 (pg-send-char con ?p)
-                 (pg-send-int con (+ 4 (length client-final-msg)) 4)
-                 (pg-send-octets con client-final-msg)
-                 (pg-flush con)
-                 (let ((c (pg-read-char con)))
-                   (cond ((eq ?E c)
-                          ;; an ErrorResponse message
-                          (pg-handle-error-response con "after SASLResponse"))
+        ;; AuthenticationSASLContinue message, what we are hoping for
+        (?R
+         (let* ((len (pg-read-net-int con 4))
+                (type (pg-read-net-int con 4))
+                (server-first-msg (pg-read-chars con (- len 8))))
+           (unless (eql type 11)
+             (let ((msg (format "Unexpected AuthenticationSASLContinue type %d" type)))
+               (signal 'pg-protocol-error (list msg))))
+           (let* ((components (split-string server-first-msg ","))
+                  (r= (cl-find "r=" components :key (lambda (s) (substring s 0 2)) :test #'string=))
+                  (r (substring r= 2))
+                  (s= (cl-find "s=" components :key (lambda (s) (substring s 0 2)) :test #'string=))
+                  (s (substring s= 2))
+                  (salt (base64-decode-string s))
+                  (i= (cl-find "i=" components :key (lambda (s) (substring s 0 2)) :test #'string=))
+                  (iterations (string-to-number (substring i= 2)))
+                  (salted-password (pg-pbkdf2-hash-sha256 password salt iterations))
+                  ;; beware: gnutls-hash-mac will zero out its first argument (the "secret")!
+                  (client-key (gnutls-hash-mac 'SHA256 (cl-copy-seq salted-password) "Client Key"))
+                  (server-key (gnutls-hash-mac 'SHA256 (cl-copy-seq salted-password) "Server Key"))
+                  (stored-key (secure-hash 'sha256 client-key nil nil t))
+                  (client-first-bare (concat "n=" (pg-sasl-prep user) ",r=" client-nonce))
+                  (client-final-bare (concat "c=biws,r=" r))
+                  (auth-message (concat client-first-bare "," server-first-msg "," client-final-bare))
+                  (client-sig (gnutls-hash-mac 'SHA256 stored-key auth-message))
+                  (client-proof (pg-logxor-string client-key client-sig))
+                  (server-sig (gnutls-hash-mac 'SHA256 server-key auth-message))
+                  (client-final-msg (concat client-final-bare ",p=" (base64-encode-string client-proof t))))
+             (when (zerop iterations)
+               (let ((msg (format "SCRAM-SHA-256: server supplied invalid iteration count %s" i=)))
+                 (signal 'pg-protocol-error (list msg))))
+             (unless (string= client-nonce (substring r 0 (length client-nonce)))
+               (signal 'pg-protocol-error
+                       (list "SASL response doesn't include correct client nonce")))
+             ;; we send a SASLResponse message with SCRAM client-final-message as content
+             (pg-send-char con ?p)
+             (pg-send-uint con (+ 4 (length client-final-msg)) 4)
+             (pg-send-octets con client-final-msg)
+             (pg-flush con)
+             (let ((c (pg-read-char con)))
+               (cl-case c
+                 (?E
+                  ;; an ErrorResponse message
+                  (pg-handle-error-response con "after SASLResponse"))
 
-                         ((eq ?R c)
-                          ;; an AuthenticationSASLFinal message
-                          (let* ((len (pg-read-net-int con 4))
-                                 (type (pg-read-net-int con 4))
-                                 (server-final-msg (pg-read-chars con (- len 8))))
-                            (unless (eql type 12)
-                              (let ((msg (format "Expecting AuthenticationSASLFinal, got type %d" type)))
-                                (signal 'pg-protocol-error (list msg))))
-                            (when (string= "e=" (substring server-final-msg 0 2))
-                              (let ((msg (format "PostgreSQL server error during SASL authentication: %s"
-                                                 (substring server-final-msg 2))))
-                                (signal 'pg-protocol-error (list msg))))
-                            (unless (string= "v=" (substring server-final-msg 0 2))
-                              (signal 'pg-protocol-error '("Unable to verify PostgreSQL server during SASL auth")))
-                            (unless (string= (substring server-final-msg 2)
-                                             (base64-encode-string server-sig t))
-                              (let ((msg (format "SASL server validation failure: v=%s / %s"
-                                                 (substring server-final-msg 2)
-                                                 (base64-encode-string server-sig t))))
-                                (signal 'pg-protocol-error (list msg))))
-                            ;; should be followed immediately by an AuthenticationOK message
-                            )))))))
-            (t
-             (let ((msg (format "Unexpected response to SASLInitialResponse message: %s" c)))
-               (signal 'pg-protocol-error (list msg))))))))
+                 (?R
+                  ;; an AuthenticationSASLFinal message
+                  (let* ((len (pg-read-net-int con 4))
+                         (type (pg-read-net-int con 4))
+                         (server-final-msg (pg-read-chars con (- len 8))))
+                    (unless (eql type 12)
+                      (let ((msg (format "Expecting AuthenticationSASLFinal, got type %d" type)))
+                        (signal 'pg-protocol-error (list msg))))
+                    (when (string= "e=" (substring server-final-msg 0 2))
+                      (let ((msg (format "PostgreSQL server error during SASL authentication: %s"
+                                         (substring server-final-msg 2))))
+                        (signal 'pg-protocol-error (list msg))))
+                    (unless (string= "v=" (substring server-final-msg 0 2))
+                      (signal 'pg-protocol-error '("Unable to verify PostgreSQL server during SASL auth")))
+                    (unless (string= (substring server-final-msg 2)
+                                     (base64-encode-string server-sig t))
+                      (let ((msg (format "SASL server validation failure: v=%s / %s"
+                                         (substring server-final-msg 2)
+                                         (base64-encode-string server-sig t))))
+                        (signal 'pg-protocol-error (list msg))))
+                    ;; should be followed immediately by an AuthenticationOK message
+                    )))))))
+        (t
+         (let ((msg (format "Unexpected response to SASLInitialResponse message: %s" c)))
+           (signal 'pg-protocol-error (list msg))))))))
 
 (defun pg-do-sasl-authentication (con user password)
-  "Attempt SASL authentication with PostgreSQL database over connection CON.
+  "Attempt SASL authentication with PostgreSQL over connection CON.
 Authenticate as USER with PASSWORD."
   (let ((mechanisms (list)))
     ;; read server's list of preferered authentication mechanisms
@@ -1587,11 +1749,16 @@ Authenticate as USER with PASSWORD."
 ;; circles. There is also an inheritance mechanism in PostgreSQL.
 ;;
 ;;======================================================================
+(defconst pg--INV_ARCHIVE 65536)         ; fe-lobj.c
+(defconst pg--INV_WRITE   131072)
+(defconst pg--INV_READ    262144)
+(defconst pg--LO_BUFIZE   1024)
+
 (defvar pg-lo-initialized nil)
 (defvar pg-lo-functions '())
 
-(defun pg-lo-init (connection)
-  (let* ((res (pg-exec connection
+(defun pg-lo-init (con)
+  (let* ((res (pg-exec con
                        "SELECT proname, oid from pg_proc WHERE "
                        "proname = 'lo_open' OR "
                        "proname = 'lo_close' OR "
@@ -1625,14 +1792,14 @@ Authenticate as USER with PASSWORD."
                      (error "Unknown builtin function %s" fn)))))
     (pg-send-char con ?F)
     (pg-send-char con 0)
-    (pg-send-int con fnid 4)
-    (pg-send-int con (length args) 4)
+    (pg-send-uint con fnid 4)
+    (pg-send-uint con (length args) 4)
     (mapc (lambda (arg)
             (cond ((integerp arg)
-                   (pg-send-int con 4 4)
-                   (pg-send-int con arg 4))
+                   (pg-send-uint con 4 4)
+                   (pg-send-uint con arg 4))
                   ((stringp arg)
-                   (pg-send-int con (length arg) 4)
+                   (pg-send-uint con (length arg) 4)
                    (pg-send con arg))
                   (t
                    (error "Unknown fastpath type %s" arg))))
@@ -1657,13 +1824,13 @@ Authenticate as USER with PASSWORD."
 
             ;; NoticeResponse
             (?N
-             (let ((notice (pg-read-string con pg-MAX_MESSAGE_LEN)))
+             (let ((notice (pg-read-string con pg--MAX_MESSAGE_LEN)))
                (message "NOTICE: %s" notice))
              (unix-sync))
 
             ;; ReadyForQuery
             (?Z
-             ;; message length then status, discarded
+             ;; message length then status, which we discard
              (pg-read-net-int con 4)
              (pg-read-char con)
              (pg-connection-set-busy con nil))
@@ -1677,10 +1844,10 @@ Authenticate as USER with PASSWORD."
 (defun pg-lo-create (connection &optional args)
   (let* ((modestr (or args "r"))
          (mode (cond ((integerp modestr) modestr)
-                     ((string= "r" modestr) pg-INV_READ)
-                     ((string= "w" modestr) pg-INV_WRITE)
+                     ((string= "r" modestr) pg--INV_READ)
+                     ((string= "w" modestr) pg--INV_WRITE)
                      ((string= "rw" modestr)
-                      (logior pg-INV_READ pg-INV_WRITE))
+                      (logior pg--INV_READ pg--INV_WRITE))
                      (t (error "pg-lo-create: bad mode %s" modestr))))
          (oid (pg-fn connection "lo_creat" t mode)))
     (cond ((not (integerp oid))
@@ -1694,10 +1861,10 @@ Authenticate as USER with PASSWORD."
 (defun pg-lo-open (connection oid &optional args)
   (let* ((modestr (or args "r"))
          (mode (cond ((integerp modestr) modestr)
-                     ((string= "r" modestr) pg-INV_READ)
-                     ((string= "w" modestr) pg-INV_WRITE)
+                     ((string= "r" modestr) pg--INV_READ)
+                     ((string= "w" modestr) pg--INV_WRITE)
                      ((string= "rw" modestr)
-                      (logior pg-INV_READ pg-INV_WRITE))
+                      (logior pg--INV_READ pg--INV_WRITE))
                      (t (error "pg-lo-open: bad mode %s" modestr))))
          (fd (pg-fn connection "lo_open" t oid mode)))
     (unless (integerp fd)
@@ -1797,20 +1964,20 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
 ;;    attribute-name (string)
 ;;    attribute-type as an oid from table pg_type
 ;;    attribute-size (in bytes?)
-(defun pg-read-attributes (connection)
-  (let* ((_msglen (pg-read-net-int connection 4))
-         (attribute-count (pg-read-net-int connection 2))
+(defun pg-read-attributes (con)
+  (let* ((_msglen (pg-read-net-int con 4))
+         (attribute-count (pg-read-net-int con 2))
          (attributes (list))
-         (ce (pgcon-client-encoding connection)))
+         (ce (pgcon-client-encoding con)))
     (cl-do ((i attribute-count (- i 1)))
         ((zerop i) (nreverse attributes))
-      (let ((type-name  (pg-read-string connection pg-MAX_MESSAGE_LEN))
-            (_table-oid (pg-read-net-int connection 4))
-            (_col       (pg-read-net-int connection 2))
-            (type-oid   (pg-read-net-int connection 4))
-            (type-len   (pg-read-net-int connection 2))
-            (_type-mod  (pg-read-net-int connection 4))
-            (_format-code (pg-read-net-int connection 2)))
+      (let ((type-name  (pg-read-string con pg--MAX_MESSAGE_LEN))
+            (_table-oid (pg-read-net-int con 4))
+            (_col       (pg-read-net-int con 2))
+            (type-oid   (pg-read-net-int con 4))
+            (type-len   (pg-read-net-int con 2))
+            (_type-mod  (pg-read-net-int con 4))
+            (_format-code (pg-read-net-int con 2)))
         (push (list (pg-text-parser type-name ce) type-oid type-len) attributes)))))
 
 ;; a bitmap is a string, which we interpret as a sequence of bytes
@@ -1819,17 +1986,17 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
     (logand 128 (ash int (mod ref 8)))))
 
 ;; Read data following a DataRow message
-(defun pg-read-tuple (connection attributes)
+(defun pg-read-tuple (con attributes)
   (let* ((num-attributes (length attributes))
-         (col-count (pg-read-net-int connection 2))
+         (col-count (pg-read-net-int con 2))
          (tuples (list))
-         (ce (pgcon-client-encoding connection)))
+         (ce (pgcon-client-encoding con)))
     (unless (eql col-count num-attributes)
       (signal 'pg-protocol-error '("Unexpected value for attribute count sent by backend")))
     (cl-do ((i 0 (+ i 1))
             (type-ids (mapcar #'cl-second attributes) (cdr type-ids)))
         ((= i num-attributes) (nreverse tuples))
-      (let ((col-octets (pg-read-net-int connection 4)))
+      (let ((col-octets (pg-read-net-int con 4)))
         (cl-case col-octets
           (4294967295
            ;; this is "-1" (pg-read-net-int doesn't handle integer overflow), which indicates a
@@ -1838,77 +2005,77 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
           (0
            (push "" tuples))
           (t
-           (let* ((col-value (pg-read-chars connection col-octets))
+           (let* ((col-value (pg-read-chars con col-octets))
                   (parsed (pg-parse col-value (car type-ids) ce)))
              (push parsed tuples))))))))
 
-(defun pg-read-char (connection)
-  (let ((process (pgcon-process connection)))
-    (accept-process-output)
+(defun pg-read-char (con)
+  (let ((process (pgcon-process con)))
+    ;; (accept-process-output process 0.1)
     (with-current-buffer (process-buffer process)
-      (dotimes (_i (pgcon-timeout connection))
-        (when (null (char-after pgcon-position))
+      (dotimes (_i (pgcon-timeout con))
+        (when (null (char-after pgcon--position))
           (sleep-for 1.0)
           (accept-process-output process 1.0)))
-      (when (null (char-after pgcon-position))
-        (let ((msg (format "Timeout reading from %s" connection)))
+      (when (null (char-after pgcon--position))
+        (let ((msg (format "Timeout reading from %s" con)))
           (signal 'pg-error (list msg))))
-      (prog1 (char-after pgcon-position)
-        (setq-local pgcon-position (1+ pgcon-position))))))
+      (prog1 (char-after pgcon--position)
+        (setq-local pgcon--position (1+ pgcon--position))))))
 
-(defun pg-unread-char (connection)
-  (let ((process (pgcon-process connection)))
+(defun pg-unread-char (con)
+  (let ((process (pgcon-process con)))
     (with-current-buffer (process-buffer process)
-      (setq-local pgcon-position (1- pgcon-position)))))
+      (setq-local pgcon--position (1- pgcon--position)))))
 
 ;; FIXME should be more careful here; the integer could overflow.
-(defun pg-read-net-int (connection bytes)
+(defun pg-read-net-int (con bytes)
   (cl-do ((i bytes (- i 1))
           (accum 0))
       ((zerop i) accum)
-    (setq accum (+ (* 256 accum) (pg-read-char connection)))))
+    (setq accum (+ (* 256 accum) (pg-read-char con)))))
 
-(defun pg-read-int (connection bytes)
+(defun pg-read-int (con bytes)
   (cl-do ((i bytes (- i 1))
           (multiplier 1 (* multiplier 256))
           (accum 0))
       ((zerop i) accum)
-    (cl-incf accum (* multiplier (pg-read-char connection)))))
+    (cl-incf accum (* multiplier (pg-read-char con)))))
 
-(defun pg-read-chars-old (connection howmany)
+(defun pg-read-chars-old (con howmany)
   (cl-do ((i 0 (+ i 1))
           (chars (make-string howmany ?.)))
       ((= i howmany) chars)
-    (aset chars i (pg-read-char connection))))
+    (aset chars i (pg-read-char con))))
 
-(defun pg-read-chars (connection count)
-  (let ((process (pgcon-process connection)))
+(defun pg-read-chars (con count)
+  (let ((process (pgcon-process con)))
     (with-current-buffer (process-buffer process)
-      (let* ((start pgcon-position)
+      (let* ((start pgcon--position)
              (end (+ start count)))
-        (accept-process-output)
+        ;; (accept-process-output process 0.1)
         (when (> end (point-max))
           (accept-process-output process 1))
         (prog1 (buffer-substring start end)
-          (setq-local pgcon-position end))))))
+          (setq-local pgcon--position end))))))
 
 ;; read a null-terminated string
-(defun pg-read-string (connection maxbytes)
+(defun pg-read-string (con maxbytes)
   (cl-loop for i below maxbytes
-           for ch = (pg-read-char connection)
+           for ch = (pg-read-char con)
            until (eql ch ?\0)
            concat (byte-to-string ch)))
 
 (cl-defstruct pgerror
   severity sqlstate message detail hint table column dtype)
 
-(defun pg-read-error-response (connection)
-  (let* ((response-len (pg-read-net-int connection 4))
+(defun pg-read-error-response (con)
+  (let* ((response-len (pg-read-net-int con 4))
          (msglen (- response-len 4))
-         (msg (pg-read-chars connection msglen))
+         (msg (pg-read-chars con msglen))
          (msgpos 0)
          (err (make-pgerror))
-         (ce (pgcon-client-encoding connection)))
+         (ce (pgcon-client-encoding con)))
     (cl-loop while (< msgpos (1- msglen))
              for field = (aref msg msgpos)
              for val = (let* ((start (cl-incf msgpos))
@@ -1917,25 +2084,26 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
                              (substring msg start end)
                            (setf msgpos (1+ end))))
              ;; these field types: https://www.postgresql.org/docs/current/protocol-error-fields.html
-             do (cond ((eq field ?S)
-                       (setf (pgerror-severity err) val))
-                      ((eq field ?C)
-                       (setf (pgerror-sqlstate err) val))
-                      ((eq field ?M)
-                       (setf (pgerror-message err)
-                             (decode-coding-string val ce)))
-                      ((eq field ?D)
-                       (setf (pgerror-detail err)
-                             (decode-coding-string val ce)))
-                      ((eq field ?H)
-                       (setf (pgerror-hint err)
-                             (decode-coding-string val ce)))
-                      ((eq field ?t)
-                       (setf (pgerror-table err) val))
-                      ((eq field ?c)
-                       (setf (pgerror-column err) val))
-                      ((eq field ?d)
-                       (setf (pgerror-dtype err) val))))
+             do (cl-case field
+                  (?S
+                   (setf (pgerror-severity err) val))
+                  (?C
+                   (setf (pgerror-sqlstate err) val))
+                  (?M
+                   (setf (pgerror-message err)
+                         (decode-coding-string val ce)))
+                  (?D
+                   (setf (pgerror-detail err)
+                         (decode-coding-string val ce)))
+                  (?H
+                   (setf (pgerror-hint err)
+                         (decode-coding-string val ce)))
+                  (?t
+                   (setf (pgerror-table err) val))
+                  (?c
+                   (setf (pgerror-column err) val))
+                  (?d
+                   (setf (pgerror-dtype err) val))))
     err))
 
 (defun pg-handle-error-response (con &optional context)
@@ -2004,9 +2172,9 @@ presented to the user."
              (pgerror-message notice)
              (apply #'concat extra))))
 
-;; higher order bits first
-(defun pg-send-int (connection num bytes)
-  (let ((process (pgcon-process connection))
+;; higher order bits first / little endian
+(defun pg-send-uint (con num bytes)
+  (let ((process (pgcon-process con))
         (str (make-string bytes 0))
         (i (- bytes 1)))
     (while (>= i 0)
@@ -2015,29 +2183,30 @@ presented to the user."
       (cl-decf i))
     (process-send-string process str)))
 
-(defun pg-send-net-int (connection num bytes)
-  (let ((process (pgcon-process connection))
+;; big endian
+(defun pg-send-net-uint (con num bytes)
+  (let ((process (pgcon-process con))
         (str (make-string bytes 0)))
     (dotimes (i bytes)
       (aset str i (% num 256))
       (setq num (floor num 256)))
     (process-send-string process str)))
 
-(defun pg-send-char (connection char)
-  (let ((process (pgcon-process connection)))
+(defun pg-send-char (con char)
+  (let ((process (pgcon-process con)))
     (process-send-string process (char-to-string char))))
 
-(defun pg-send-string (connection str)
-  (let ((process (pgcon-process connection)))
+(defun pg-send-string (con str)
+  (let ((process (pgcon-process con)))
     ;; the string with the null-terminator octet
     (process-send-string process (concat str (string 0)))))
 
-(defun pg-send-octets (connection octets)
-  (let ((process (pgcon-process connection)))
+(defun pg-send-octets (con octets)
+  (let ((process (pgcon-process con)))
     (process-send-string process octets)))
 
-(defun pg-send (connection str &optional bytes)
-  (let ((process (pgcon-process connection))
+(defun pg-send (con str &optional bytes)
+  (let ((process (pgcon-process con))
         (padding (if (and (numberp bytes) (> bytes (length str)))
                      (make-string (- bytes (length str)) 0)
                    (make-string 0 0))))

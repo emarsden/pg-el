@@ -1,6 +1,18 @@
 # Changelog
 
-## [0.24] - Unreleased
+## [0.25] - 2023-12-14
+
+- Add support for the extended query syntax, which helps to avoid the risk of SQL injection attacks.
+  See function `pg-exec/prepared`. This also makes it easier to fetch partial results from a query
+  that returns a large number of rows.
+
+- Fix parsing of PostgreSQL `CHAR` type to an Emacs character instead of a string of length 1.
+
+- Various internal functions and variables renamed with the `pg--` prefix instead of `pg-`.
+
+
+
+## [0.24] - 2023-11-15
 ### New
 - Add function `pg-add-notification-handler` to add a function to the list of handlers for
   `NotificationResponse` messages from PostgreSQL. A handler takes two arguments, the channel and

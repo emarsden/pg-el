@@ -7,15 +7,17 @@
 This Emacs Lisp library lets you access the [PostgreSQL](https://www.postgresql.org/) 🐘
 object-relational DBMS from Emacs, using its socket-level frontend/backend protocol. The library is
 capable of automatic type coercions from a range of SQL types to the equivalent Emacs Lisp type.
-This is a low level API, and won’t be useful to end users.
+
 
 ~~~admonish note title="Supported features"
 
-- SCRAM-SHA-256 authentication (the default method since PostgreSQL version 14)
+- SCRAM-SHA-256 authentication (the default method since PostgreSQL version 14) as well as MD5 and
+  password authentication.
 
-- MD5 authentication
+- Encrypted (TLS) connections between Emacs and the PostgreSQL backend.
 
-- Encrypted (TLS) connections
+- Support for PostgreSQL's extended query syntax, that allows for parameterized queries to
+  protect from SQL injection issues.
 
 - Support for the `SQL COPY` protocol to copy preformatted data to PostgreSQL from an Emacs buffer
 
@@ -45,8 +47,10 @@ databases that implement the PostgreSQL wire protocol:
 Tested with Emacs versions 29.1, 28.2, 27.2 and 26.3. Emacs versions older than 26.1 will not work
 against a recent PostgreSQL version (whose default configuration requires SCRAM-SHA-256
 authentication), because they don’t include the GnuTLS support which we use to calculate HMACs. They
-may however work against a database set up to allow unauthenticated local connections. We mostly
-test with Emacs on Linux, but it also works fine on Microsoft Windows and MacOS.
+may however work against a database set up to allow unauthenticated local connections. Emacs
+versions before 28.1 will not support the extended query protocol, because the bindat package is
+required. We mostly test with Emacs on Linux, but the library also works fine on Microsoft Windows
+and MacOS.
 
 You may be interested in an alternative library [emacs-libpq](https://github.com/anse1/emacs-libpq)
 that enables access to PostgreSQL from Emacs by binding to the libpq library.

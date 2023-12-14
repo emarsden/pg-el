@@ -93,3 +93,6 @@ ELISP> (let ((res (pg-exec *pg* "SELECT 3 where 1=0")))
          (pg-result res :tuples))
 nil
 ```
+
+
+For more, see the [usage information](usage.html) and the [API documentation](API.html).

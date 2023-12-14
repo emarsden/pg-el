@@ -23,32 +23,45 @@ A macro which executes the `BODY` forms wrapped in an SQL transaction. `CON` is 
 database. If an error occurs during the execution of the forms, a ROLLBACK instruction is executed.
 
 
-    (pg-connect dbname user [password host port]) -> connection
+    (pg-connect dbname user [password host port]) -> con
     
 Connect to the database `DBNAME` on `HOST` (defaults to localhost) at `PORT` (defaults to 5432) via
 TCP/IP and authenticate as `USER` with `PASSWORD`. This library currently supports SCRAM-SHA-256
 authentication (the default method from PostgreSQL version 14 onwards), MD5 authentication and
-cleartext password authentication. This function also sets the output date type to 'ISO', and
+cleartext password authentication. This function also sets the output date type to `ISO` and
 initializes our type parser tables.
 
 
-    (pg-connect-local path dbname user [password])
+    (pg-connect-local path dbname user [password]) -> con
 
 Initiate a connection with the PostgreSQL backend over local Unix socket `PATH`. Connect to the
-database `DBNAME` with the username `USER`, providing `PASSWORD` if necessary. Return a connection to the
-database (as an opaque type). `PASSWORD` defaults to an empty string.
+database `DBNAME` with the username `USER`, providing `PASSWORD` if necessary. Returns a connection
+to the database (as an opaque type). `PASSWORD` defaults to an empty string.
 
 
-    (pg-exec connection &rest sql) -> pgresult
+    (pg-exec con &rest sql) -> pgresult
     
-Concatenate the SQL strings and send to the PostgreSQL backend. Retrieve the information returned by the
-database and return it in an opaque record PGRESULT.
+Concatenate the SQL strings and send to the PostgreSQL backend over connection `CON`. Retrieve the
+information returned by the database and return it in an opaque record PGRESULT. The content of the
+pgresult should be accessed using the `pg-result` function.
+
+
+    (pg-exec/prepared con query typed-arguments &key (max-rows 0)) -> pgresult
+
+Execute SQL query `QUERY`, which may include numbered parameters such as `$1`, ` $2` and so on,
+using PostgreSQL's extended query protocol, on database connection `CON`. The `TYPED-ARGUMENTS` are
+a list of the form 
+
+    '((42 . "int4") ("42" . "text"))
+
+This query will return at most `MAX-ROWS` rows (a value of zero indicates no limit). It returns a
+pgresult structure (see function pg-result). This method is useful to reduce the risk of SQL
+injection attacks.
 
 
      (pg-result pgresult what &rest args) -> info
 
-Extract information from the `PGRESULT` returned by `pg-exec`. The `WHAT` keyword can be
-one of
+Extract information from the `PGRESULT` returned by `pg-exec`. The `WHAT` keyword can be one of
 
 * `:connection`: retrieve the database connection.
 
@@ -81,7 +94,7 @@ request concerns the command requested over database connection `CON`.
 Close the database connection `CON`.
 
 
-    (pg-for-each connection select-form callback)
+    (pg-for-each con select-form callback)
 
 Calls `CALLBACK` on each tuple returned by `SELECT-FORM`. Declares a cursor for `SELECT-FORM`, then
 fetches tuples using repeated executions of `FETCH 1`, until no results are left. The cursor is then
@@ -157,7 +170,7 @@ Write the bytes contained in the elisp string `BUF` to the large object associat
 descriptor `FD`.
 
 
-    (pg-lo-lseek cnn fd offset whence)
+    (pg-lo-lseek con fd offset whence)
 
 Do the equivalent of a `lseek(2)` on the file descriptor `FD` which is associated with a large
 object; i.e. reposition the read/write file offset for that large object to `OFFSET` (an elisp
@@ -188,7 +201,7 @@ Create a new large object and initialize it to the data contained in the file wh
 around the basic large-object operations listed above.
 
 
-    (pg-lo-export conn oid filename)
+    (pg-lo-export con oid filename)
     
 Create a new file named `FILENAME` and fill it with the contents of the large object whose unique
 identifier is `OID`. This operation is also syntactic sugar.
