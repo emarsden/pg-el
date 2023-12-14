@@ -17,20 +17,28 @@ test-local: test-pg.el
 
 # Using Docker images for Emacs from https://hub.docker.com/r/silex/emacs/ and the locally installed
 # PostgreSQL.
-test-emacs27: test-pg.el
+test-emacs28: test-pg.el
 	cp ../pg.el test-pg.el ${WORKDIR}
-	podman run -it \
+	podman run --rm -it \
 	   -v ${WORKDIR}:/tmp \
 	   --network slirp4netns:allow_host_loopback=true -e PGEL_HOSTNAME=10.0.2.2 \
-	   silex/emacs:27.2 \
+	   docker.io/silex/emacs:28.1 \
+	   emacs -Q --batch -l /tmp/pg.el -l /tmp/test-pg.el -f pg-test
+
+test-emacs27: test-pg.el
+	cp ../pg.el test-pg.el ${WORKDIR}
+	podman run --rm -it \
+	   -v ${WORKDIR}:/tmp \
+	   --network slirp4netns:allow_host_loopback=true -e PGEL_HOSTNAME=10.0.2.2 \
+	   docker.io/silex/emacs:27.2 \
 	   emacs -Q --batch -l /tmp/pg.el -l /tmp/test-pg.el -f pg-test
 
 test-emacs26: test-pg.el
 	cp ../pg.el test-pg.el ${WORKDIR}
-	podman run -it \
+	podman run --rm -it \
 	   -v ${WORKDIR}:/tmp \
 	   --network slirp4netns:allow_host_loopback=true -e PGEL_HOSTNAME=10.0.2.2 \
-	   silex/emacs:26.3-alpine-ci \
+	   docker.io/silex/emacs:26.3-alpine-ci \
 	   emacs -Q --batch -l /tmp/pg.el -l /tmp/test-pg.el -f pg-test
 
 # Emacs versions older than 26.1 will not work against a recent PostgreSQL version (that is set up
@@ -39,10 +47,10 @@ test-emacs26: test-pg.el
 # authentication for local connections.
 test-emacs25: test-pg.el
 	cp ../pg.el test-pg.el ${WORKDIR}
-	podman run -it \
+	podman run --rm -it \
 	   -v ${WORKDIR}:/tmp \
 	   --network slirp4netns:allow_host_loopback=true -e PGEL_HOSTNAME=10.0.2.2 \
-	   silex/emacs:25.3 \
+	   docker.io/silex/emacs:25.3 \
 	   emacs -Q --batch -l /tmp/pg.el -l /tmp/test-pg.el -f pg-test
 
 test-postgresql14: test-pg.el
@@ -112,7 +120,7 @@ test-cockroachdb: test-pg.el
 	podman run --name cockroachdb \
 	   -v /dev/log:/dev/log \
 	   --publish 26257:26257 \
-	   -d cockroachdb/cockroach start-single-node --insecure
+	   -d docker.io/cockroachdb/cockroach start-single-node --insecure
 	sleep 5
 	PGEL_DATABASE=postgres PGEL_USER=root PGEL_PASSWORD="" PGEL_PORT=26257 make test
 	podman stop cockroachdb
@@ -134,7 +142,7 @@ test-questdb: test-pg.el
 test-yugabyte: test-pg.el
 	podman run --name yugabyte \
 	  --publish 5433:5433 \
-	  -d yugabytedb/yugabyte \
+	  -d docker.io/yugabytedb/yugabyte \
 	  bin/yugabyted start \
 	  --base_dir=/tmp \
 	  --daemon=false
