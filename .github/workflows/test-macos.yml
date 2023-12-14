@@ -22,7 +22,7 @@ jobs:
            version: 29.1
 
       - name: Check out repository code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Run connection tests over network
         run: make -C test test

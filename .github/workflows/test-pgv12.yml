@@ -33,7 +33,7 @@ jobs:
           sudo apt-get install emacs
 
       - name: Check out repository code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Run connection tests over TCP
         run: make -C test
