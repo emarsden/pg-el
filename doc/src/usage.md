@@ -243,13 +243,3 @@ t
 
 
 
-## Special pg-el features 
-
-pg-parameter-change-functions
-
-
-Error handling and condition-case
-
-Handling NOTICEs
-
-NOTIFY / LISTEN

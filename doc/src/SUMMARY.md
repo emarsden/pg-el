@@ -6,5 +6,6 @@
 - [Using pg-el](./usage.md)
 - [Collation support](./collation.md)
 - [The COPY protocol](./copy-protocol.md)
+- [Special pg-el features](./special-features.md)
 - [API](./API.md)
 - [Feedback](./feedback.md)
