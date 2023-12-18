@@ -34,15 +34,32 @@ ELISP> (let ((res (pg-exec *pg* "SELECT '😎'")))
 ```
 ~~~
 
+You can create and delete tables, and query the database metainformation using `pg-tables` and
+`pg-columns`.
 
 ~~~admonish example title="Working with tables and DDL"
 ```lisp
-ELISP> (pg-result (pg-exec *pg* "CREATE TABLE count_test(key integer, val integer)") :status)
+ELISP> (pg-result (pg-exec *pg* "CREATE TABLE messages(id BIGSERIAL PRIMARY KEY, msg TEXT)") :status)
 "CREATE TABLE"
-ELISP> (member "count_test" (pg-tables *pg*))
-("count_test")
-ELISP> (member "val" (pg-columns *pg* "count_test"))
-("val")
+ELISP> (member "messages" (pg-tables *pg*))
+("messages")
+ELISP> (member "msg" (pg-columns *pg* "messages"))
+("msg")
+ELISP> (pg-result (pg-exec *pg* "DROP TABLE messages") :status)
+"DROP TABLE"
+ELISP> (member "messages" (pg-tables *pg*))
+nil
+```
+~~~
+
+
+The library has support for PostgreSQL's **extended query protocol** (prepared statements), which you
+should use to prevent SQL injection attacks.
+
+~~~admonish example title="Prepared statements and the extended query protocol"
+```lisp
+ELISP> (pg-result (pg-exec *pg* "CREATE TABLE count_test(key INTEGER, val INTEGER)") :status)
+"CREATE TABLE"
 ELISP> (dotimes (i 100)
          (pg-exec-prepared *pg* "INSERT INTO count_test VALUES($1, $2)"
             `((,i . "int4") (,(* i i) . "int4"))))
@@ -50,12 +67,41 @@ nil
 ELISP> (let ((res (pg-exec *pg* "SELECT count(*) FROM count_test")))
           (car (pg-result res :tuple 0)))
 100
-ELISP> (pg-result (pg-exec *pg* "DROP TABLE count_test") :status)
-"DROP TABLE"
-ELISP> (member "count_test" (pg-tables *pg*))
+ELISP> (defvar *multires* (pg-exec-prepared *pg* "SELECT key FROM count_test" nil :max-rows 10))
+*multires*
+ELISP> (pg-result *multires* :tuples)
+((0)
+ (1)
+ (2)
+ (3)
+ (4)
+ (5)
+ (6)
+ (7)
+ (8)
+ (9))
+ELISP> (pg-result *multires* :incomplete)
+t
+ELISP> (setq *multires* (pg-fetch *pg* *multires* :max-rows 5))
+;; *multires*
+ELISP> (pg-result *multires* :tuples)
+((10)
+ (11)
+ (12)
+ (13)
+ (14))
+ELISP> (pg-result *multires* :incomplete)
+t
+ELISP> (setq *multires* (pg-fetch *pg* *multires* :max-rows 100))
+;; *multires*
+ELISP> (length (pg-result *multires* :tuples))
+85
+ELISP> (pg-result *multires* :incomplete)
 nil
 ```
 ~~~
+
+
 
 
 ~~~admonish example title="Casting SQL values to a specific type"
@@ -239,7 +285,30 @@ t
 
 
 
-## HSTORE
+## The HSTORE key-value type
 
+There is support for the PostgreSQL [HSTORE
+  extension](https://www.postgresql.org/docs/current/hstore.html), which can store key/value pairs
+  in a single PostgreSQL cell. It's necessary to call `pg-hstore-setup` before using this
+  functionality, to load the extension if necessary and to set up our parser support for the HSTORE
+  type.
 
+~~~admonish example title="Using HSTORE values"
+```lisp
+ELISP> (pg-hstore-setup *pg*)
+ELISP> (defvar *hs* (car (pg-result (pg-exec *pg* "SELECT 'foo=>bar'::hstore") :tuple 0)))
+*hs*
+ELISP> (gethash "foo" *hs*)
+"bar"
+ELISP> (hash-table-count *hs*)
+1 (#o1, #x1, ?\C-a)
+;; There is no guarantee as to the value stored for the 'a' key (duplicate)
+ELISP> (setq *hs* (car (pg-result (pg-exec *pg* "SELECT 'a=>1,foobles=>2,a=>66'::hstore") :tuple 0)))
+#<hash-table equal 2/65 0x1574257479d9>
+ELISP> (hash-table-count *hs*)
+2 (#o2, #x2, ?\C-b)
+ELISP> (pg-result (pg-exec *pg* "SELECT akeys('biz=>NULL,baz=>42,boz=>66'::hstore)") :tuple 0)
+(["baz" "biz" "boz"])
+```
 
+~~~

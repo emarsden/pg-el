@@ -46,7 +46,7 @@ information returned by the database and return it in an opaque record PGRESULT.
 pgresult should be accessed using the `pg-result` function.
 
 
-    (pg-exec/prepared con query typed-arguments &key (max-rows 0)) -> pgresult
+    (pg-exec-prepared con query typed-arguments &key (max-rows 0)) -> pgresult
 
 Execute SQL query `QUERY`, which may include numbered parameters such as `$1`, ` $2` and so on,
 using PostgreSQL's extended query protocol, on database connection `CON`. The `TYPED-ARGUMENTS` are
@@ -55,7 +55,7 @@ a list of the form
     '((42 . "int4") ("42" . "text"))
 
 This query will return at most `MAX-ROWS` rows (a value of zero indicates no limit). It returns a
-pgresult structure (see function pg-result). This method is useful to reduce the risk of SQL
+pgresult structure (see function `pg-result`). This method is useful to reduce the risk of SQL
 injection attacks.
 
 
@@ -77,11 +77,27 @@ Extract information from the `PGRESULT` returned by `pg-exec`. The `WHAT` keywor
 
 * `:tuple` tuple-number: return a specific tuple (numbering starts at 0).
 
+* `:incomplete`: determine whether the set of tuples returned in this query set is incomplete, due
+  to a suspended portal. If true, further tuples can be obtained by calling `pg-fetch`.
+
 * `:oid`: allows you to retrieve the OID returned by the backend if the command was an insertion.
    The OID is a unique identifier for that row in the database (this is PostgreSQL-specific; please
    refer to the documentation for more details).
  
 .
+
+    (pg-fetch con result &key (max-rows 0))
+
+Fetch pending rows from the suspended portal in `RESULT` on database connection `CON`.
+This query will retrieve at most `MAX-ROWS` rows (default value of zero means no limit).
+Returns a pgresult structure (see function `pg-result`). When used in multiple fetch situations
+(with the `:max-rows` parameter to `pg-exec-prepared` which allows you to retrieve large result sets
+incrementally), the same pgresult structure (initally returned by `pg-exec-prepared`) should be
+passed to each successive call to `pg-fetch`, because it contains column metainformation that is
+required to parse the incoming data. Each successive call to `pg-fetch` will return this pgresult
+structure with new tuples accessible via `pg-result :tuples`. When no more tuples are available,
+the `:incomplete` slot of the pgresult structure will be nil.
+
 
     (pg-cancel con) -> nil
 
