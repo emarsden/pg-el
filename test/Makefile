@@ -33,6 +33,9 @@ test-emacs27: test-pg.el
 	   docker.io/silex/emacs:27.2 \
 	   emacs -Q --batch -l /tmp/pg.el -l /tmp/test-pg.el -f pg-test
 
+# The extended query support will not work in Emacs versions before 28.1, because functionality
+# provided by the bindat libary is needed. However, other functionality based on the simple query
+# protocol (the pg-exec function) should work fine.
 test-emacs26: test-pg.el
 	cp ../pg.el test-pg.el ${WORKDIR}
 	podman run --rm -it \
