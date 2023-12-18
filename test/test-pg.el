@@ -10,7 +10,7 @@
 
 
 ;; for performance testing
-(setq process-adaptive-read-buffering nil)
+;; (setq process-adaptive-read-buffering nil)
 
 
 (defmacro with-pgtest-connection (conn &rest body)
@@ -42,11 +42,6 @@
         ,@body)))
 
 (defun pg-run-tests (con)
-  (when (>= emacs-major-version 28)
-    (message "Testing prepared statements")
-    (pg-test-prepared con)
-    (pg-test-prepared/multifetch con)
-    (pg-test-insert/prepared con))
   (message "Testing basic type parsing")
   (pg-test-basic con)
   (message "Testing insertions...")
@@ -55,6 +50,11 @@
   (pg-test-date con)
   (message "Testing numeric routines...")
   (pg-test-numeric con)
+  (when (>= emacs-major-version 28)
+    (message "Testing prepared statements")
+    (pg-test-prepared con)
+    (pg-test-prepared/multifetch con)
+    (pg-test-insert/prepared con))
   (pg-test-collation con)
   (pg-test-xml con)
   (message "Testing field extraction routines...")
@@ -114,6 +114,8 @@
   (cl-labels ((row (query args) (pg-result (pg-exec-prepared con query args) :tuple 0))
               (scalar (query args) (car (row query args)))
               (approx= (x y) (< (/ (abs (- x y)) (max (abs x) (abs y))) 1e-5)))
+    (should (equal 42 (scalar "SELECT 42" (list))))
+    (should (approx= 42.0 (scalar "SELECT 42.00" (list))))
     (should (equal (make-bool-vector 1 nil) (scalar "SELECT $1::bit" '(("0" . "bit")))))
     (should (equal (make-bool-vector 1 nil) (scalar "SELECT $1" '(("0" . "bit")))))
     (should (equal (bool-vector t nil t t t t)
@@ -136,7 +138,8 @@
     (should (string= "fooblé" (scalar "SELECT $1" '(("fooblé" . "text")))))
     (should (string= "Bîzzlô⚠️" (scalar "SELECT $1" '(("Bîzzlô⚠️" . "varchar")))))
     (should (string= "foobles" (scalar "SELECT $1 || $2" '(("foo" . "text") ("bles" . "text")))))
-    (should (string= "12 foé£èüñ¡" (scalar "SELECT lower($1)" '(("12 FOÉ£ÈÜÑ¡" . "text")))))
+    (unless (zerop (car (pg-result (pg-exec con "SELECT COUNT(*) FROM pg_collation WHERE collname='fr_FR'") :tuple 0)))
+      (should (string= "12 foé£èüñ¡" (scalar "SELECT lower($1) COLLATE \"fr_FR\"" '(("12 FOÉ£ÈÜÑ¡" . "text"))))))
     (should (equal "00:00:12" (scalar "SELECT $1::interval" '(("PT12S" . "text")))))
     (should (equal -1 (scalar "SELECT $1::int" '(("-1" . "text")))))
     (should (equal -1 (scalar "SELECT $1::int" '((-1 . "int4")))))
@@ -164,6 +167,7 @@
            (json (scalar "SELECT $1::json" `((,ht . "json")))))
       (should (equal "foobles" (gethash "say" json)))
       (should (equal 42 (gethash "biz" json))))
+    (pg-hstore-setup con)
     (let ((hs (scalar "SELECT $1::hstore" '(("a=>1,b=>2" . "text")))))
       (should (string= "1" (gethash "a" hs)))
       (should (eql 2 (hash-table-count hs))))
@@ -174,23 +178,21 @@
 
 
 (cl-defun pg-test-prepared/multifetch (con &optional (rows 1000))
-  (cl-labels ((row (query args) (pg-result (pg-exec-prepared con query args) :tuple 0))
-              (scalar (query args) (car (row query args))))
-    (message "Running multiple fetch/suspended portal test")
-    (let* ((res (pg-exec-prepared con "SELECT generate_series(1, $1)"
-                                  `((,rows . "int4"))
-                                  :max-rows 10))
-           (portal (pgresult-portal res))
-           (counter 0))
-      ;; check the results from the initial pg-exec-prepared
+  (message "Running multiple fetch/suspended portal test")
+  (let* ((res (pg-exec-prepared con "SELECT generate_series(1, $1)"
+                                `((,rows . "int4"))
+                                :max-rows 10))
+         (portal (pgresult-portal res))
+         (counter 0))
+    ;; check the results from the initial pg-exec-prepared
+    (dolist (tuple (pg-result res :tuples))
+      (should (eql (cl-first tuple) (cl-incf counter))))
+    ;; keep fetching and checking more rows until the portal is complete
+    (while (pg-result res :incomplete)
+      (setq res (pg-fetch con res :max-rows 7))
       (dolist (tuple (pg-result res :tuples))
-        (should (eql (cl-first tuple) (cl-incf counter))))
-      ;; keep fetching and checking more rows until the portal is complete
-      (cl-loop
-       for res = (pg-fetch con portal :max-rows 10)
-       do (dolist (tuple (pg-result res :tuples))
-            (should (eql (cl-first tuple) (cl-incf counter))))
-       while (pg-result res :incomplete)))))
+        (should (eql (cl-first tuple) (cl-incf counter)))))
+    (pg-close-portal con portal)))
 
 
 (defun pg-test-basic (con)
@@ -259,7 +261,9 @@
       (message "time = %s" (cl-second res))
       (message "date = %s" (cl-third res)))
     (pg-exec con "DROP TABLE date_test")
-    (should (equal (scalar "SELECT 'allballs'::time") "00:00:00"))
+    ;; this fails on CockroachDB
+    (unless (cl-search "CockroachDB" (pg-backend-version con))
+      (should (equal (scalar "SELECT 'allballs'::time") "00:00:00")))
     (should (equal (scalar "SELECT '2022-10-01'::date") (encode-time 0 0 0 1 10 2022)))
     ;; When casting to DATE, the time portion is truncated
     (should (equal (scalar "SELECT '2063-03-31T22:13:02'::date")
@@ -493,11 +497,11 @@
       (should (eql 66 (scalar "EXECUTE foobles(33)"))))))
 
 
-(defun pg-test-hstore (conn)
+(defun pg-test-hstore (con)
   ;; We need to call this before using HSTORE datatypes to load the extension if necessary, and
   ;; to set up our parser support for the HSTORE type.
-  (pg-hstore-setup conn)
-  (cl-flet ((scalar (sql) (car (pg-result (pg-exec conn sql) :tuple 0))))
+  (pg-hstore-setup con)
+  (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0))))
     (let ((hs (scalar "SELECT 'foo=>bar'::hstore")))
       (should (string= "bar" (gethash "foo" hs)))
       (should (eql 1 (hash-table-count hs))))
@@ -523,41 +527,41 @@
       (should (cl-find "biz" arr :test #'string=))
       (should (cl-find "boz" arr :test #'string=)))))
 
-(defun pg-test-copy (conn)
+(defun pg-test-copy (con)
   (cl-flet ((ascii (n) (+ ?A (mod n 26)))
             (random-word () (apply #'string (cl-loop for count to 10 collect (+ ?a (random 26))))))
-    (pg-exec conn "DROP TABLE IF EXISTS copy_tsv")
-    (pg-exec conn "CREATE TABLE copy_tsv (a INTEGER, b CHAR, c TEXT)")
+    (pg-exec con "DROP TABLE IF EXISTS copy_tsv")
+    (pg-exec con "CREATE TABLE copy_tsv (a INTEGER, b CHAR, c TEXT)")
     (let ((buf (get-buffer-create " *pg-copy-temp-tsv*")))
       (with-current-buffer buf
         (dotimes (i 42)
           (insert (format "%d\t%c\t%s\n" i (ascii i) (random-word)))))
-      (pg-copy-from-buffer conn "COPY copy_tsv(a,b,c) FROM STDIN" buf)
-      (let ((res (pg-exec conn "SELECT count(*) FROM copy_tsv")))
+      (pg-copy-from-buffer con "COPY copy_tsv(a,b,c) FROM STDIN" buf)
+      (let ((res (pg-exec con "SELECT count(*) FROM copy_tsv")))
         (should (eql 42 (car (pg-result res :tuple 0)))))
-      (let ((res (pg-exec conn "SELECT sum(a) FROM copy_tsv")))
+      (let ((res (pg-exec con "SELECT sum(a) FROM copy_tsv")))
         (should (eql 861 (car (pg-result res :tuple 0)))))
-      (let ((res (pg-exec conn "SELECT * FROM copy_tsv LIMIT 5")))
+      (let ((res (pg-exec con "SELECT * FROM copy_tsv LIMIT 5")))
         (message "COPYTSV> %s" (pg-result res :tuples))))
-    (pg-exec conn "DROP TABLE copy_tsv")
-    (pg-exec conn "DROP TABLE IF EXISTS copy_csv")
-    (pg-exec conn "CREATE TABLE copy_csv (a INT2, b INTEGER, c CHAR, d TEXT)")
+    (pg-exec con "DROP TABLE copy_tsv")
+    (pg-exec con "DROP TABLE IF EXISTS copy_csv")
+    (pg-exec con "CREATE TABLE copy_csv (a INT2, b INTEGER, c CHAR, d TEXT)")
     (let ((buf (get-buffer-create " *pg-copy-temp-csv*")))
       (with-current-buffer buf
         (dotimes (i 1000)
-          (insert (format "%d,%d,%c,'%s'\n" i (* i i) (ascii i) (random-word)))))
-      (pg-copy-from-buffer conn "COPY copy_csv(a,b,c,d) FROM STDIN WITH (FORMAT CSV)" buf)
-      (let ((res (pg-exec conn "SELECT count(*) FROM copy_csv")))
+          (insert (format "%d,%d,%c,%s\n" i (* i i) (ascii i) (random-word)))))
+      (pg-copy-from-buffer con "COPY copy_csv(a,b,c,d) FROM STDIN WITH (FORMAT CSV)" buf)
+      (let ((res (pg-exec con "SELECT count(*) FROM copy_csv")))
         (should (eql 1000 (car (pg-result res :tuple 0)))))
-      (let ((res (pg-exec conn "SELECT max(b) FROM copy_csv")))
+      (let ((res (pg-exec con "SELECT max(b) FROM copy_csv")))
         (should (eql 998001 (car (pg-result res :tuple 0)))))
-      (let ((res (pg-exec conn "SELECT * FROM copy_csv LIMIT 3")))
+      (let ((res (pg-exec con "SELECT * FROM copy_csv LIMIT 3")))
         (message "COPYCSV> %s" (pg-result res :tuples)))
-      (pg-exec conn "DROP TABLE copy_csv"))))
+      (pg-exec con "DROP TABLE copy_csv"))))
 
 
 ;; "SELECT xmlcomment("42") -> "<!--42-->"
-(defun pg-test-xmlbinary (conn)
+(defun pg-test-xmlbinary (con)
   nil)
 
 ;; Testing for the data access functions. Expected output is something
