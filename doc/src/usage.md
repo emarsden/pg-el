@@ -274,6 +274,7 @@ ELISP> (let* ((res (pg-exec *pg* "SELECT encode('foobles', 'base64')"))
           (equal r (base64-encode-string "foobles")))
 t
 ```
+~~~
 
 
 
