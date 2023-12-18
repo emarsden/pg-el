@@ -1,9 +1,21 @@
 # Changelog
 
+
+## [0.26] - 2023-12-18
+
+- API change for `pg-fetch` when using prepared statements with a suspended portal. The second
+  argument is a pgresult structure, rather than the portal name. This changes improves performance
+  by making it possible to avoid redundant DescribeRow messages.
+
+- The extended query flow used by `pg-exec-prepared` has been modified to be more asynchronous to
+  improve performance: instead of waiting for a response after the Prepare and Bind phases, only
+  wait a single time after the Execute phase.
+
+
 ## [0.25] - 2023-12-14
 
 - Add support for the extended query syntax, which helps to avoid the risk of SQL injection attacks.
-  See function `pg-exec/prepared`. This also makes it easier to fetch partial results from a query
+  See function `pg-exec-prepared`. This also makes it easier to fetch partial results from a query
   that returns a large number of rows.
 
 - Fix parsing of PostgreSQL `CHAR` type to an Emacs character instead of a string of length 1.

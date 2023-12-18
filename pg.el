@@ -3,7 +3,7 @@
 ;; Copyright: (C) 1999-2002, 2022-2023  Eric Marsden
 
 ;; Author: Eric Marsden <eric.marsden@risk-engineering.org>
-;; Version: 0.25
+;; Version: 0.26
 ;; Keywords: data comm database postgresql
 ;; URL: https://github.com/emarsden/pg-el
 ;; Package-Requires: ((emacs "28.1"))
@@ -133,9 +133,7 @@ struct.")
   (client-encoding 'utf-8)
   (timeout 10)
   (binaryp nil)
-  connect-info
-  (portal-counter 0)
-  (notification-handlers (list)))
+  connect-info)
 
 ;; Used to save the connection-specific position in our input buffer.
 (defvar-local pgcon--position 1)
@@ -144,7 +142,7 @@ struct.")
 ;; message was received asynchronously or synchronously.
 (defvar-local pgcon--busy t)
 
-(defvar-local pgcon-notification-handlers (list))
+(defvar-local pgcon--notification-handlers (list))
 
 
 (defun pg-connection-set-busy (con busy)
@@ -159,8 +157,8 @@ struct.")
 (cl-defstruct pgresult
   connection status attributes tuples portal (incomplete nil))
 
-(defsubst pg-flush (con)
-  (accept-process-output (pgcon-process con) 0.1))
+(defsubst pg-flush (_con)
+  (accept-process-output nil 0.05))
 
 ;; this is ugly because lambda lists don't do destructuring
 (defmacro with-pg-connection (con connect-args &rest body)
@@ -250,7 +248,7 @@ tag called pg-finished."
                    (payload-end-pos (cl-position 0 data :start (1+ channel-end-pos) :end (length data)))
                    (channel (cl-subseq data 9 channel-end-pos))
                    (payload (cl-subseq data (1+ channel-end-pos) payload-end-pos)))
-              (dolist (handler pgcon-notification-handlers)
+              (dolist (handler pgcon--notification-handlers)
                 (funcall handler channel payload))))
           (1- msglen))))))
 
@@ -342,12 +340,15 @@ Uses database DBNAME, user USER and password PASSWORD."
      ;; ReadyForQuery message
      (?Z
       (let ((_msglen (pg-read-net-int con 4))
-            (_status (pg-read-char con)))
-        ;; status is 'I' or 'T' or 'E'
+            (status (pg-read-char con)))
+        ;; status is 'I' or 'T' or 'E', Idle or InTransaction or Error
+        (when (eql ?E status)
+          (message "PostgreSQL ReadyForQuery message with error status"))
         (and (not pg-disable-type-coercion)
              (null pg--parsers)
              (pg-initialize-parsers con))
         (pg-exec con "SET datestyle = 'ISO'")
+        (pg-enable-async-notification-handlers con)
         (pg-connection-set-busy con nil)
         (cl-return-from pg-do-startup con)))
 
@@ -424,7 +425,7 @@ attempt to establish an encrypted connection to PostgreSQL."
       (set-buffer-multibyte nil)
       (setq-local pgcon--position 1)
       (setq-local pgcon--busy t)
-      (setq-local pgcon-notification-handlers (list)))
+      (setq-local pgcon--notification-handlers (list)))
     ;; Save connection info in the pgcon object, for possible later use by pg-cancel
     (setf (pgcon-connect-info con) (list :tcp host port dbname user password))
     ;; TLS connections to PostgreSQL are based on a custom STARTTLS-like connection upgrade
@@ -471,7 +472,7 @@ opaque type). PASSWORD defaults to an empty string."
       (set-buffer-multibyte nil)
       (setq-local pgcon--position 1)
       (setq-local pgcon--busy t)
-      (setq-local pgcon-notification-handlers (list)))
+      (setq-local pgcon--notification-handlers (list)))
     (pg-do-startup connection dbname user password)))
 
 
@@ -491,7 +492,7 @@ opaque type). PASSWORD defaults to an empty string."
 A handler takes two arguments: the channel and the payload. These correspond to SQL-level
 NOTIFY channel, \\='payload\\='."
   (with-current-buffer (process-buffer (pgcon-process con))
-    (push handler pgcon-notification-handlers)))
+    (push handler pgcon--notification-handlers)))
 
 (cl-defun pg-exec (con &rest args)
   "Execute the SQL command given by concatenating ARGS on database CON.
@@ -516,8 +517,7 @@ Return a result structure which can be decoded using `pg-result'."
        (cl-case c
             ;; NoData
             (?n
-             (let ((_msglen (pg-read-net-int con 4)))
-               nil))
+             (pg-read-net-int con 4))
 
             ;; NotificationResponse
             (?A
@@ -527,11 +527,11 @@ Return a result structure which can be decoded using `pg-result'."
                     (channel (pg-read-string con pg--MAX_MESSAGE_LEN))
                     (payload (pg-read-string con pg--MAX_MESSAGE_LEN))
                     (buf (process-buffer (pgcon-process con)))
-                    (handlers (with-current-buffer buf pgcon-notification-handlers)))
+                    (handlers (with-current-buffer buf pgcon--notification-handlers)))
                (dolist (handler handlers)
                  (funcall handler channel payload))))
 
-            ;; Bind -- should not receive this
+            ;; Bind -- should not receive this here
             (?B
              (setf (pgcon-binaryp con) t)
              (unless attributes
@@ -616,9 +616,10 @@ Return a result structure which can be decoded using `pg-result'."
             ;; ReadyForQuery
             (?Z
              (let ((_msglen (pg-read-net-int con 4))
-                   (_status (pg-read-char con)))
-               ;; status is 'I' or 'T' or 'E'
-               ;; (message "Got ReadyForQuery with status %c" status)
+                   (status (pg-read-char con)))
+               ;; status is 'I' or 'T' or 'E', Idle or InTransaction or Error
+               (when (eql ?E status)
+                 (message "PostgreSQL ReadyForQuery message with error status"))
                (setf (pgresult-tuples result) (nreverse tuples))
                (setf (pgresult-attributes result) attributes)
                (pg-connection-set-busy con nil)
@@ -685,24 +686,10 @@ PostgreSQL type names of the form (\"int4\" \"text\" \"bool\")."
     (pg-send-string con query/enc)
     (pg-send-uint con (length oids) 2)
     (dolist (oid oids)
-      (pg-send-uint con oid 4))
-    ;; send a Flush message
-    (pg-send-char con ?H)
-    (pg-send-uint con 4 4)
-    (pg-flush con)
-    (cl-loop
-     for c = (pg-read-char con) do
-     (cl-case c
-       ;; ParseComplete
-       (?1
-        (pg-read-net-int con 4)
-        (cl-return name))
+      (pg-send-uint con oid 4)))
+  name)
 
-       ;; ErrorResponse
-       (?E
-        (pg-handle-error-response con))))))
-
-(defun pg-bind (con statement-name typed-arguments)
+(cl-defun pg-bind (con statement-name typed-arguments &key (portal ""))
   "Bind the SQL prepared statement STATEMENT-NAME to arguments TYPED-ARGUMENTS.
 The STATEMENT-NAME should have been returned by function `pg-prepare'.
 TYPE-ARGUMENTS is a list of the form ((42 . \"int4\") (\"foo\" . \"text\")).
@@ -722,9 +709,8 @@ Uses PostgreSQL connection CON."
                      (let* ((raw (if (stringp v) v (format "%s" v)))
                             (encoded (if ce (encode-coding-string raw ce t) raw)))
                        (cons encoded 0)))))
-         (portal-name (format "portal%d" (cl-incf (pgcon-portal-counter con))))
          (len (+ 4
-                 (1+ (length portal-name))
+                 (1+ (length portal))
                  (1+ (length statement-name))
                  2
                  (* 2 (length argument-types))
@@ -735,7 +721,7 @@ Uses PostgreSQL connection CON."
     (pg-send-char con ?B)
     (pg-send-uint con len 4)
     ;; the destination portal
-    (pg-send-string con portal-name)
+    (pg-send-string con portal)
     (pg-send-string con statement-name)
     (pg-send-uint con (length argument-types) 2)
     (cl-loop for (_ . binary-p) in serialized-values
@@ -751,36 +737,19 @@ Uses PostgreSQL connection CON."
     ;; the number of result-column format codes: we use zero to indicate that result columns can use
     ;; text format
     (pg-send-uint con 0 2)
-    ;; send a Flush message
-    (pg-send-char con ?H)
-    (pg-send-uint con 4 4)
-    (pg-flush con)
-    ;; There is a tradeoff here between efficiency and prompt error handling. We could obtain better
-    ;; throughput by not sending the Flush message and reading the backend response here, instead
-    ;; waiting until the pg-fetch message to retrieve the result.
-    (cl-loop
-     for c = (pg-read-char con) do
-     (cl-case c
-       ;; BindComplete
-       (?2
-        (pg-read-net-int con 4)
-        (cl-return portal-name))
+    portal))
 
-       ;; ErrorResponse
-       (?E
-        (pg-handle-error-response con))))))
-
-(defun pg-describe-portal (con portal-name)
-  (let ((len (+ 4 1 (1+ (length portal-name)))))
+(defun pg-describe-portal (con portal)
+  (let ((len (+ 4 1 (1+ (length portal)))))
     ;; send a Describe message for this portal
     (pg-send-char con ?D)
     (pg-send-uint con len 4)
     (pg-send-char con ?P)
-    (pg-send-string con portal-name)))
+    (pg-send-string con portal)))
 
-(cl-defun pg-execute (con portal-name &key (max-rows 0))
+(cl-defun pg-execute (con portal &key (max-rows 0))
   (let* ((ce (pgcon-client-encoding con))
-         (pn/encoded (if ce (encode-coding-string portal-name ce t) portal-name))
+         (pn/encoded (if ce (encode-coding-string portal ce t) portal))
          (len (+ 4 (1+ (length pn/encoded)) 4)))
     ;; send an Execute message
     (pg-send-char con ?E)
@@ -790,32 +759,61 @@ Uses PostgreSQL connection CON."
     ;; Maximum number of rows to return; zero means "no limit"
     (pg-send-uint con max-rows 4)))
 
-(cl-defun pg-fetch (con portal-name &key (max-rows 0))
-  "Fetch pending results from PORTAL-NAME on database connection CON.
+(cl-defun pg-fetch (con result &key (max-rows 0))
+  "Fetch pending rows from portal in RESULT on database connection CON.
 Retrieve at most MAX-ROWS rows (default value of zero means no limit).
 Returns a pgresult structure (see function `pg-result')."
   (let* ((tuples (list))
-         (attributes (list))
-         (result (make-pgresult :connection con :portal portal-name)))
-    (pg-describe-portal con portal-name)
-    (pg-execute con portal-name :max-rows max-rows)
-    ;; send a Flush message
-    (pg-send-char con ?H)
-    (pg-send-uint con 4 4)
+         (attributes (pgresult-attributes result)))
+    (setf (pgresult-status result) nil)
+    ;; We are counting on the Describe message having been sent prior to calling pg-fetch
+    (pg-execute con (pgresult-portal result) :max-rows max-rows)
+    ;; If we are requesting a subset of available rows, we send a Flush message instead of a Sync
+    ;; message, otherwise our unnamed portal will be closed by the Sync message and we won't be able
+    ;; to retrieve more rows on the next call to pg-fetch.
+    (cond ((zerop max-rows)
+           ;; send a Sync message
+           (pg-send-char con ?S)
+           (pg-send-uint con 4 4))
+          (t
+           ;; send a Flush message
+           (pg-send-char con ?H)
+           (pg-send-uint con 4 4)))
     (pg-flush con)
     (cl-loop
      for c = (pg-read-char con) do
+     ;; (message "pg-fetch got %c" c)
      (cl-case c
+       ;; ParseComplete
+       (?1
+        (pg-read-net-int con 4))
+
+       ;; BindComplete
+       (?2
+        (pg-read-net-int con 4))
+
+       ;; RowDescription
+       (?T
+        (when attributes
+          (signal 'pg-protocol-error (list "Cannot handle multiple result group")))
+        (setq attributes (pg-read-attributes con))
+        (setf (pgresult-attributes result) attributes))
+
+       ;; DataRow message
+       (?D
+        (setf (pgcon-binaryp con) nil)
+        (let ((_msglen (pg-read-net-int con 4)))
+          (push (pg-read-tuple con attributes) tuples)))
+
        ;; PortalSuspended -- the row-count limit for the Execute message was reached; more data is
        ;; available with another Execute message.
        (?s
         (pg-read-net-int con 4)
         (setf (pgresult-incomplete result) t)
         (setf (pgresult-tuples result) (nreverse tuples))
-        (setf (pgresult-attributes result) attributes)
         (setf (pgresult-status result) "SUSPENDED")
         (pg-connection-set-busy con nil)
-        (cl-return result))
+        (cl-return-from pg-fetch result))
 
        ;; CommandComplete -- one SQL command has completed (portal's execution is completed)
        (?C
@@ -824,21 +822,18 @@ Returns a pgresult structure (see function `pg-result')."
                (_null (pg-read-char con)))
           (setf (pgresult-status result) msg))
         (setf (pgresult-incomplete result) nil)
-        (setf (pgresult-tuples result) (nreverse tuples))
-        (setf (pgresult-attributes result) attributes)
-        (pg-connection-set-busy con nil)
-        (cl-return result))
-
-       ;; DataRow message
-       (?D
-        (setf (pgcon-binaryp con) nil)
-        (let ((_msglen (pg-read-net-int con 4)))
-          (push (pg-read-tuple con attributes) tuples)))
+        (when (> max-rows 0)
+          ;; send a Sync message to close the portal and request the ReadyForQuery
+          (pg-send-char con ?S)
+          (pg-send-uint con 4 4)
+          (pg-flush con)))
 
        ;; EmptyQueryResponse -- the response to an empty query string
        (?I
-        (pg-read-net-int con 4))
+        (pg-read-net-int con 4)
+        (setf (pgresult-status result) "EMPTY"))
 
+       ;; NoData message
        (?n
         (pg-read-net-int con 4))
 
@@ -852,28 +847,34 @@ Returns a pgresult structure (see function `pg-result')."
           (dolist (handler pg-handle-notice-functions)
             (funcall handler notice))))
 
-       ;; RowDescription
-       (?T
-        (when attributes
-          (signal 'pg-protocol-error (list "Cannot handle multiple result group")))
-        (setq attributes (pg-read-attributes con)))
-
        ;; ReadyForQuery
        (?Z
         (let ((_msglen (pg-read-net-int con 4))
-              (_status (pg-read-char con)))
-          ;; status is 'I' or 'T' or 'E'
-          ;; (message "Got ReadyForQuery with status %c" status)
+              (status (pg-read-char con)))
+          ;; status is 'I' or 'T' or 'E', Idle or InTransaction or Error
+          (when (eql ?E status)
+            (message "PostgreSQL ReadyForQuery message with error status"))
           (setf (pgresult-tuples result) (nreverse tuples))
-          (setf (pgresult-attributes result) attributes)
           (pg-connection-set-busy con nil)
-          (cl-return result)))
+          (cl-return-from pg-fetch result)))
 
        (t
         (message "Received unexpected message type %s in pg-fetch" c))))))
 
 ;; Do a PARSE/BIND/EXECUTE sequence, using the Extended Query message flow.
-(cl-defun pg-exec-prepared (con query typed-arguments &key (max-rows 0))
+;;
+;; We are careful here to only send a single Describe message even in the case of a multifetch
+;; request (retrieving rows progressively with multiple calls to pg-fetch). The attribute
+;; information from the initial Describe message is maintained in the pgresult struct that serves as
+;; a handle for the pg-fetch requests.
+;;
+;; We default to using an empty prepared-statement name and empty portal name because PostgreSQL has
+;; a fast path for these queries.
+;;
+;; The user can also use the extended query protocol at a lower level by calling pg-prepare, pg-bind
+;; and pg-fetch explicitly (for example, binding a prepared statement to different values in a
+;; loop).
+(cl-defun pg-exec-prepared (con query typed-arguments &key (max-rows 0) (portal ""))
   "Execute SQL QUERY using TYPED-ARGUMENTS on database connection CON.
 Query can contain numbered parameters ($1, $2 etc.) that are
 bound to the values in TYPED-ARGUMENTS, which is a list of the
@@ -887,17 +888,19 @@ MAX-ROWS rows (a value of zero indicates no limit). If more rows
 are available, they can later be retrieved with `pg-fetch'."
   (let* ((argument-types (mapcar #'cdr typed-arguments))
          (ps-name (pg-prepare con query argument-types))
-         (portal-name (pg-bind con ps-name typed-arguments)))
-    (pg-fetch con portal-name :max-rows max-rows)))
+         (portal-name (pg-bind con ps-name typed-arguments :portal portal))
+         (result (make-pgresult :connection con :portal portal-name)))
+    (pg-describe-portal con portal-name)
+    (pg-fetch con result :max-rows max-rows)))
 
-(defun pg-close-portal (con portal-name)
-  "Close the portal named PORTAL-NAME that was opened by pg-exec-prepared."
-  (let ((len (+ 4 1 (1+ (length portal-name)))))
+(defun pg-close-portal (con portal)
+  "Close the portal named PORTAL that was opened by pg-exec-prepared."
+  (let ((len (+ 4 1 (1+ (length portal)))))
     ;; send a Close message
     (pg-send-char con ?C)
     (pg-send-uint con len 4)
     (pg-send-char con ?P)
-    (pg-send-string con portal-name)
+    (pg-send-string con portal)
     ;; send a Sync message
     (pg-send-char con ?S)
     (pg-send-uint con 4 4)
@@ -921,7 +924,10 @@ are available, they can later be retrieved with `pg-fetch'."
        ;; ReadyForQuery
        (?Z
         (let ((_msglen (pg-read-net-int con 4))
-              (_status (pg-read-char con)))
+              (status (pg-read-char con)))
+          ;; status is 'I' or 'T' or 'E'
+          (when (eql ?E status)
+            (message "PostgreSQL ReadyForQuery message with error status"))
           (cl-return nil)))))))
 
 
@@ -969,7 +975,7 @@ can be decoded using `pg-result'."
                     (channel (pg-read-string con pg--MAX_MESSAGE_LEN))
                     (payload (pg-read-string con pg--MAX_MESSAGE_LEN))
                     (buf (process-buffer (pgcon-process con)))
-                    (handlers (with-current-buffer buf pgcon-notification-handlers)))
+                    (handlers (with-current-buffer buf pgcon--notification-handlers)))
                (dolist (handler handlers)
                  (funcall handler channel payload))))
 
@@ -1028,7 +1034,7 @@ can be decoded using `pg-result'."
                (channel (pg-read-string con pg--MAX_MESSAGE_LEN))
                (payload (pg-read-string con pg--MAX_MESSAGE_LEN))
                (buf (process-buffer (pgcon-process con)))
-               (handlers (with-current-buffer buf pgcon-notification-handlers)))
+               (handlers (with-current-buffer buf pgcon--notification-handlers)))
           (dolist (handler handlers)
             (funcall handler channel payload))))
 
@@ -1039,9 +1045,11 @@ can be decoded using `pg-result'."
        ;; ReadyForQuery message
        (?Z
         (let ((_msglen (pg-read-net-int con 4))
-              (_status (pg-read-char con)))
-          (pg-connection-set-busy con nil)
-          (cl-return-from pg-copy-from-buffer result)))
+              (status (pg-read-char con)))
+        (when (eql ?E status)
+          (message "PostgreSQL ReadyForQuery message with error status"))
+        (pg-connection-set-busy con nil)
+        (cl-return-from pg-copy-from-buffer result)))
 
        (t
         (let ((msg (format "Unknown response type from backend (2): %s" c)))
@@ -1096,7 +1104,7 @@ The cancellation request concerns the command requested over connection CON."
                       (set-buffer-multibyte nil)
                       (setq-local pgcon--position 1)
                       (setq-local pgcon--busy t)
-                      (setq-local pgcon-notification-handlers (list)))
+                      (setq-local pgcon--notification-handlers (list)))
                     connection)))))
     (pg-send-uint ccon 16 4)
     (pg-send-uint ccon 80877102 4)
@@ -1424,7 +1432,8 @@ PostgreSQL and Emacs. CON should no longer be used."
   (pg-exec con "CREATE EXTENSION IF NOT EXISTS hstore")
   (let* ((res (pg-exec con "SELECT oid FROM pg_type WHERE typname='hstore'"))
          (oid (car (pg-result res :tuple 0))))
-    (push (cons oid #'pg-hstore-parser) pg--parsers)))
+    (push (cons oid #'pg-hstore-parser) pg--parsers))
+  t)
 
 
 ;; Map between PostgreSQL names for encodings and their Emacs name.
@@ -1805,7 +1814,7 @@ Authenticate as USER with PASSWORD."
                    (error "Unknown fastpath type %s" arg))))
           args)
     (pg-flush con)
-    (cl-loop with result = '()
+    (cl-loop with result = (list)
           for c = (pg-read-char con) do
           (cl-case c
              ;; ErrorResponse
@@ -1828,15 +1837,17 @@ Authenticate as USER with PASSWORD."
                (message "NOTICE: %s" notice))
              (unix-sync))
 
-            ;; ReadyForQuery
+            ;; ReadyForQuery message
             (?Z
-             ;; message length then status, which we discard
-             (pg-read-net-int con 4)
-             (pg-read-char con)
-             (pg-connection-set-busy con nil))
+             (let ((_msglen (pg-read-net-int con 4))
+                   (status (pg-read-char con)))
+               (when (eql ?E status)
+                 (message "PostgreSQL ReadyForQuery message with error status"))
+               (pg-connection-set-busy con nil)
+               (cl-return-from pg-fn result)))
 
             ;; end of FunctionResult
-            (?0 (cl-return result))
+            (?0 nil)
 
             (t (error "Unexpected character in pg-fn: %s" c))))))
 
@@ -2018,7 +2029,7 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
           (sleep-for 0.5)
           (accept-process-output process 1.0)))
       (when (null (char-after pgcon--position))
-        (let ((msg (format "Timeout reading from %s" con)))
+        (let ((msg (format "Timeout in pg-read-char reading from %s" con)))
           (signal 'pg-error (list msg))))
       (prog1 (char-after pgcon--position)
         (setq-local pgcon--position (1+ pgcon--position))))))
@@ -2054,8 +2065,13 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
       (let* ((start pgcon--position)
              (end (+ start count)))
         ;; (accept-process-output process 0.1)
+        (dotimes (_i (pgcon-timeout con))
+          (when (> end (point-max))
+            (sleep-for 0.5)
+            (accept-process-output process 1.0)))
         (when (> end (point-max))
-          (accept-process-output process 1))
+          (let ((msg (format "Timeout in pg-read-chars reading from %s" con)))
+            (signal 'pg-error (list msg))))
         (prog1 (buffer-substring start end)
           (setq-local pgcon--position end))))))
 
