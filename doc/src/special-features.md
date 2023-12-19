@@ -77,21 +77,21 @@ patterns, with PostgreSQL serving as an event broker).
 ```lisp
 (cl-flet ((notification-handler (channel payload)
             (message "Async notification on %s: %s" channel payload)))
-  (pg-add-notification-handler conn #'notification-handler)
-  (pg-exec conn "LISTEN yourheart")
-  (pg-exec conn "NOTIFY yourheart, 'foobles'")
-  (pg-exec conn "SELECT 'ignored'")
-  (pg-exec conn "NOTIFY yourheart, 'bazzles'")
+  (pg-add-notification-handler *pg* #'notification-handler)
+  (pg-exec *pg* "LISTEN yourheart")
+  (pg-exec *pg* "NOTIFY yourheart, 'foobles'")
+  (pg-exec *pg* "SELECT 'ignored'")
+  (pg-exec *pg* "NOTIFY yourheart, 'bazzles'")
   (sleep-for 10)
-  (pg-exec conn "SELECT 'ignored'")
-  (pg-exec conn "NOTIFY yourheart")
-  (pg-exec conn "SELECT 'ignored'")
+  (pg-exec *pg* "SELECT 'ignored'")
+  (pg-exec *pg* "NOTIFY yourheart")
+  (pg-exec *pg* "SELECT 'ignored'")
   ;; The function pg_notify is an alternative to the LISTEN statement, and more flexible if your
   ;; channel name is determined by a variable.
-  (pg-exec conn "SELECT pg_notify('yourheart', 'leaving')")
-  (pg-exec conn "SELECT 'ignored'")
-  (pg-exec conn "UNLISTEN yourheart")
-  (pg-exec conn "NOTIFY yourheart, 'Et redit in nihilum quod fuit ante nihil.'")))
+  (pg-exec *pg* "SELECT pg_notify('yourheart', 'leaving')")
+  (pg-exec *pg* "SELECT 'ignored'")
+  (pg-exec *pg* "UNLISTEN yourheart")
+  (pg-exec *pg* "NOTIFY yourheart, 'Et redit in nihilum quod fuit ante nihil.'")))
 ```
 
 ~~~
