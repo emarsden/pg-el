@@ -149,6 +149,13 @@ before using the HSTORE extension. It loads the extension if necessary, and sets
 support for HSTORE datatypes.
 
 
+    (pg-vector-setup con)
+    
+Prepare for the use of VECTOR datatypes from the pgvector extension over database connection `CON`.
+This function must be called before using the pgvector extension. It loads the extension if
+necessary, and sets up the parsing support for vector datatypes.
+
+
     (pg-lo-create con . args) -> oid
 
 Create a new large object (BLOB, or binary large object in other DBMSes parlance) in the database to

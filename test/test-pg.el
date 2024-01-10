@@ -1,7 +1,7 @@
 ;;; Tests for the pg.el library   -*- coding: utf-8; lexical-binding: t; -*-
 ;;;
 ;;; Author: Eric Marsden <eric.marsden@risk-engineering.org>
-;;; Copyright: (C) 2022-2023  Eric Marsden
+;;; Copyright: (C) 2022-2024  Eric Marsden
 
 
 (require 'cl-lib)
@@ -459,8 +459,8 @@
 
 
 ;; https://www.postgresql.org/docs/15/functions-json.html
-(defun pg-test-json (conn)
-  (cl-flet ((scalar (sql) (car (pg-result (pg-exec conn sql) :tuple 0)))
+(defun pg-test-json (con)
+  (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0)))
             (approx= (x y) (< (/ (abs (- x y)) (max (abs x) (abs y))) 1e-5)))
     (should (eql 42 (scalar "SELECT to_json(42)")))
     (let ((json (scalar "SELECT '[5,7]'::json")))
@@ -712,31 +712,31 @@
              do (message "Connected to PostgreSQL on port %s" (cadr row))))
   (pg-exec con "DROP DATABASE pgeltestextra"))
 
-(defun pg-test-unicode-names (conn)
-  (when (member "pgel😎" (pg-databases conn))
-    (pg-exec conn "DROP DATABASE pgel😎"))
-  (pg-exec conn "CREATE DATABASE pgel😎")
-  (should (member "pgel😎" (pg-databases conn)))
-  (pg-exec conn "DROP DATABASE pgel😎")
-  (pg-exec conn "CREATE TEMPORARY TABLE pgel😏(data TEXT)")
-  (pg-exec conn "INSERT INTO pgel😏 VALUES('Foobles')")
-  (let ((r (pg-exec conn "SELECT * FROM pgel😏")))
+(defun pg-test-unicode-names (con)
+  (when (member "pgel😎" (pg-databases con))
+    (pg-exec con "DROP DATABASE pgel😎"))
+  (pg-exec con "CREATE DATABASE pgel😎")
+  (should (member "pgel😎" (pg-databases con)))
+  (pg-exec con "DROP DATABASE pgel😎")
+  (pg-exec con "CREATE TEMPORARY TABLE pgel😏(data TEXT)")
+  (pg-exec con "INSERT INTO pgel😏 VALUES('Foobles')")
+  (let ((r (pg-exec con "SELECT * FROM pgel😏")))
     (should (eql 1 (length (pg-result r :tuples)))))
-  (pg-exec conn "CREATE TEMPORARY TABLE pgeltestunicode(pg→el TEXT)")
-  (pg-exec conn "INSERT INTO pgeltestunicode(pg→el) VALUES ('Foobles')")
-  (pg-exec conn "INSERT INTO pgeltestunicode(pg→el) VALUES ('Bizzles')")
-  (let ((r (pg-exec conn "SELECT pg→el FROM pgeltestunicode")))
+  (pg-exec con "CREATE TEMPORARY TABLE pgeltestunicode(pg→el TEXT)")
+  (pg-exec con "INSERT INTO pgeltestunicode(pg→el) VALUES ('Foobles')")
+  (pg-exec con "INSERT INTO pgeltestunicode(pg→el) VALUES ('Bizzles')")
+  (let ((r (pg-exec con "SELECT pg→el FROM pgeltestunicode")))
     (should (eql 2 (length (pg-result r :tuples))))))
 
-(defun pg-test-returning (conn)
-  (when (member "pgeltestr" (pg-tables conn))
-    (pg-exec conn "DROP TABLE pgeltestr"))
-  (pg-exec conn "CREATE TABLE pgeltestr(id SERIAL, data TEXT)")
-  (let* ((res (pg-exec conn "INSERT INTO pgeltestr(data) VALUES ('Foobles') RETURNING id"))
+(defun pg-test-returning (con)
+  (when (member "pgeltestr" (pg-tables con))
+    (pg-exec con "DROP TABLE pgeltestr"))
+  (pg-exec con "CREATE TABLE pgeltestr(id SERIAL, data TEXT)")
+  (let* ((res (pg-exec con "INSERT INTO pgeltestr(data) VALUES ('Foobles') RETURNING id"))
          (id (pg-result res :tuple 0))
-         (res (pg-exec conn (format "SELECT data from pgeltestr WHERE id=%s" id))))
+         (res (pg-exec con (format "SELECT data from pgeltestr WHERE id=%s" id))))
     (should (string= (car (pg-result res :tuple 0)) "Foobles")))
-  (pg-exec conn "DROP TABLE pgeltestr"))
+  (pg-exec con "DROP TABLE pgeltestr"))
 
 ;; Test our support for handling ParameterStatus messages, via the pg-parameter-change-functions
 ;; variable. When we change the session timezone, the backend should send us a ParameterStatus
@@ -812,7 +812,7 @@
 ;; test is not robust across PostgreSQL versions, however.
 ; (let ((notice-counter 0))
 ;   (let ((pg-handle-notice-functions (list (lambda (_n) (cl-incf notice-counter)))))
-;     (pg-exec conn "VACUUM")
+;     (pg-exec con "VACUUM")
 ;     (should (> notice-counter 0)))))
 
 

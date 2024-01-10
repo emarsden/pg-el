@@ -71,8 +71,8 @@ You should see the message in the minibuffer.
 
 This example illustrates the use of NOTIFY and LISTEN. It's obviously not very useful with a single
 client; real applications would involve multiple event consumers and possibly also multiple event
-producers (this functionality can be used to implement simple publish-subscribe communication
-patterns, with PostgreSQL serving as an event broker).
+producers. This functionality can be used to implement simple publish-subscribe communication
+patterns, with PostgreSQL serving as an event broker.
 
 ```lisp
 (cl-flet ((notification-handler (channel payload)
