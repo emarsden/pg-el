@@ -96,6 +96,20 @@ test-postgresql12: test-pg.el
 	podman stop pgsql
 	podman rm pgsql
 
+test-postgresql11: test-pg.el
+	podman run --detach \
+	   --name pgsql \
+	   --publish 5437:5437 \
+	   -e POSTGRES_DB=pgeltestdb \
+	   -e POSTGRES_USER=pgeltestuser \
+	   -e POSTGRES_PASSWORD=pgeltest \
+	   -e PGPORT=5437 \
+	   docker.io/library/postgres:11-alpine
+	sleep 5
+	PGEL_PORT=5437 emacs -Q --batch -l ../pg.el -l test-pg.el -f pg-test
+	podman stop pgsql
+	podman rm pgsql
+
 
 # Supabase (https://supabase.com) provide hosted PostgreSQL instances with convenient web
 # dashboards, management APIs and integrations with authentication libraries. They have a free tier.
@@ -119,6 +133,8 @@ test-neon: test-pg.el
 test-cratedb: test-pg.el
 	PGEL_DATABASE=doc make test
 
+# Version 23.1.13 of CockroachDB doesn't get very far through the tests, failing on the boolean
+# vector syntax b'1001000'.
 test-cockroachdb: test-pg.el
 	podman run --name cockroachdb \
 	   -v /dev/log:/dev/log \
@@ -142,6 +158,8 @@ test-questdb: test-pg.el
 	podman rm questdb
 
 
+# Yugabyte 2.19 is based on PostgreSQL 11.2. This works very well, including the HSTORE and pgvector
+# extensions. LISTEN/NOTIFY is not supported.
 test-yugabyte: test-pg.el
 	podman run --name yugabyte \
 	  --publish 5433:5433 \
@@ -149,7 +167,7 @@ test-yugabyte: test-pg.el
 	  bin/yugabyted start \
 	  --base_dir=/tmp \
 	  --daemon=false
-	sleep 5
+	sleep 10
 	PGEL_DATABASE=yugabyte PGEL_USER=yugabyte PGEL_PASSWORD="" PGEL_PORT=5433 make test
 	podman stop yugabyte
 	podman rm yugabyte

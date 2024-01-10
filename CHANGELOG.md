@@ -1,6 +1,17 @@
 # Changelog
 
 
+## [0.27] - 2024-01-10
+
+- Improvements to the internal parsing functionality to use a hashtable instead of an alist to look
+  up parsing functions (performance should be improved).
+
+- Improved support for user-defined parsing for custom PostgreSQL types (see the function
+  `pg-register-parser`).
+
+- Add support for the pgvector extension for vector embeddings.
+
+
 ## [0.26] - 2023-12-18
 
 - API change for `pg-fetch` when using prepared statements with a suspended portal. The second

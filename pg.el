@@ -1,9 +1,9 @@
 ;;; pg.el --- Emacs Lisp socket-level interface to the PostgreSQL RDBMS  -*- lexical-binding: t -*-
 
-;; Copyright: (C) 1999-2002, 2022-2023  Eric Marsden
+;; Copyright: (C) 1999-2002, 2022-2024  Eric Marsden
 
 ;; Author: Eric Marsden <eric.marsden@risk-engineering.org>
-;; Version: 0.26
+;; Version: 0.27
 ;; Keywords: data comm database postgresql
 ;; URL: https://github.com/emarsden/pg-el
 ;; Package-Requires: ((emacs "28.1"))
@@ -112,27 +112,33 @@ struct.")
 (define-error 'pg-protocol-error "PostgreSQL protocol error" 'pg-error)
 (define-error 'pg-copy-failed "PostgreSQL COPY failed" 'pg-error)
 
-
-;; alist of (oid . parser) pairs. This is built dynamically at initialization of the connection with
-;; the database (once generated, the information is shared between connections).
-(defvar pg--parsers (list))
-
-;; maps from type-name to a function that converts from text representation to wire-level binary
+;; Maps from type-name to a function that converts from text representation to wire-level binary
 ;; representation.
 (defvar pg--serializers (make-hash-table :test #'equal))
 
-;; maps from type-name to PostgreSQL oid
-(defvar pg--types (make-hash-table :test #'equal))
+;; Maps from type-name to a parsing function (from string to Emacs native type). This is built
+;; dynamically at initialization of the connection with the database (once generated, the
+;; information is shared between connections).
+(defvar pg--parsers-name (make-hash-table :test #'equal))
+
+;; Maps from oid (an integer) to a parsing function.
+(defvar pg--parsers-oid (make-hash-table :test #'eql))
+
+;; Maps from type-name to PostgreSQL oid.
+(defvar pg--type-oid (make-hash-table :test #'equal))
+
+;; Maps from oid to type-name.
+(defvar pg--type-name (make-hash-table :test #'eql))
 
 
 (cl-defstruct pgcon
   dbname
   process
   pid
+  server-version-major
   secret
   (client-encoding 'utf-8)
   (timeout 10)
-  (binaryp nil)
   connect-info)
 
 ;; Used to save the connection-specific position in our input buffer.
@@ -157,8 +163,8 @@ struct.")
 (cl-defstruct pgresult
   connection status attributes tuples portal (incomplete nil))
 
-(defsubst pg-flush (_con)
-  (accept-process-output nil 0.05))
+(defsubst pg-flush (con)
+  (accept-process-output (pgcon-process con) 1))
 
 ;; this is ugly because lambda lists don't do destructuring
 (defmacro with-pg-connection (con connect-args &rest body)
@@ -308,8 +314,8 @@ Uses database DBNAME, user USER and password PASSWORD."
   (cl-loop
    for c = (pg-read-char con) do
    (cl-case c
+     ;; an ErrorResponse message
      (?E
-      ;; an ErrorResponse message
       (pg-handle-error-response con "after StartupMessage"))
 
      ;; NegotiateProtocolVersion
@@ -345,7 +351,7 @@ Uses database DBNAME, user USER and password PASSWORD."
         (when (eql ?E status)
           (message "PostgreSQL ReadyForQuery message with error status"))
         (and (not pg-disable-type-coercion)
-             (null pg--parsers)
+             (zerop (hash-table-count pg--parsers-oid))
              (pg-initialize-parsers con))
         (pg-exec con "SET datestyle = 'ISO'")
         (pg-enable-async-notification-handlers con)
@@ -392,6 +398,9 @@ Uses database DBNAME, user USER and password PASSWORD."
         ;; ParameterStatus items sent by the backend include application_name,
         ;; DateStyle, in_hot_standby, integer_datetimes
         (when (> (length (cl-first items)) 0)
+          (when (string= "server_version" (cl-first items))
+            (let ((major (cl-first (split-string (cl-second items) "."))))
+              (setf (pgcon-server-version-major con) (string-to-number major))))
           (dolist (handler pg-parameter-change-functions)
             (funcall handler con (cl-first items) (cl-second items))))))
 
@@ -423,9 +432,9 @@ attempt to establish an encrypted connection to PostgreSQL."
     (with-current-buffer buf
       (set-process-coding-system process 'binary 'binary)
       (set-buffer-multibyte nil)
-      (setq-local pgcon--position 1)
-      (setq-local pgcon--busy t)
-      (setq-local pgcon--notification-handlers (list)))
+      (setq-local pgcon--position 1
+                  pgcon--busy t
+                  pgcon--notification-handlers (list)))
     ;; Save connection info in the pgcon object, for possible later use by pg-cancel
     (setf (pgcon-connect-info con) (list :tcp host port dbname user password))
     ;; TLS connections to PostgreSQL are based on a custom STARTTLS-like connection upgrade
@@ -470,9 +479,9 @@ opaque type). PASSWORD defaults to an empty string."
     (with-current-buffer buf
       (set-process-coding-system process 'binary 'binary)
       (set-buffer-multibyte nil)
-      (setq-local pgcon--position 1)
-      (setq-local pgcon--busy t)
-      (setq-local pgcon--notification-handlers (list)))
+      (setq-local pgcon--position 1
+                  pgcon--busy t
+                  pgcon--notification-handlers (list)))
     (pg-do-startup connection dbname user password)))
 
 
@@ -533,7 +542,6 @@ Return a result structure which can be decoded using `pg-result'."
 
             ;; Bind -- should not receive this here
             (?B
-             (setf (pgcon-binaryp con) t)
              (unless attributes
                (signal 'pg-protocol-error (list "Tuple received before metadata")))
              (let ((_msglen (pg-read-net-int con 4)))
@@ -549,7 +557,6 @@ Return a result structure which can be decoded using `pg-result'."
 
             ;; DataRow
             (?D
-             (setf (pgcon-binaryp con) nil)
              (let ((_msglen (pg-read-net-int con 4)))
                (push (pg-read-tuple con attributes) tuples)))
 
@@ -559,8 +566,8 @@ Return a result structure which can be decoded using `pg-result'."
 
             ;; EmptyQueryResponse -- response to an empty query string
             (?I
-             (let ((_msglen (pg-read-net-int con 4)))
-               nil))
+             (pg-read-net-int con 4)
+             (setf (pgresult-status result) "EMPTY"))
 
             ;; BackendKeyData
             (?K
@@ -601,17 +608,29 @@ Return a result structure which can be decoded using `pg-result'."
             (?f
              (let* ((msglen (pg-read-net-int con 4))
                     (msg (pg-read-chars con (- msglen 4))))
-               (message "Got CopyFail message %s" msg)))
+               (message "Unexpected CopyFail message %s" msg)))
 
-            ;; BindComplete
+            ;; ParseComplete -- not expecting this using the simple query protocol
+            (?1
+             (pg-read-net-int con 4))
+
+            ;; BindComplete -- not expecting this using the simple query protocol
             (?2
-             (let ((_msglen (pg-read-net-int con 4)))
-               nil))
+             (pg-read-net-int con 4))
 
-            ;; CloseComplete
+            ;; CloseComplete -- not expecting this using the simple query protocol
             (?3
-             (let ((_msglen (pg-read-net-int con 4)))
-               nil))
+             (pg-read-net-int con 4))
+
+            ;; PortalSuspended -- this message is not expected using the simple query protocol
+            (?s
+             (message "Unexpected PortalSuspended message in pg-exec (sql was %s)" sql)
+             (pg-read-net-int con 4)
+             (setf (pgresult-incomplete result) t)
+             (setf (pgresult-tuples result) (nreverse tuples))
+             (setf (pgresult-status result) "SUSPENDED")
+             (pg-connection-set-busy con nil)
+             (cl-return-from pg-exec result))
 
             ;; ReadyForQuery
             (?Z
@@ -626,7 +645,7 @@ Return a result structure which can be decoded using `pg-result'."
                (cl-return-from pg-exec result)))
 
             (t
-             (let ((msg (format "Unknown response type from backend: %s" c)))
+             (let ((msg (format "Unknown response type from backend in pg-exec: %s" c)))
                (signal 'pg-protocol-error (list msg))))))))
 
 (defun pg-result (result what &rest arg)
@@ -665,8 +684,12 @@ and the keyword WHAT should be one of
 
 
 (defun pg--lookup-oid (type-name)
-  (or (gethash type-name pg--types)
-      (signal 'pg-error (format "Undefined PostgreSQL type %s" type-name))))
+  (or (gethash type-name pg--type-oid)
+      (signal 'pg-error (list (format "Undefined PostgreSQL type %s" type-name)))))
+
+(defun pg--lookup-type-name (oid)
+  (or (gethash oid pg--type-name)
+      (signal 'pg-error (list (format "Unknown PostgreSQL oid %d" oid)))))
 
 
 (cl-defun pg-prepare (con query argument-types &key (name ""))
@@ -801,13 +824,14 @@ Returns a pgresult structure (see function `pg-result')."
 
        ;; DataRow message
        (?D
-        (setf (pgcon-binaryp con) nil)
         (let ((_msglen (pg-read-net-int con 4)))
           (push (pg-read-tuple con attributes) tuples)))
 
        ;; PortalSuspended -- the row-count limit for the Execute message was reached; more data is
        ;; available with another Execute message.
        (?s
+        (unless (> max-rows 0)
+          (message "Unexpected PortalSuspended message in pg-exec-prepared"))
         (pg-read-net-int con 4)
         (setf (pgresult-incomplete result) t)
         (setf (pgresult-tuples result) (nreverse tuples))
@@ -893,7 +917,7 @@ are available, they can later be retrieved with `pg-fetch'."
     (pg-describe-portal con portal-name)
     (pg-fetch con result :max-rows max-rows)))
 
-(defun pg-close-portal (con portal)
+(cl-defun pg-close-portal (con portal)
   "Close the portal named PORTAL that was opened by pg-exec-prepared."
   (let ((len (+ 4 1 (1+ (length portal)))))
     ;; send a Close message
@@ -904,9 +928,14 @@ are available, they can later be retrieved with `pg-fetch'."
     ;; send a Sync message
     (pg-send-char con ?S)
     (pg-send-uint con 4 4)
+    (pg-flush con)
     (cl-loop
      for c = (pg-read-char con) do
      (cl-case c
+       ;; ParseComplete
+       (?1
+        (pg-read-net-int con 4))
+
        ;; CloseComplete
        (?3
         (pg-read-net-int con 4))
@@ -928,7 +957,10 @@ are available, they can later be retrieved with `pg-fetch'."
           ;; status is 'I' or 'T' or 'E'
           (when (eql ?E status)
             (message "PostgreSQL ReadyForQuery message with error status"))
-          (cl-return nil)))))))
+          (cl-return-from pg-close-portal nil)))
+
+       (t
+        (message "Received unexpected message type %s in pg-close-portal" c))))))
 
 
 (cl-defun pg-copy-from-buffer (con query buf)
@@ -993,7 +1025,7 @@ can be decoded using `pg-result'."
                    (funcall handler con (cl-first items) (cl-second items))))))
 
             (t
-             (let ((msg (format "Unknown response type from backend: %s" c)))
+             (let ((msg (format "Unknown response type from backend in copy-from-buffer: %s" c)))
                (signal 'pg-protocol-error (list msg))))))))
     (let ((data (with-current-buffer buf (buffer-string))))
       (pg-send-char con ?d)
@@ -1052,7 +1084,7 @@ can be decoded using `pg-result'."
         (cl-return-from pg-copy-from-buffer result)))
 
        (t
-        (let ((msg (format "Unknown response type from backend (2): %s" c)))
+        (let ((msg (format "Unknown response type from backend in copy-from-buffer/2: %s" c)))
           (signal 'pg-protocol-error (list msg))))))))
 
 (defun pg-sync (con)
@@ -1149,292 +1181,32 @@ PostgreSQL and Emacs. CON should no longer be used."
 ;; extract the required information from pg_type. This initialization
 ;; imposes a slight overhead on the first request, which you can avoid
 ;; by setting `pg-disable-type-coercion' to non-nil if it bothers you.
-;; ====================================================================
-
-;; This is a var not a const to allow user-defined types (a PostgreSQL
-;; feature not present in ANSI SQL). The user can add a (type-name .
-;; type-parser) pair and call `pg-initialize-parsers', after which the
-;; user-defined type should be returned parsed from `pg-result'.
-(defvar pg-type-parsers
-  `(("bool"         . ,'pg-bool-parser)
-    ("bit"          . ,'pg-bit-parser)
-    ("varbit"       . ,'pg-bit-parser)
-    ("char"         . ,'pg-char-parser)
-    ("char2"        . ,'pg-text-parser)
-    ("char4"        . ,'pg-text-parser)
-    ("bpchar"       . ,'pg-text-parser)
-    ("name"         . ,'pg-text-parser)
-    ("char8"        . ,'pg-text-parser)
-    ("char16"       . ,'pg-text-parser)
-    ("text"         . ,'pg-text-parser)
-    ("varchar"      . ,'pg-text-parser)
-    ("bytea"        . ,'pg-bytea-parser)
-    ("json"         . ,'pg-json-parser)
-    ("jsonb"        . ,'pg-json-parser)
-    ;; "xml" TODO
-    ;; Note however that the hstore type is generally not present in the pg_types table
-    ;; upon startup, so we need to call `pg-hstore-setup' before using HSTORE datatypes.
-    ("hstore"       . ,'pg-hstore-parser)
-    ("count"        . ,'pg-number-parser)
-    ("smallint"     . ,'pg-number-parser)
-    ("integer"      . ,'pg-number-parser)
-    ("bigint"       . ,'pg-number-parser)
-    ("int2"         . ,'pg-number-parser)
-    ("int4"         . ,'pg-number-parser)
-    ("int8"         . ,'pg-number-parser)
-    ("oid"          . ,'pg-number-parser)
-    ("numeric"      . ,'pg-float-parser)
-    ("float4"       . ,'pg-float-parser)
-    ("float8"       . ,'pg-float-parser)
-    ("_int2"        . ,'pg-intarray-parser)
-    ("_int2vector"  . ,'pg-intarray-parser)
-    ("_int4"        . ,'pg-intarray-parser)
-    ("_int8"        . ,'pg-intarray-parser)
-    ("_float4"      . ,'pg-floatarray-parser)
-    ("_float8"      . ,'pg-floatarray-parser)
-    ("_numeric"     . ,'pg-floatarray-parser)
-    ("_bool"        . ,'pg-boolarray-parser)
-    ("_char"        . ,'pg-chararray-parser)
-    ("_bpchar"      . ,'pg-chararray-parser)
-    ("_text"        . ,'pg-textarray-parser)
-    ("int4range"    . ,'pg-numrange-parser)
-    ("int8range"    . ,'pg-numrange-parser)
-    ("numrange"     . ,'pg-numrange-parser)
-    ("money"        . ,'pg-text-parser)
-    ("date"         . ,'pg-date-parser)
-    ("timestamp"    . ,'pg-isodate-parser)
-    ("timestamptz"  . ,'pg-isodate-parser)
-    ("datetime"     . ,'pg-isodate-parser)
-    ("time"         . ,'pg-text-parser)     ; preparsed "15:32:45"
-    ("reltime"      . ,'pg-text-parser)     ; don't know how to parse these
-    ("timespan"     . ,'pg-text-parser)
-    ("tinterval"    . ,'pg-text-parser)))
-
+;;
 ;; see `man pgbuiltin' for details on PostgreSQL builtin types. Also see
 ;; https://www.npgsql.org/dev/types.html for useful information on the wire format for various
 ;; types.
-(defun pg-number-parser (str _encoding)
-  "Parse PostgreSQL value STR as a number."
-  (string-to-number str))
-
-;; We need to handle +Inf, -Inf, NaN specially because the Emacs Lisp reader uses a specific format
-;; for them.
-(defun pg-float-parser (str _encoding)
-  "Parse PostgreSQL value STR as a floating-point value."
-  (cond ((string= str "Infinity")
-         1.0e+INF)
-        ((string= str "-Infinity")
-         -1.0e+INF)
-        ((string= str "NaN")
-         0.0e+NaN)
-        (t
-         (string-to-number str))))
-
-(defun pg-bit-parser (str _encoding)
-  "Parse PostgreSQL value STR as a bit."
-  (let* ((len (length str))
-         (bv (make-bool-vector len t)))
-    (dotimes (i len)
-      (setf (aref bv i) (eql ?1 (aref str i))))
-    bv))
-
-(defun pg-intarray-parser (str _encoding)
-  "Parse PostgreSQL value STR as an array of integers."
-  (let ((len (length str)))
-    (unless (and (eql (aref str 0) ?{)
-                 (eql (aref str (1- len)) ?}))
-      (signal 'pg-protocol-error (list "Unexpected format for int array")))
-    (let ((segments (split-string (cl-subseq str 1 (- len 1)) ",")))
-      (apply #'vector (mapcar #'string-to-number segments)))))
-
-(defun pg-floatarray-parser (str _encoding)
-  "Parse PostgreSQL value STR as an array of floats."
-  (let ((len (length str)))
-    (unless (and (eql (aref str 0) ?{)
-                 (eql (aref str (1- len)) ?}))
-      (signal 'pg-protocol-error (list "Unexpected format for float array")))
-    (let ((segments (split-string (cl-subseq str 1 (- len 1)) ",")))
-      (apply #'vector (mapcar (lambda (x) (pg-float-parser x nil)) segments)))))
-
-(defun pg-boolarray-parser (str _encoding)
-  "Parse PostgreSQL value STR as an array of boolean values."
-  (let ((len (length str)))
-    (unless (and (eql (aref str 0) ?{)
-                 (eql (aref str (1- len)) ?}))
-      (signal 'pg-protocol-error (list "Unexpected format for bool array")))
-    (let ((segments (split-string (cl-subseq str 1 (1- len)) ",")))
-      (apply #'vector (mapcar (lambda (x) (pg-bool-parser x nil)) segments)))))
-
-(defun pg-chararray-parser (str encoding)
-  "Parse PostgreSQL value STR as an array of characters."
-  (let ((len (length str)))
-    (unless (and (eql (aref str 0) ?{)
-                 (eql (aref str (1- len)) ?}))
-      (signal 'pg-protocol-error (list "Unexpected format for char array")))
-    (let ((segments (split-string (cl-subseq str 1 (1- len)) ",")))
-      (apply #'vector (mapcar (lambda (x) (pg-text-parser x encoding)) segments)))))
-
-(defun pg-textarray-parser (str encoding)
-  "Parse PostgreSQL value STR as an array of TEXT values."
-  (let ((len (length str)))
-    (unless (and (eql (aref str 0) ?{)
-                 (eql (aref str (1- len)) ?}))
-      (signal 'pg-protocol-error (list "Unexpected format for text array")))
-    (let ((segments (split-string (cl-subseq str 1 (1- len)) ",")))
-      (apply #'vector (mapcar (lambda (x) (pg-text-parser x encoding)) segments)))))
-
-;; Something like "[10.4,20)". TODO: handle multirange types (from PostgreSQL v14)
-(defun pg-numrange-parser (str _encoding)
-  "Parse PostgreSQL value STR as a numerical range."
-  (if (string= "empty" str)
-      (list :range)
-    (let* ((len (length str))
-           (lower-type (aref str 0))
-           (upper-type (aref str (1- len))))
-      (unless (and (cl-find lower-type "[(")
-                   (cl-find upper-type ")]"))
-        (signal 'pg-protocol-error '("Unexpected format for numerical range")))
-      (let* ((segments (split-string (cl-subseq str 1 (1- len)) ","))
-             (lower-str (nth 0 segments))
-             (upper-str (nth 1 segments))
-             ;; if the number is empty, that's a NULL lower or upper bound
-             (lower (if (zerop (length lower-str)) nil (string-to-number lower-str)))
-             (upper (if (zerop (length upper-str)) nil (string-to-number upper-str))))
-        (unless (eql 2 (length segments))
-          (signal 'pg-protocol-error '("Unexpected number of elements in numerical range")))
-        (list :range lower-type lower upper-type upper)))))
-
-(defun pg-text-parser (str encoding)
-  "Parse PostgreSQL value STR as text."
-  (if encoding
-      (decode-coding-string str encoding)
-    str))
-
-(defun pg-char-parser (str _encoding)
-  "Parse PostgreSQL value STR as a character."
-  (aref str 0))
-
-;; BYTEA binary strings (sequence of octets), that use hex escapes. Note
-;; PostgreSQL setting variable bytea_output which selects between hex escape
-;; format (the default in recent version) and traditional escape format. We
-;; assume that hex format is selected.
-;;
-;; https://www.postgresql.org/docs/current/datatype-binary.html
-(defun pg-bytea-parser (str _encoding)
-  "Parse PostgreSQL value STR as a binary string using hex escapes."
-  (unless (and (eql 92 (aref str 0))   ; \ character
-               (eql ?x (aref str 1)))
-    (signal 'pg-protocol-error
-            (list "Unexpected format for BYTEA binary string")))
-  (decode-hex-string (substring str 2)))
-
-(declare-function json-read-from-string "json.el")
-
-;; We use either the native libjansson support compiled into Emacs, or fall back to the routines
-;; from the JSON library. Note however that these do not parse JSON in exactly the same way (in
-;; particular, NULL, false and the empty array are handled differently).
-(defun pg-json-parser (str _encoding)
-  "Parse PostgreSQL value STR as JSON."
-  (if (and (fboundp 'json-parse-string)
-           (fboundp 'json-available-p)
-           (json-available-p))
-      ;; Use the JSON support natively compiled into Emacs
-      (json-parse-string str)
-    ;; Use the parsing routines from the json library
-    (require 'json)
-    (json-read-from-string str)))
-
-;; We receive something like "\"a\"=>\"1\", \"b\"=>\"2\""
-(defun pg-hstore-parser (str encoding)
-  "Parse PostgreSQL value STR as HSTORE content."
-  (cl-flet ((parse (v)
-              (if (string= "NULL" v)
-                  nil
-                (unless (and (eql ?\" (aref v 0))
-                             (eql ?\" (aref v (1- (length v)))))
-                  (signal 'pg-protocol-error '("Unexpected format for HSTORE content")))
-                (pg-text-parser (substring v 1 (1- (length v))) encoding))))
-    (let ((hstore (make-hash-table :test #'equal)))
-      (dolist (segment (split-string str "," t "\s+"))
-        (let* ((kv (split-string segment "=>" t "\s+")))
-          (puthash (parse (car kv)) (parse (cadr kv)) hstore)))
-      hstore)))
-
-(defun pg-bool-parser (str _encoding)
-  "Parse PostgreSQL value STR as a boolean."
-  (cond ((string= "t" str) t)
-        ((string= "f" str) nil)
-        (t (let ((msg (format "Badly formed boolean from backend: %s" str)))
-             (signal 'pg-protocol-error (list msg))))))
-
-;; format for ISO dates is "1999-10-24"
-(defun pg-date-parser (str _encoding)
-  "Parse PostgreSQL value STR as a date."
-  (let ((year  (string-to-number (substring str 0 4)))
-        (month (string-to-number (substring str 5 7)))
-        (day   (string-to-number (substring str 8 10))))
-    (encode-time 0 0 0 day month year)))
-
-(defconst pg--ISODATE_REGEX
-  (concat "\\([0-9]+\\)-\\([0-9][0-9]\\)-\\([0-9][0-9]\\) " ; Y-M-D
-          "\\([0-9][0-9]\\):\\([0-9][0-9]\\):\\([.0-9]+\\)" ; H:M:S.S
-          "\\([-+][0-9]+\\)?")) ; TZ
-
-;;  format for abstime/timestamp etc with ISO output syntax is
-;;;    "1999-01-02 14:32:53+01"
-;; which we convert to the internal Emacs date/time representation
-;; (there may be a fractional seconds quantity as well, which the regex
-;; handles)
-(defun pg-isodate-parser (str _encoding)
-  "Parse PostgreSQL value STR as an ISO-formatted date."
-  (if (string-match pg--ISODATE_REGEX str)  ; is non-null
-      (let ((year    (string-to-number (match-string 1 str)))
-            (month   (string-to-number (match-string 2 str)))
-            (day     (string-to-number (match-string 3 str)))
-            (hours   (string-to-number (match-string 4 str)))
-            (minutes (string-to-number (match-string 5 str)))
-            (seconds (round (string-to-number (match-string 6 str))))
-            (tz      (string-to-number (or (match-string 7 str) "0"))))
-        (encode-time seconds minutes hours day month year (* 3600 tz)))
-    (let ((msg (format "Badly formed ISO timestamp from backend: %s" str)))
-      (signal 'pg-protocol-error (list msg)))))
-
 
 (defun pg-initialize-parsers (con)
   "Initialize the datatype parsers on PostgreSQL connection CON."
-  (setq pg--parsers (list))
   ;; FIXME this query is retrieving more oids that we we really need
   (let* ((pgtypes (pg-exec con "SELECT typname,oid FROM pg_type"))
          (tuples (pg-result pgtypes :tuples)))
-    (mapcar
-     (lambda (tuple)
-       (let* ((typname (cl-first tuple))
-              ;; we need to parse this explicitly, because the value parsing infrastructure is not
-              ;; yet set up
-              (oid (string-to-number (cl-second tuple)))
-              (type (cl-assoc typname pg-type-parsers :test #'string=)))
-         (when (consp type)
-           (push (cons oid (cdr type)) pg--parsers))
-         (puthash typname oid pg--types)))
-     tuples)))
+    (dolist (tuple tuples)
+      (let* ((typname (cl-first tuple))
+             ;; we need to parse this explicitly, because the value parsing infrastructure is not
+             ;; yet set up
+             (oid (string-to-number (cl-second tuple)))
+             (parser (gethash typname pg--parsers-name)))
+        (puthash oid typname pg--type-name)
+        (puthash typname oid pg--type-oid)
+        (when parser
+          (puthash oid parser pg--parsers-oid))))))
 
 (defun pg-parse (str oid encoding)
-  (let ((parser (cl-assoc oid pg--parsers :test #'eq)))
-    (if (consp parser)
-        (funcall (cdr parser) str encoding)
+  (let ((parser (gethash oid pg--parsers-oid)))
+    (if parser
+        (funcall parser str encoding)
       str)))
-
-;; This function must be called before using the HSTORE extension. It loads the extension if
-;; necessary, and sets up the parsing support for HSTORE datatypes. This is necessary because
-;; the hstore type is not defined on startup in the pg_type table.
-(defun pg-hstore-setup (con)
-  "Prepare for using and parsing HSTORE datatypes on PostgreSQL connection CON."
-  (pg-exec con "CREATE EXTENSION IF NOT EXISTS hstore")
-  (let* ((res (pg-exec con "SELECT oid FROM pg_type WHERE typname='hstore'"))
-         (oid (car (pg-result res :tuple 0))))
-    (push (cons oid #'pg-hstore-parser) pg--parsers))
-  t)
-
 
 ;; Map between PostgreSQL names for encodings and their Emacs name.
 ;; For Emacs, see coding-system-alist.
@@ -1473,6 +1245,312 @@ PostgreSQL and Emacs. CON should no longer be used."
   "Convert PostgreSQL encoding NAME to an Emacs encoding name."
   (let ((m (assoc name pg--encoding-names #'string=)))
     (when m (cdr m))))
+
+
+(defun pg-register-parser (type-name parser)
+  (puthash type-name parser pg--parsers-name))
+(put 'pg-register-parser 'lisp-indent-function 'defun)
+
+(defun pg-bool-parser (str _encoding)
+  (cond ((string= "t" str) t)
+        ((string= "f" str) nil)
+        (t (let ((msg (format "Badly formed boolean from backend: %s" str)))
+             (signal 'pg-protocol-error (list msg))))))
+
+(pg-register-parser "bool" #'pg-bool-parser)
+
+(defun pg-bit-parser (str _encoding)
+  "Parse PostgreSQL value STR as a bit."
+  (let* ((len (length str))
+         (bv (make-bool-vector len t)))
+    (dotimes (i len)
+      (setf (aref bv i) (eql ?1 (aref str i))))
+    bv))
+
+(pg-register-parser "bit" #'pg-bit-parser)
+(pg-register-parser "varbit" #'pg-bit-parser)
+
+(defun pg-char-parser (str _encoding)
+  (aref str 0))
+
+(pg-register-parser "char" #'pg-char-parser)
+(pg-register-parser "bpchar" #'pg-char-parser)
+
+(defun pg-text-parser (str encoding)
+  "Parse PostgreSQL value STR as text."
+  (if encoding
+      (decode-coding-string str encoding)
+    str))
+
+(pg-register-parser "char2" #'pg-text-parser)
+(pg-register-parser "char4" #'pg-text-parser)
+(pg-register-parser "char8" #'pg-text-parser)
+(pg-register-parser "char16" #'pg-text-parser)
+(pg-register-parser "name" #'pg-text-parser)
+(pg-register-parser "text" #'pg-text-parser)
+(pg-register-parser "varchar" #'pg-text-parser)
+
+(pg-register-parser "bytea"
+  ;; BYTEA binary strings (sequence of octets), that use hex escapes. Note
+  ;; PostgreSQL setting variable bytea_output which selects between hex escape
+  ;; format (the default in recent version) and traditional escape format. We
+  ;; assume that hex format is selected.
+  ;;
+  ;; https://www.postgresql.org/docs/current/datatype-binary.html
+  (lambda (str _encoding)
+    "Parse PostgreSQL value STR as a binary string using hex escapes."
+    (unless (and (eql 92 (aref str 0))   ; \ character
+                 (eql ?x (aref str 1)))
+      (signal 'pg-protocol-error
+              (list "Unexpected format for BYTEA binary string")))
+    (decode-hex-string (substring str 2))))
+
+(declare-function json-read-from-string "json.el")
+
+;; We use either the native libjansson support compiled into Emacs, or fall back to the routines
+;; from the JSON library. Note however that these do not parse JSON in exactly the same way (in
+;; particular, NULL, false and the empty array are handled differently).
+(defun pg-json-parser (str _encoding)
+  "Parse PostgreSQL value STR as JSON."
+  (if (and (fboundp 'json-parse-string)
+           (fboundp 'json-available-p)
+           (json-available-p))
+      ;; Use the JSON support natively compiled into Emacs
+      (json-parse-string str)
+    ;; Use the parsing routines from the json library
+    (require 'json)
+    (json-read-from-string str)))
+
+(pg-register-parser "json" #'pg-json-parser)
+(pg-register-parser "jsonb" #'pg-json-parser)
+
+;; This function must be called before using the HSTORE extension. It loads the extension if
+;; necessary, and sets up the parsing support for HSTORE datatypes. This is necessary because
+;; the hstore type is not defined on startup in the pg_type table.
+(defun pg-hstore-setup (con)
+  "Prepare for using and parsing HSTORE datatypes on PostgreSQL connection CON.
+Return nil if the extension could not be loaded."
+  (when (condition-case nil
+            (pg-exec con "CREATE EXTENSION IF NOT EXISTS hstore")
+          (pg-error nil))
+    (let* ((res (pg-exec con "SELECT oid FROM pg_type WHERE typname='hstore'"))
+           (oid (car (pg-result res :tuple 0)))
+           (parser (gethash "hstore" pg--parsers-name)))
+      (when parser
+        (puthash oid parser pg--parsers-oid)))))
+
+;; Note however that the hstore type is generally not present in the pg_types table
+;; upon startup, so we need to call `pg-hstore-setup' before using HSTORE datatypes.
+(pg-register-parser "hstore"
+  ;; We receive something like "\"a\"=>\"1\", \"b\"=>\"2\""
+  (lambda (str encoding)
+    "Parse PostgreSQL value STR as HSTORE content."
+    (cl-flet ((parse (v)
+                (if (string= "NULL" v)
+                    nil
+                  (unless (and (eql ?\" (aref v 0))
+                               (eql ?\" (aref v (1- (length v)))))
+                    (signal 'pg-protocol-error '("Unexpected format for HSTORE content")))
+                  (pg-text-parser (substring v 1 (1- (length v))) encoding))))
+      (let ((hstore (make-hash-table :test #'equal)))
+        (dolist (segment (split-string str "," t "\s+"))
+          (let* ((kv (split-string segment "=>" t "\s+")))
+            (puthash (parse (car kv)) (parse (cadr kv)) hstore)))
+        hstore))))
+
+(defun pg-number-parser (str _encoding)
+  "Parse PostgreSQL value STR as a number."
+  (string-to-number str))
+
+(pg-register-parser "count" #'pg-number-parser)
+(pg-register-parser "smallint" #'pg-number-parser)
+(pg-register-parser "integer" #'pg-number-parser)
+(pg-register-parser "bigint" #'pg-number-parser)
+(pg-register-parser "int2" #'pg-number-parser)
+(pg-register-parser "int4" #'pg-number-parser)
+(pg-register-parser "int8" #'pg-number-parser)
+(pg-register-parser "oid" #'pg-number-parser)
+
+;; We need to handle +Inf, -Inf, NaN specially because the Emacs Lisp reader uses a specific format
+;; for them.
+(defun pg-float-parser (str _encoding)
+  "Parse PostgreSQL value STR as a floating-point value."
+  (cond ((string= str "Infinity")
+         1.0e+INF)
+        ((string= str "-Infinity")
+         -1.0e+INF)
+        ((string= str "NaN")
+         0.0e+NaN)
+        (t
+         (string-to-number str))))
+
+(pg-register-parser "numeric" #'pg-float-parser)
+(pg-register-parser "float4" #'pg-float-parser)
+(pg-register-parser "float8" #'pg-float-parser)
+
+;; FIXME we are not currently handling multidimensional arrays correctly. They are serialized by
+;; PostgreSQL using the same typid as a unidimensional array, with only the presence of additional
+;; levels of {} marking the extra dimensions.
+;; See https://www.postgresql.org/docs/current/arrays.html
+
+(defun pg-intarray-parser (str _encoding)
+  "Parse PostgreSQL value STR as an array of integers."
+  (let ((len (length str)))
+    (unless (and (eql (aref str 0) ?{)
+                 (eql (aref str (1- len)) ?}))
+      (signal 'pg-protocol-error (list "Unexpected format for int array")))
+    (let ((segments (split-string (cl-subseq str 1 (- len 1)) ",")))
+      (apply #'vector (mapcar #'string-to-number segments)))))
+
+(pg-register-parser "_int2" #'pg-intarray-parser)
+(pg-register-parser "_int2vector" #'pg-intarray-parser)
+(pg-register-parser "_int4" #'pg-intarray-parser)
+(pg-register-parser "_int8" #'pg-intarray-parser)
+
+(defun pg-floatarray-parser (str _encoding)
+  "Parse PostgreSQL value STR as an array of floats."
+  (let ((len (length str)))
+    (unless (and (eql (aref str 0) ?{)
+                 (eql (aref str (1- len)) ?}))
+      (signal 'pg-protocol-error (list "Unexpected format for float array")))
+    (let ((segments (split-string (cl-subseq str 1 (- len 1)) ",")))
+      (apply #'vector (mapcar (lambda (x) (pg-float-parser x nil)) segments)))))
+
+(pg-register-parser "_float4" #'pg-floatarray-parser)
+(pg-register-parser "_float8" #'pg-floatarray-parser)
+(pg-register-parser "_numeric" #'pg-floatarray-parser)
+
+(defun pg-boolarray-parser (str _encoding)
+  "Parse PostgreSQL value STR as an array of boolean values."
+  (let ((len (length str)))
+    (unless (and (eql (aref str 0) ?{)
+                 (eql (aref str (1- len)) ?}))
+      (signal 'pg-protocol-error (list "Unexpected format for bool array")))
+    (let ((segments (split-string (cl-subseq str 1 (1- len)) ",")))
+      (apply #'vector (mapcar (lambda (x) (pg-bool-parser x nil)) segments)))))
+
+(pg-register-parser "_bool" #'pg-boolarray-parser)
+
+(defun pg-chararray-parser (str encoding)
+  "Parse PostgreSQL value STR as an array of characters."
+  (let ((len (length str)))
+    (unless (and (eql (aref str 0) ?{)
+                 (eql (aref str (1- len)) ?}))
+      (signal 'pg-protocol-error (list "Unexpected format for char array")))
+    (let ((segments (split-string (cl-subseq str 1 (1- len)) ",")))
+      (apply #'vector (mapcar (lambda (x) (pg-char-parser x encoding)) segments)))))
+
+(pg-register-parser "_char" #'pg-chararray-parser)
+(pg-register-parser "_bpchar" #'pg-chararray-parser)
+
+(defun pg-textarray-parser (str encoding)
+  "Parse PostgreSQL value STR as an array of TEXT values."
+  (let ((len (length str)))
+    (unless (and (eql (aref str 0) ?{)
+                 (eql (aref str (1- len)) ?}))
+      (signal 'pg-protocol-error (list "Unexpected format for text array")))
+    (let ((segments (split-string (cl-subseq str 1 (1- len)) ",")))
+      (apply #'vector (mapcar (lambda (x) (pg-text-parser x encoding)) segments)))))
+
+(pg-register-parser "_text" #'pg-textarray-parser)
+
+;; Something like "[10.4,20)". TODO: handle multirange types (from PostgreSQL v14)
+(defun pg-numrange-parser (str _encoding)
+  "Parse PostgreSQL value STR as a numerical range."
+  (if (string= "empty" str)
+      (list :range)
+    (let* ((len (length str))
+           (lower-type (aref str 0))
+           (upper-type (aref str (1- len))))
+      (unless (and (cl-find lower-type "[(")
+                   (cl-find upper-type ")]"))
+        (signal 'pg-protocol-error '("Unexpected format for numerical range")))
+      (let* ((segments (split-string (cl-subseq str 1 (1- len)) ","))
+             (lower-str (nth 0 segments))
+             (upper-str (nth 1 segments))
+             ;; if the number is empty, that's a NULL lower or upper bound
+             (lower (if (zerop (length lower-str)) nil (string-to-number lower-str)))
+             (upper (if (zerop (length upper-str)) nil (string-to-number upper-str))))
+        (unless (eql 2 (length segments))
+          (signal 'pg-protocol-error '("Unexpected number of elements in numerical range")))
+        (list :range lower-type lower upper-type upper)))))
+
+(pg-register-parser "int4range" #'pg-numrange-parser)
+(pg-register-parser "int8range"  #'pg-numrange-parser)
+(pg-register-parser "numrange" #'pg-numrange-parser)
+
+(pg-register-parser "money" #'pg-text-parser)
+
+;; format for ISO dates is "1999-10-24"
+(defun pg-date-parser (str _encoding)
+  "Parse PostgreSQL value STR as a date."
+  (let ((year  (string-to-number (substring str 0 4)))
+        (month (string-to-number (substring str 5 7)))
+        (day   (string-to-number (substring str 8 10))))
+    (encode-time 0 0 0 day month year)))
+
+(pg-register-parser "date" #'pg-date-parser)
+
+(defconst pg--ISODATE_REGEX
+  (concat "\\([0-9]+\\)-\\([0-9][0-9]\\)-\\([0-9][0-9]\\) " ; Y-M-D
+          "\\([0-9][0-9]\\):\\([0-9][0-9]\\):\\([.0-9]+\\)" ; H:M:S.S
+          "\\([-+][0-9]+\\)?")) ; TZ
+
+;;  format for abstime/timestamp etc with ISO output syntax is
+;;;    "1999-01-02 14:32:53+01"
+;; which we convert to the internal Emacs date/time representation
+;; (there may be a fractional seconds quantity as well, which the regex
+;; handles)
+(defun pg-isodate-parser (str _encoding)
+  "Parse PostgreSQL value STR as an ISO-formatted date."
+  (if (string-match pg--ISODATE_REGEX str)  ; is non-null
+      (let ((year    (string-to-number (match-string 1 str)))
+            (month   (string-to-number (match-string 2 str)))
+            (day     (string-to-number (match-string 3 str)))
+            (hours   (string-to-number (match-string 4 str)))
+            (minutes (string-to-number (match-string 5 str)))
+            (seconds (round (string-to-number (match-string 6 str))))
+            (tz      (string-to-number (or (match-string 7 str) "0"))))
+        (encode-time seconds minutes hours day month year (* 3600 tz)))
+    (let ((msg (format "Badly formed ISO timestamp from backend: %s" str)))
+      (signal 'pg-protocol-error (list msg)))))
+
+(pg-register-parser "timestamp"  #'pg-isodate-parser)
+(pg-register-parser "timestamptz" #'pg-isodate-parser)
+(pg-register-parser "datetime" #'pg-isodate-parser)
+
+(pg-register-parser "time" #'pg-text-parser)     ; preparsed "15:32:45"
+(pg-register-parser "reltime" #'pg-text-parser)     ; don't know how to parse these
+(pg-register-parser "timespan" #'pg-text-parser)
+(pg-register-parser "tinterval" #'pg-text-parser)
+
+
+;;; Support for the pgvector extension (vector similarity search).
+
+;; This function must be called before using the pgvector extension. It loads the extension if
+;; necessary, and sets up the parsing support for vector datatypes.
+(defun pg-vector-setup (con)
+  "Prepare for using and parsing VECTOR datatypes on PostgreSQL connection CON.
+Return nil if the extension could not be set up."
+  (when (condition-case nil
+            (pg-exec con "CREATE EXTENSION IF NOT EXISTS vector")
+          (pg-error nil))
+    (let* ((res (pg-exec con "SELECT oid FROM pg_type WHERE typname='vector'"))
+           (oid (car (pg-result res :tuple 0)))
+           (parser (gethash "vector" pg--parsers-name)))
+      (when parser
+        (puthash oid parser pg--parsers-oid)))))
+
+;; pgvector embeddings are sent by the database as strings, in the form "[1,2,3]". We don't need to
+;; define a serialization function because we send the embeddings a strings.
+(pg-register-parser "vector"
+  (lambda (s _e)
+    (let ((len (length s)))
+      (unless (and (eql (aref s 0) ?\[)
+                   (eql (aref s (1- len)) ?\]))
+        (signal 'pg-protocol-error (list "Unexpected format for VECTOR embedding")))
+      (let ((segments (split-string (cl-subseq s 1 (1- len)) ",")))
+        (apply #'vector (mapcar #'string-to-number segments))))))
 
 
 ;; We don't register a serializer for "text" and "varchar", because they are sent in text mode, and
@@ -1941,29 +2019,41 @@ Authenticate as USER with PASSWORD."
 ;; Based on the queries issued by psql in response to user commands `\d' and `\d tablename'; see
 ;; file /usr/local/src/pgsql/src/bin/psql/psql.c
 ;; =====================================================================
-(defun pg-databases (conn)
-  "List of the databases available in the instance we are connected to via CONN."
-  (let ((res (pg-exec conn "SELECT datname FROM pg_database")))
+(defun pg-databases (con)
+  "List of the databases in the PostgreSQL server to which we are connected via CON."
+  (let ((res (pg-exec con "SELECT datname FROM pg_database")))
     (apply #'append (pg-result res :tuples))))
 
-(defun pg-tables (conn)
-  "List of the tables present in the database we are connected to via CONN.
+(defun pg-tables (con)
+  "List of the tables present in the database we are connected to via CON.
 Only tables to which the current user has access are listed."
-  (let ((res (pg-exec conn "SELECT table_name FROM information_schema.tables
-                WHERE table_schema='public' AND table_type='BASE TABLE'")))
-    (apply #'append (pg-result res :tuples))))
+  (cond ((> (pgcon-server-version-major con) 7)
+         (let ((res (pg-exec con "SELECT table_name FROM information_schema.tables
+                WHERE table_schema NOT IN ('pg_catalog', 'information_schema') AND table_type='BASE TABLE'")))
+           (apply #'append (pg-result res :tuples))))
+        (t
+         (let ((res (pg-exec con "SELECT relname FROM pg_class c WHERE "
+                             "c.relkind = 'r' AND "
+                             "c.relname !~ '^pg_' AND "
+                             "c.relname !~ '^sql_' ORDER BY relname")))
+           (apply #'append (pg-result res :tuples))))))
 
-(defun pg-columns (conn table)
-  "List of the columns present in TABLE over PostgreSQL connection CONN."
-  (let* ((sql (format "SELECT column_name FROM information_schema.columns
+(defun pg-columns (con table)
+  "List of the columns present in TABLE over PostgreSQL connection CON."
+  (cond ((> (pgcon-server-version-major con) 7)
+         (let* ((sql (format "SELECT column_name FROM information_schema.columns
                        WHERE table_schema='public' AND table_name = '%s'" table))
-         (res (pg-exec conn sql)))
-    (apply #'append (pg-result res :tuples))))
+                (res (pg-exec con sql)))
+           (apply #'append (pg-result res :tuples))))
+        (t
+         (let* ((sql (format "SELECT * FROM %s WHERE 0 = 1" table))
+                (res (pg-exec con sql)))
+           (mapcar #'car (pg-result res :attributes))))))
 
-(defun pg-backend-version (conn)
-  "Version and operating environment of backend that we are connected to by CONN.
+(defun pg-backend-version (con)
+  "Version and operating environment of backend that we are connected to by CON.
 PostgreSQL returns the version as a string. CrateDB returns it as an integer."
-  (let ((res (pg-exec conn "SELECT version()")))
+  (let ((res (pg-exec con "SELECT version()")))
     (cl-first (pg-result res :tuple 0))))
 
 
@@ -2026,7 +2116,7 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
     (with-current-buffer (process-buffer process)
       (dotimes (_i (pgcon-timeout con))
         (when (null (char-after pgcon--position))
-          (sleep-for 0.5)
+          (sleep-for 0.1)
           (accept-process-output process 1.0)))
       (when (null (char-after pgcon--position))
         (let ((msg (format "Timeout in pg-read-char reading from %s" con)))
@@ -2067,7 +2157,7 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
         ;; (accept-process-output process 0.1)
         (dotimes (_i (pgcon-timeout con))
           (when (> end (point-max))
-            (sleep-for 0.5)
+            (sleep-for 0.1)
             (accept-process-output process 1.0)))
         (when (> end (point-max))
           (let ((msg (format "Timeout in pg-read-chars reading from %s" con)))
