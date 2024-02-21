@@ -47,6 +47,7 @@
        (pg-exec con "NOTIFY yourheart, 'bizzles'")
        (sleep-for 4)
        (pg-exec con "NOTIFY yourheart, 'bazzles'")
+       (pg-exec con "SELECT pg_sleep(4)")
        (sleep-for 3)
        (pg-exec con "NOTIFY yourheart, 'fooble'")
        (sleep-for 2)

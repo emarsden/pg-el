@@ -60,6 +60,7 @@
   (message "Testing field extraction routines...")
   (pg-test-result con)
   (pg-test-bytea con)
+  (pg-test-sequence con)
   (pg-test-array con)
   (pg-test-json con)
   (pg-test-server-prepare con)
@@ -215,6 +216,9 @@
       (should (string= "Z" (car (row "SELECT chr(90)")))))
     (should (equal (list 12) (row "select length('(╯°□°)╯︵ ┻━┻')")))
     (should (eql nil (row " SELECT 3 where 1=0")))
+    (should (string= "foo\nbar" (car (row "SELECT $$foo
+bar$$"))))
+    (should (string= "foo\tbar" (car (row "SELECT 'foo\tbar'"))))
     (should (string= "abcdef" (car (row "SELECT 'abc' || 'def'"))))
     (should (string= "howdy" (car (row "SELECT 'howdy'::text"))))
     (should (string= "gday" (car (row "SELECT 'gday'::varchar(20)"))))
@@ -229,6 +233,7 @@
       (should (member "count_test" (pg-tables con)))
       (should (member "val" (pg-columns con "count_test")))
       (pg-exec con "COMMENT ON TABLE count_test IS 'Counting squared'")
+      (pg-exec con "COMMENT ON COLUMN count_test.key IS 'preciouss'")
       (let* ((res (pg-exec con "SELECT obj_description('count_test'::regclass::oid, 'pg_class')"))
              (comment (cl-first (pg-result res :tuple 0))))
         (should (cl-search "squared" comment)))
@@ -429,6 +434,16 @@
       (should (equal random-octets (scalar "SELECT blob FROM byteatest WHERE tag=3")))))
      (pg-exec con "DROP TABLE byteatest"))
 
+(defun pg-test-sequence (con)
+  (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0))))
+    (pg-exec con "DROP SEQUENCE IF EXISTS foo_seq")
+    (pg-exec con "CREATE SEQUENCE IF NOT EXISTS foo_seq INCREMENT 20 START WITH 400")
+    (should (equal 400 (scalar "SELECT nextval('foo_seq')")))
+    (should (equal 400 (scalar "SELECT last_value FROM pg_sequences WHERE sequencename='foo_seq'")))
+    (should (equal 420 (scalar "SELECT nextval('foo_seq')")))
+    (should (equal 440 (scalar "SELECT nextval('foo_seq')")))
+    (pg-exec con "DROP SEQUENCE foo_seq")))
+
 (defun pg-test-array (con)
   (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0)))
             (approx= (x y) (< (/ (abs (- x y)) (max (abs x) (abs y))) 1e-5)))
@@ -550,7 +565,8 @@
       (let ((v (scalar "SELECT '[4,5,6]'::vector")))
         (should (eql 4 (aref v 0))))
       (pg-exec con "DROP TABLE IF EXISTS items")
-      (pg-exec con "CREATE TABLE items (id BIGSERIAL PRIMARY KEY, embedding vector(4))")
+      ;; "BIGINT GENERATED ALWAYS AS IDENTITY" is more standard than "BIGSERIAL"
+      (pg-exec con "CREATE TABLE items (id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, embedding vector(4))")
       (dotimes (_ 1000)
         (let ((new (format "[%d,%d,%d,%d]" (random 55) (random 66) (random 77) (random 88))))
           (pg-exec-prepared con "INSERT INTO items(embedding) VALUES($1)"

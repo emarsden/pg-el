@@ -136,7 +136,7 @@ test-cratedb: test-pg.el
 # Version 23.1.13 of CockroachDB doesn't get very far through the tests, failing on the boolean
 # vector syntax b'1001000'.
 test-cockroachdb: test-pg.el
-	podman run --name cockroachdb \
+	podman run --rm --name cockroachdb \
 	   -v /dev/log:/dev/log \
 	   --publish 26257:26257 \
 	   -d docker.io/cockroachdb/cockroach start-single-node --insecure
@@ -149,7 +149,7 @@ test-cockroachdb: test-pg.el
 # The current version of QuestDB (based on PostgreSQL 12.3) doesn't get very far through the
 # tests; it fails on "SELECT 1::integer" because it doesn't recognize integer as a type.
 test-questdb: test-pg.el
-	podman run --name questdb \
+	podman run --rm --name questdb \
 	  --publish 8812:8812 \
 	  -d docker.io/questdb/questdb
 	sleep 5
@@ -161,7 +161,7 @@ test-questdb: test-pg.el
 # Yugabyte 2.19 is based on PostgreSQL 11.2. This works very well, including the HSTORE and pgvector
 # extensions. LISTEN/NOTIFY is not supported.
 test-yugabyte: test-pg.el
-	podman run --name yugabyte \
+	podman run --rm --name yugabyte \
 	  --publish 5433:5433 \
 	  -d docker.io/yugabytedb/yugabyte \
 	  bin/yugabyted start \
@@ -174,7 +174,7 @@ test-yugabyte: test-pg.el
 
 # 20230807 this container fails to run with podman with a permission denied on su
 test-greenplum: test-pg.el
-	podman run --name greenplum \
+	podman run --rm --name greenplum \
 	  --publish 5433:5433 \
 	  -e PGPORT=5433 \
 	  -d docker.io/projectairws/greenplum:latest
@@ -182,6 +182,23 @@ test-greenplum: test-pg.el
 	PGEL_DATABASE=postgres PGEL_USER=gpadmin PGEL_PASSWORD="greenplum" PGEL_PORT=5433 make test
 	podman stop greenplum
 	podman rm greenplum
+
+
+# https://docs.paradedb.com/introduction#get-started
+#
+# As of 2024-01, the paradedb docker image is built on a Debian PostgreSQL 16.1.
+test-paradedb: test-pg.el
+	podman run --rm --name paradedb \
+	  --publish 5441:5441 \
+	  -e POSTGRES_DB=pgeltestdb \
+	  -e POSTGRES_USER=pgeltestuser \
+	  -e POSTGRES_PASSWORD=pgeltest \
+	  -e PGPORT=5441 \
+	  -d docker.io/paradedb/paradedb:latest
+	sleep 5
+	PGEL_PORT=5441 emacs -Q --batch -l ../pg.el -l test-pg.el -f pg-test
+	podman stop paradedb
+	podman rm paradedb
 
 
 # Testing the asynchronous notification support implemented in v0.24 to run a publish-subcribe test.
