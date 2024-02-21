@@ -3,7 +3,7 @@
 ;; Copyright: (C) 1999-2002, 2022-2024  Eric Marsden
 
 ;; Author: Eric Marsden <eric.marsden@risk-engineering.org>
-;; Version: 0.27
+;; Version: 0.28
 ;; Keywords: data comm database postgresql
 ;; URL: https://github.com/emarsden/pg-el
 ;; Package-Requires: ((emacs "28.1"))
@@ -683,6 +683,42 @@ and the keyword WHAT should be one of
        (signal 'pg-error (list msg))))))
 
 
+;; Similar to libpq function PQescapeIdentifier.
+;; See https://www.postgresql.org/docs/current/libpq-exec.html#LIBPQ-EXEC-ESCAPE-STRING
+;;
+;; This function can help to prevent SQL injection attacks ("Little Bobby Tables",
+;; https://xkcd.com/327/) in situations where you can't use a prepared statement (a parameterized
+;; query, using the prepare/bind/execute extended query message flow in PostgreSQL). You might need
+;; this for example when specifying the name of a column in a SELECT statement. See function
+;; `pg-exec-prepared' which should be used when possible instead of relying on this function.
+(defun pg-escape-identifier (str)
+  "Escape an SQL identifier, such as a table, column, or function name.
+Similar to libpq function PQescapeIdentifier.
+You should use prepared statements (`pg-exec-prepared') instead of this function whenever possible."
+  (with-temp-buffer
+    (insert ?\")
+    (cl-loop for c across str
+             do (when (eql c ?\") (insert ?\"))
+             (insert c))
+    (insert ?\")
+    (buffer-string)))
+
+(defun pg-escape-literal (str)
+  "Escape a string for use within an SQL command.
+Similar to libpq function PQescapeLiteral.
+You should use prepared statements (`pg-exec-prepared') instead of this function whenever possible."
+  (with-temp-buffer
+    (insert ?E)
+    (insert ?\')
+    (cl-loop
+     for c across str do
+     (when (eql c ?\') (insert ?\'))
+     (when (eql c ?\\) (insert ?\\))
+     (insert c))
+    (insert ?\')
+    (buffer-string)))
+
+
 (defun pg--lookup-oid (type-name)
   (or (gethash type-name pg--type-oid)
       (signal 'pg-error (list (format "Undefined PostgreSQL type %s" type-name)))))
@@ -1092,6 +1128,8 @@ can be decoded using `pg-result'."
   (pg-send-char con ?S)
   (pg-send-uint con 4 4)
   (pg-flush con)
+  (when (fboundp 'thread-yield)
+    (thread-yield))
   ;; discard any content in our process buffer
   (with-current-buffer (process-buffer (pgcon-process con))
     (setq-local pgcon--position (point-max)))
@@ -1251,6 +1289,9 @@ PostgreSQL and Emacs. CON should no longer be used."
   (puthash type-name parser pg--parsers-name))
 (put 'pg-register-parser 'lisp-indent-function 'defun)
 
+(defun pg-lookup-parser (type-name)
+  (gethash type-name pg--parsers-name))
+
 (defun pg-bool-parser (str _encoding)
   (cond ((string= "t" str) t)
         ((string= "f" str) nil)
@@ -1335,7 +1376,7 @@ Return nil if the extension could not be loaded."
           (pg-error nil))
     (let* ((res (pg-exec con "SELECT oid FROM pg_type WHERE typname='hstore'"))
            (oid (car (pg-result res :tuple 0)))
-           (parser (gethash "hstore" pg--parsers-name)))
+           (parser (pg-lookup-parser "hstore")))
       (when parser
         (puthash oid parser pg--parsers-oid)))))
 
@@ -1537,7 +1578,7 @@ Return nil if the extension could not be set up."
           (pg-error nil))
     (let* ((res (pg-exec con "SELECT oid FROM pg_type WHERE typname='vector'"))
            (oid (car (pg-result res :tuple 0)))
-           (parser (gethash "vector" pg--parsers-name)))
+           (parser (pg-lookup-parser "vector")))
       (when parser
         (puthash oid parser pg--parsers-oid)))))
 
