@@ -1,6 +1,15 @@
 # Changelog
 
 
+## [0.28] - 2024-02-21
+
+- New functions `pg-escape-identifier` and `pg-escape-literal` to escape an SQL identifier (table,
+  column or function name) or a string in an SQL command. These functions are similar respectively
+  to libpq functions `PQescapeIdentifier` and `PQescapeLiteral`. These functions help to prevent SQL
+  injection attacks. However, you should use prepared statements (elisp function `pg-exec-prepared`)
+  instead of these functions whenever possible.
+
+
 ## [0.27] - 2024-01-10
 
 - Improvements to the internal parsing functionality to use a hashtable instead of an alist to look

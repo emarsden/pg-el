@@ -37,7 +37,7 @@ Including support for:
 - Connections over TCP or (on Unix machines) a local Unix socket.
 
 
-The code has been tested with PostgreSQL versions 16.1, 15.4, 13.8, 11.17, and 10.22 on Linux. It is
+The code has been tested with PostgreSQL versions 16.2, 15.4, 13.8, 11.17, and 10.22 on Linux. It is
 also tested via GitHub actions on MacOS and Windows, using the PostgreSQL version which is
 pre-installed in the virtual images (currently 14.8). This library also works against other
 databases that implement the PostgreSQL wire protocol:
@@ -51,6 +51,8 @@ databases that implement the PostgreSQL wire protocol:
 - [CrateDB](https://crate.io/): tested with version 5.0.1.
 
 - [QuestDB](https://questdb.io/): tested against version 6.5.4
+
+- [ParadeDB](https://www.paradedb.com/) 
 
 Tested with Emacs versions 29.1, 28.2, 27.2 and 26.3. Emacs versions older than 26.1 will not work
 against a recent PostgreSQL version (whose default configuration requires SCRAM-SHA-256
