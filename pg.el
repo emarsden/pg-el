@@ -3,7 +3,7 @@
 ;; Copyright: (C) 1999-2002, 2022-2024  Eric Marsden
 
 ;; Author: Eric Marsden <eric.marsden@risk-engineering.org>
-;; Version: 0.28
+;; Version: 0.29
 ;; Keywords: data comm database postgresql
 ;; URL: https://github.com/emarsden/pg-el
 ;; Package-Requires: ((emacs "28.1"))
@@ -1862,6 +1862,31 @@ Authenticate as USER with PASSWORD."
 
 
 
+(defun pg-table-owner (con table)
+  "Return the owner of TABLE in a PostgreSQL database.
+Uses database connection CON."
+  (let ((res (pg-exec-prepared con
+              "SELECT tableowner FROM pg_catalog.pg_tables WHERE tablename=$1"
+              `((,table . "text")))))
+    (cl-first (pg-result res :tuple 0))))
+
+;; As per https://www.postgresql.org/docs/current/sql-comment.html
+(defun pg-table-comment (con table)
+  (let* ((res (pg-exec-prepared con "SELECT obj_description($1::regclass::oid, 'pg_class')"
+                                `((,table . "text"))))
+         (tuples (pg-result res :tuples)))
+    (when tuples
+      (caar tuples))))
+
+(gv-define-setter pg-table-comment (comment con table)
+  `(let* ((sql (format "COMMENT ON TABLE %s IS %s"
+                       (pg-escape-identifier ,table)
+                       (pg-escape-literal ,comment))))
+     ;; We can't use a prepared statement in this situation.
+     (pg-exec ,con sql)
+     ,comment))
+
+
 ;; large object support ================================================
 ;;
 ;; Humphrey: Who is Large and to what does he object?
@@ -2090,6 +2115,14 @@ Only tables to which the current user has access are listed."
          (let* ((sql (format "SELECT * FROM %s WHERE 0 = 1" table))
                 (res (pg-exec con sql)))
            (mapcar #'car (pg-result res :attributes))))))
+
+(defun pg-column-default (con table column)
+  "Return the default value for COLUMN in PostgreSQL TABLE.
+Using connection to PostgreSQL CON."
+  (let* ((sql "SELECT column_default FROM information_schema.columns
+               WHERE (table_schema, table_name, column_name) = ('public', $1, $2)")
+         (res (pg-exec-prepared con sql `((,table . "text") (,column . "text")))))
+    (caar (pg-result res :tuples))))
 
 (defun pg-backend-version (con)
   "Version and operating environment of backend that we are connected to by CON.

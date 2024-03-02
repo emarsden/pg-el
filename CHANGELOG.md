@@ -1,6 +1,15 @@
 # Changelog
 
 
+## [0.29] - 2024-03-02
+
+- New function `pg-table-owner`.
+
+- New functions `pg-table-comment` and `(setf pg-table-comment)`.
+
+- New function `pg-column-default` which returns the default value for a column.
+
+
 ## [0.28] - 2024-02-21
 
 - New functions `pg-escape-identifier` and `pg-escape-literal` to escape an SQL identifier (table,

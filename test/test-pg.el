@@ -237,6 +237,9 @@ bar$$"))))
       (let* ((res (pg-exec con "SELECT obj_description('count_test'::regclass::oid, 'pg_class')"))
              (comment (cl-first (pg-result res :tuple 0))))
         (should (cl-search "squared" comment)))
+      (should (cl-search "squared" (pg-table-comment con "count_test")))
+      (setf (pg-table-comment con "count_test") "Counting cubed")
+      (should (cl-search "cubed" (pg-table-comment con "count_test")))
       (cl-loop for i from 1 to count
                for sql = (format "INSERT INTO count_test VALUES(%s, %s)"
                                  i (* i i))
