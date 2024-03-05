@@ -59,8 +59,9 @@ Tested with Emacs versions 29.1, 28.2, 27.2 and 26.3. Emacs versions older than 
 against a recent PostgreSQL version (whose default configuration requires SCRAM-SHA-256
 authentication), because they don't include the GnuTLS support which we use to calculate HMACs. They
 may however work against a database set up to allow unauthenticated local connections. Emacs
-versions older than 28.1 will not be able to use the extended query protocol (prepared statements),
-because they don't have the necessary bindat functionality.
+versions older than 28.1 (from April 2022) will not be able to use the extended query protocol
+(prepared statements), because they don't have the necessary bindat functionality. It should however
+be easy to update the installed version of bindat.el for these older versions.
 
 You may be interested in an alternative library [emacs-libpq](https://github.com/anse1/emacs-libpq)
 that enables access to PostgreSQL from Emacs by binding to the libpq library.

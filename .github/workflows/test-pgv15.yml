@@ -29,10 +29,12 @@ jobs:
           - /var/run/postgresql:/var/run/postgresql
 
     steps:
+      # The version of Emacs available in the ancient Ubuntu distribution used by GitHub
+      # actions is too old.
       - name: Install Emacs
-        run: |
-          sudo apt-get update
-          sudo apt-get install emacs
+        uses: purcell/setup-emacs@master
+        with:
+           version: 29.2
 
       - name: Check out repository code
         uses: actions/checkout@v4

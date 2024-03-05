@@ -28,9 +28,9 @@ jobs:
 
     steps:
       - name: Install Emacs
-        run: |
-          sudo apt-get update
-          sudo apt-get install emacs
+        uses: purcell/setup-emacs@master
+        with:
+           version: 29.1
 
       - name: Check out repository code
         uses: actions/checkout@v4
