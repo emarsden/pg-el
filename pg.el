@@ -1284,6 +1284,8 @@ can be decoded using `pg-result'."
                (signal 'pg-protocol-error (list msg))))))))
     ;; Backend sends us CopyData, CopyDone or CopyFail, followed by CommandComplete + ReadyForQuery
     (with-current-buffer buf
+      (set-buffer-multibyte t)
+      ;; TODO: set the buffer to CSV mode?
       (cl-loop
        for c = (pg-read-char con) do
        (cl-case c
