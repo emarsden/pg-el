@@ -24,7 +24,8 @@ Including support for:
 - Support for **prepared statements** using PostgreSQL's extended query protocol, to avoid SQL injection
   attacks.
 
-- Support for the SQL **COPY protocol** to copy preformatted data to PostgreSQL from an Emacs buffer.
+- Support for the SQL **COPY protocol** to copy preformatted data from an Emacs buffer to
+  PostgreSQL, or to dump a PostgreSQL table or query result to an Emacs buffer in CSV or TSV format.
 
 - Asynchronous handling of **LISTEN/NOTIFY** notification messages from PostgreSQL, allowing the
   implementation of **publish-subscribe type architectures** (PostgreSQL as an “event broker” or

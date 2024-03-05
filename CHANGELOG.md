@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.30] - Unreleased
+
+- Add for receiving data in Emacs using the COPY protocol, as a complement to the existing
+  functionality which uses the COPY protocol to send data from Emacs to PostgreSQL. This allows you
+  to dump a PostgreSQL table or query result in TSV or CSV format into an Emacs buffer. See function
+  `pg-copy-to-buffer`.
+
+- Add serialization function for the `bpchar` type.
+
 
 ## [0.29] - 2024-03-02
 

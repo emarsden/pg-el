@@ -578,16 +578,16 @@ bar$$"))))
         (message "PGVECTOR> closest = %s" (car (pg-result res :tuple 0))))
       (pg-exec con "DROP TABLE items"))))
 
+;; https://www.postgresql.org/docs/current/sql-copy.html
 (defun pg-test-copy (con)
   (cl-flet ((ascii (n) (+ ?A (mod n 26)))
             (random-word () (apply #'string (cl-loop for count to 10 collect (+ ?a (random 26))))))
     (pg-exec con "DROP TABLE IF EXISTS copy_tsv")
     (pg-exec con "CREATE TABLE copy_tsv (a INTEGER, b CHAR, c TEXT)")
-    (let ((buf (get-buffer-create " *pg-copy-temp-tsv*")))
-      (with-current-buffer buf
-        (dotimes (i 42)
-          (insert (format "%d\t%c\t%s\n" i (ascii i) (random-word)))))
-      (pg-copy-from-buffer con "COPY copy_tsv(a,b,c) FROM STDIN" buf)
+    (with-temp-buffer
+      (dotimes (i 42)
+        (insert (format "%d\t%c\t%s\n" i (ascii i) (random-word))))
+      (pg-copy-from-buffer con "COPY copy_tsv(a,b,c) FROM STDIN" (current-buffer))
       (let ((res (pg-exec con "SELECT count(*) FROM copy_tsv")))
         (should (eql 42 (car (pg-result res :tuple 0)))))
       (let ((res (pg-exec con "SELECT sum(a) FROM copy_tsv")))
@@ -597,18 +597,36 @@ bar$$"))))
     (pg-exec con "DROP TABLE copy_tsv")
     (pg-exec con "DROP TABLE IF EXISTS copy_csv")
     (pg-exec con "CREATE TABLE copy_csv (a INT2, b INTEGER, c CHAR, d TEXT)")
-    (let ((buf (get-buffer-create " *pg-copy-temp-csv*")))
-      (with-current-buffer buf
-        (dotimes (i 1000)
-          (insert (format "%d,%d,%c,%s\n" i (* i i) (ascii i) (random-word)))))
-      (pg-copy-from-buffer con "COPY copy_csv(a,b,c,d) FROM STDIN WITH (FORMAT CSV)" buf)
+    (with-temp-buffer
+      (dotimes (i 1000)
+        (insert (format "%d,%d,%c,%s\n" i (* i i) (ascii i) (random-word))))
+      (pg-copy-from-buffer con "COPY copy_csv(a,b,c,d) FROM STDIN WITH (FORMAT CSV)" (current-buffer))
       (let ((res (pg-exec con "SELECT count(*) FROM copy_csv")))
         (should (eql 1000 (car (pg-result res :tuple 0)))))
       (let ((res (pg-exec con "SELECT max(b) FROM copy_csv")))
         (should (eql 998001 (car (pg-result res :tuple 0)))))
       (let ((res (pg-exec con "SELECT * FROM copy_csv LIMIT 3")))
         (message "COPYCSV> %s" (pg-result res :tuples)))
-      (pg-exec con "DROP TABLE copy_csv"))))
+      (pg-exec con "DROP TABLE copy_csv"))
+    ;; testing COPY TO STDOUT
+    (pg-exec con "DROP TABLE IF EXISTS copy_from")
+    (pg-exec con "CREATE TABLE copy_from (a INT2, b INTEGER, c CHAR, d TEXT)")
+    (dotimes (i 100)
+      (pg-exec-prepared con "INSERT INTO copy_from VALUES($1,$2,$3,$4)"
+                        `((,(random 100) . "int2")
+                          (,(- (random 1000000) 500000) . "int4")
+                          (,(+ ?A (random 26)) . "char")
+                          (,(random-word) . "text"))))
+    (with-temp-buffer
+      (pg-copy-to-buffer con "COPY copy_from TO STDOUT" (current-buffer))
+      ;; We should have 100 lines in the output buffer
+      (should (eql 100 (cl-first (buffer-line-statistics))))
+      (should (eql 300 (cl-count ?\t (buffer-string)))))
+    (with-temp-buffer
+      (pg-copy-to-buffer con "COPY copy_from TO STDOUT WITH (FORMAT CSV, HEADER TRUE)" (current-buffer))
+      (should (eql 101 (cl-first (buffer-line-statistics))))
+      (should (eql 303 (cl-count ?, (buffer-string)))))
+    (pg-exec con "DROP TABLE copy_from")))
 
 
 ;; "SELECT xmlcomment("42") -> "<!--42-->"

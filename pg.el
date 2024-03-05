@@ -1114,14 +1114,137 @@ can be decoded using `pg-result'."
        (?Z
         (let ((_msglen (pg-read-net-int con 4))
               (status (pg-read-char con)))
-        (when (eql ?E status)
-          (message "PostgreSQL ReadyForQuery message with error status"))
-        (pg-connection-set-busy con nil)
-        (cl-return-from pg-copy-from-buffer result)))
+          (when (eql ?E status)
+            (message "PostgreSQL ReadyForQuery message with error status"))
+          (pg-connection-set-busy con nil)
+          (cl-return-from pg-copy-from-buffer result)))
 
        (t
         (let ((msg (format "Unknown response type from backend in copy-from-buffer/2: %s" c)))
           (signal 'pg-protocol-error (list msg))))))))
+
+;; https://www.postgresql.org/docs/current/sql-copy.html
+;; and https://www.postgresql.org/docs/current/protocol-flow.html#PROTOCOL-COPY
+(cl-defun pg-copy-to-buffer (con query buf)
+  "Execute COPY TO STDOUT on QUERY into the buffer BUF.
+Uses PostgreSQL connection CON. Returns a result structure which
+can be decoded using `pg-result'."
+  (unless (string-equal "COPY" (upcase (cl-subseq query 0 4)))
+    (signal 'pg-error (list "Invalid COPY query")))
+  (unless (cl-search "TO STDOUT" query)
+    (signal 'pg-error (list "COPY command must contain 'TO STDOUT'")))
+  (pg-connection-set-busy con t)
+  (let ((result (make-pgresult :connection con)))
+    (pg-send-char con ?Q)
+    (pg-send-uint con (+ 4 (length query) 1) 4)
+    (pg-send-string con query)
+    (pg-flush con)
+    (let ((more-pending t))
+      (while more-pending
+        (let ((c (pg-read-char con)))
+          (cl-case c
+            ;; CopyOutResponse
+            (?H
+             (let ((_msglen (pg-read-net-int con 4))
+                   (status (pg-read-net-int con 1))
+                   (cols (pg-read-net-int con 2))
+                   (format-codes (list)))
+               ;; status=0 indicates the overall COPY format is textual (rows separated by
+               ;; newlines, columns separated by separator characters, etc.). 1 indicates the
+               ;; overall copy format is binary (which we don't implement here).
+               (dotimes (_c cols)
+                 (push (pg-read-net-int con 2) format-codes))
+               (unless (zerop status)
+                 (signal 'pg-error (list "BINARY format for COPY is not implemented")))
+               (setq more-pending nil)))
+
+            ;; NotificationResponse
+            (?A
+             (let* ((_msglen (pg-read-net-int con 4))
+                    ;; PID of the notifying backend
+                    (_pid (pg-read-int con 4))
+                    (channel (pg-read-string con pg--MAX_MESSAGE_LEN))
+                    (payload (pg-read-string con pg--MAX_MESSAGE_LEN))
+                    (buf (process-buffer (pgcon-process con)))
+                    (handlers (with-current-buffer buf pgcon--notification-handlers)))
+               (dolist (handler handlers)
+                 (funcall handler channel payload))))
+
+            ;; ErrorResponse
+            (?E
+             (pg-handle-error-response con))
+
+            ;; ParameterStatus sent in response to a user update over the connection
+            (?S
+             (let* ((msglen (pg-read-net-int con 4))
+                    (msg (pg-read-chars con (- msglen 4)))
+                    (items (split-string msg (string 0))))
+               (when (> (length (cl-first items)) 0)
+                 (dolist (handler pg-parameter-change-functions)
+                   (funcall handler con (cl-first items) (cl-second items))))))
+
+            (t
+             (let ((msg (format "Unknown response type from backend in copy-to-buffer: %s" c)))
+               (signal 'pg-protocol-error (list msg))))))))
+    ;; Backend sends us CopyData, CopyDone or CopyFail, followed by CommandComplete + ReadyForQuery
+    (with-current-buffer buf
+      (cl-loop
+       for c = (pg-read-char con) do
+       (cl-case c
+         ;; CopyData
+         (?d
+          (let* ((msglen (pg-read-net-int con 4))
+                 (payload (pg-read-chars con (- msglen 4))))
+            (insert payload)))
+
+         ;; CopyDone
+         (?c
+          (let ((_msglen (pg-read-net-int con 4)))
+            nil))
+
+         ;; CopyFail
+         (?f
+          (let* ((msglen (pg-read-net-int con 4))
+                 (msg (pg-read-chars con (- msglen 4)))
+                 (emsg (format "COPY failed: %s" msg)))
+            (signal 'pg-copy-failed (list emsg))))
+
+         ;; CommandComplete -- SQL command has completed. After this we expect a ReadyForQuery message.
+         (?C
+          (let* ((msglen (pg-read-net-int con 4))
+                 (msg (pg-read-chars con (- msglen 5)))
+                 (_null (pg-read-char con)))
+            (setf (pgresult-status result) msg)))
+
+         ;; NotificationResponse
+         (?A
+          (let* ((_msglen (pg-read-net-int con 4))
+                 ;; PID of the notifying backend
+                 (_pid (pg-read-int con 4))
+                 (channel (pg-read-string con pg--MAX_MESSAGE_LEN))
+                 (payload (pg-read-string con pg--MAX_MESSAGE_LEN))
+                 (buf (process-buffer (pgcon-process con)))
+                 (handlers (with-current-buffer buf pgcon--notification-handlers)))
+            (dolist (handler handlers)
+              (funcall handler channel payload))))
+
+         ;; ErrorResponse
+         (?E
+          (pg-handle-error-response con))
+
+         ;; ReadyForQuery message
+         (?Z
+          (let ((_msglen (pg-read-net-int con 4))
+                (status (pg-read-char con)))
+            (when (eql ?E status)
+              (message "PostgreSQL ReadyForQuery message with error status"))
+            (pg-connection-set-busy con nil)
+            (cl-return-from pg-copy-to-buffer result)))
+
+         (t
+          (let ((msg (format "Unknown response type from backend in copy-to-buffer/2: %s" c)))
+            (signal 'pg-protocol-error (list msg)))))))))
+
 
 (defun pg-sync (con)
   (pg-connection-set-busy con t)
@@ -1610,6 +1733,11 @@ Return nil if the extension could not be set up."
 ;; for the bit type, use text serialization
 
 (pg-register-serializer "char"
+  (lambda (v)
+    (cl-assert (<= 0 v 255))
+    (string v)))
+
+(pg-register-serializer "bpchar"
   (lambda (v)
     (cl-assert (<= 0 v 255))
     (string v)))

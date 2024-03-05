@@ -1,7 +1,11 @@
 # The COPY protocol
 
-The COPY protocol can be used to send large amounts of data to PostgreSQL. It can be used with CSV
-or TSV data. The pg-el library allows you to COPY from an Emacs buffer into PostgreSQL.
+The COPY protocol can be used to send and receive large amounts of data to/from PostgreSQL. It can
+be used with CSV or TSV data.
+
+The pg-el library allows you to COPY from an Emacs buffer into PostgreSQL using function
+`pg-copy-from-buffer`, as illustrated below.
+
 
 ~~~admonish example title="Inserting tab-separated data"
 ```lisp
@@ -50,4 +54,17 @@ ELISP> (pg-result (pg-exec *pg* "SELECT * FROM copy_csv LIMIT 3") :tuples)
  (2 4 "C" "blylbnhnrdb"))
 ```
 
+~~~
+
+
+You can copy from PostgreSQL into an Emacs buffer using the function `pg-copy-to-buffer`, as
+illustrated below.
+
+~~~admonish example title="Dumping a PostgreSQL table into an Emacs buffer as CSV"
+```lisp
+ELISP> (let ((res (pg-copy-to-buffer *pg* "COPY copy_csv TO STDOUT WITH (FORMAT CSV, HEADER TRUE)"
+                                     (get-buffer-create "*pg-csv*"))))
+          (pg-result res :status))
+"COPY 1000"
+```
 ~~~
