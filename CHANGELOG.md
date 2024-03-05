@@ -7,7 +7,17 @@
   to dump a PostgreSQL table or query result in TSV or CSV format into an Emacs buffer. See function
   `pg-copy-to-buffer`.
 
+- Preliminary implementation of connection to PostgreSQL via a connection string of the form
+  `host=localhost port=5432 dbname=mydb` (see function `pg-connect/string`).
+  
+- Preliminary implementation of connection to PostgreSQL via a connection URI of the form
+  `postgresql://other@localhost/otherdb?connect_timeout=10&application_name=myapp&ssl=true` (see
+  function `pg-connect/uri`).
+
 - Add serialization function for the `bpchar` type.
+
+- If the environment variable `PGAPPNAME` is set, it will override the default value of variable
+  `pg-application-name`.
 
 
 ## [0.29] - 2024-03-02

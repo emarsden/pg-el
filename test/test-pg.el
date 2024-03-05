@@ -41,6 +41,22 @@
     `(with-pg-connection-local ,con (,path ,db ,user ,password)
         ,@body)))
 
+(defun pg-connection-tests ()
+  (dolist (v (list "host=localhost port=5432 dbname=pgeltestdb user=pgeltestuser password=pgeltest"
+                   "port=5432 dbname=pgeltestdb user=pgeltestuser password=pgeltest"
+                   "user=pgeltestuser sslmode=require port=5432 password=pgeltest dbname=pgeltestdb"))
+    (let ((con (pg-connect/string v)))
+      (should (process-live-p (pgcon-process con)))
+      (pg-disconnect con)))
+  (dolist (v (list "postgresql://pgeltestuser:pgeltest@localhost/pgeltestdb?application_name=testingtesting"
+                   "postgres://pgeltestuser:pgeltest@localhost/pgeltestdb?application_name=testingtesting"
+                   "postgres://pgeltestuser:pgeltest@localhost:5432/pgeltestdb"
+                   "postgres://pgeltestuser:pgeltest@localhost:5432/pgeltestdb?sslmode=prefer"
+                   "postgres://%2Fvar%2Frun%2Fpostgresql%2Fs.PGSQL.5432/pgeltestdb"))
+    (let ((con (pg-connect/uri v)))
+      (should (process-live-p (pgcon-process con)))
+      (pg-disconnect con))))
+
 (defun pg-run-tests (con)
   (message "Testing basic type parsing")
   (pg-test-basic con)

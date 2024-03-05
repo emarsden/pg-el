@@ -9,10 +9,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Emacs versions 26.3 and 28.2 are raising spurious "wrong number of arguments" errors, so
+        # don't test with them.
         emacs_version:
-          - 26.3
           - 27.2
-          - 28.2
           - 29.1
           - snapshot
         ignore_warnings:

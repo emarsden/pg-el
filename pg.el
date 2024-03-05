@@ -79,7 +79,7 @@
 (require 'hex-util)
 (require 'bindat)
 
-(defvar pg-application-name "pg.el"
+(defvar pg-application-name (or (getenv "PGAPPNAME") "pg.el")
   "The application_name sent to the PostgreSQL backend.
 This information appears in queries to the `pg_stat_activity' table
 and (depending on server configuration) in the connection log.")
@@ -483,6 +483,102 @@ opaque type). PASSWORD defaults to an empty string."
                   pgcon--busy t
                   pgcon--notification-handlers (list)))
     (pg-do-startup connection dbname user password)))
+
+;; e.g. "host=localhost port=5432 dbname=mydb connect_timeout=10"
+;; see https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-PARAMKEYWORDS
+(defun pg-connect/string (string)
+  "Connect to PostgreSQL with parameters specified by connection string STRING.
+A connection string is of the form `host=localhost port=5432 dbname=mydb'.
+We do not support all the parameter keywords supported by libpq,
+such as those which specify particular aspects of the TCP
+connection to PostgreSQL (e.g. keepalives_interval). The
+supported keywords are host, hostaddr, port, dbname, user,
+password, sslmode (partial support) and application_name."
+  (let* ((components (split-string string "[ \t]" t))
+         (params (cl-loop
+                  for c in components
+                  for param-val = (split-string c "=" t "\s")
+                  unless (eql 2 (length param-val))
+                  do (error "Invalid connection string component %s" c)
+                  collect (cons (cl-first param-val) (cl-second param-val))))
+         (host (or (cdr (assoc "host" params))
+                   (cdr (assoc "hostaddr" params))
+                   "localhost"))
+         (port (or (cdr (assoc "port" params)) 5432))
+         (dbname (or (cdr (assoc "dbname" params))
+                     (error "Database name not specified in connection string")))
+         (user (or (cdr (assoc "user" params))
+                   (error "User not specified in connection string")))
+         (password (cdr (assoc "password" params)))
+         (sslmode (cdr (assoc "sslmode" params)))
+         (tls (cond ((string= sslmode "disable") nil)
+                    ((string= sslmode "allow") t)
+                    ((string= sslmode "prefer") t)
+                    ((string= sslmode "require") t)
+                    ((string= sslmode "verify-ca")
+                     (error "verify-ca sslmode not implemented"))
+                    ((string= sslmode "verify-full")
+                     (error "verify-full sslmode not implemented"))
+                    ((cdr (assoc "requiressl" params)) t)
+                    (t nil)))
+         (pg-application-name (or (cdr (assoc "application_name" params))
+                                  pg-application-name)))
+    (pg-connect dbname user password host port tls)))
+
+
+;; postgresql://[userspec@][hostspec][/dbname][?paramspec]
+;; Examples:
+;;   - postgresql://other@localhost/otherdb?connect_timeout=10&application_name=myapp&ssl=true
+;;   - postgresql://%2Fvar%2Flib%2Fpostgresql/dbname
+;;
+;; https://www.postgresql.org/docs/current/libpq-connect.html
+(defun pg-connect/uri (uri)
+  "Connect to PostgreSQL with parameters specified by URI.
+A connection URI is of the form
+`postgresql://[userspec@][hostspec][/dbname][?paramspec]'. `userspec' is of the form
+username:password. If hostspec is a string representing a local path (e.g.
+`%2Fvar%2Flib%2Fpostgresql' with percent-encoding) then it is interpreted as a Unix pathname used
+for a local Unix domain connection. We do not support all the paramspec keywords supported by libpq,
+such as those which specify particular aspects of the TCP connection to PostgreSQL (e.g.
+keepalives_interval). The supported paramspec keywords are sslmode (partial support) and
+application_name."
+  (let* ((parsed (url-generic-parse-url uri))
+         (scheme (url-type parsed)))
+    (unless (or (string= "postgres" scheme)
+                (string= "postgresql" scheme))
+      (signal 'pg-error '("Invalid protocol in connection URI")))
+    ;; FIXME unfortunately the url-host is being downcased by url-generic-parse-url, which is
+    ;; incorrect when the hostname is specifying a local path.
+    (let* ((host (url-unhex-string (url-host parsed)))
+           (user (url-user parsed))
+           (password (url-password parsed))
+           (port (or (url-portspec parsed) 5432))
+           (path-query (url-path-and-query parsed))
+           (dbname (if (car path-query)
+                       ;; ignore the "/" prefix
+                       (substring (car path-query) 1)
+                     (signal 'pg-error '("Missing database name in connection URI"))))
+           (params (cdr path-query))
+           ;; this is returning a list of lists, not an alist
+           (params (and params (url-parse-query-string params)))
+           (sslmode (cadr (assoc "sslmode" params)))
+           (tls (cond ((string= sslmode "disable") nil)
+                      ((string= sslmode "allow") t)
+                      ((string= sslmode "prefer") t)
+                      ((string= sslmode "require") t)
+                      ((string= sslmode "verify-ca")
+                       (signal 'pg-error '("verify-ca sslmode not implemented")))
+                      ((string= sslmode "verify-full")
+                       (signal 'pg-error '("verify-full sslmode not implemented")))
+                      ((cdr (assoc "requiressl" params)) t)
+                      (t nil)))
+           (pg-application-name (or (cadr (assoc "application_name" params))
+                                    pg-application-name)))
+      ;; If the host is empty or looks like an absolute pathname, connect over Unix-domain socket.
+      (if (or (zerop (length host))
+              (eq ?/ (aref host 0)))
+          (pg-connect-local host dbname user password)
+        (pg-connect dbname user password host port tls)))))
 
 
 ;; Called from pg-parameter-change-functions when we receive a ParameterStatus
@@ -1747,6 +1843,7 @@ Return nil if the extension could not be set up."
   (lambda (v)
     (cl-assert (integerp v))
     (cl-assert (<= (- (expt 2 15)) v (expt 2 15)))
+    ;; This use of bindat-type makes us depend on Emacs 28.1, released in April 2022.
     (bindat-pack (bindat-type sint 16 nil) v)))
 
 (pg-register-serializer "smallint"

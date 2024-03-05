@@ -14,6 +14,9 @@ test-tls: test-pg.el
 test-local: test-pg.el
 	emacs -Q --batch -l ../pg.el -l test-pg.el -f pg-test-local
 
+test-connections: test-pg.el
+	emacs -Q --batch -l ../pg.el -l test-pg.el -f pg-connection-tests
+
 
 # Using Docker images for Emacs from https://hub.docker.com/r/silex/emacs/ and the locally installed
 # PostgreSQL.
