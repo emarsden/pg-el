@@ -1284,7 +1284,6 @@ can be decoded using `pg-result'."
                (signal 'pg-protocol-error (list msg))))))))
     ;; Backend sends us CopyData, CopyDone or CopyFail, followed by CommandComplete + ReadyForQuery
     (with-current-buffer buf
-      (set-buffer-multibyte t)
       ;; TODO: set the buffer to CSV mode?
       (cl-loop
        for c = (pg-read-char con) do
@@ -1292,8 +1291,10 @@ can be decoded using `pg-result'."
          ;; CopyData
          (?d
           (let* ((msglen (pg-read-net-int con 4))
-                 (payload (pg-read-chars con (- msglen 4))))
-            (insert payload)))
+                 (payload (pg-read-chars-old con (- msglen 4)))
+                 (ce (pgcon-client-encoding con))
+                 (decoded (if ce (decode-coding-string payload ce t) payload)))
+            (insert decoded)))
 
          ;; CopyDone
          (?c
