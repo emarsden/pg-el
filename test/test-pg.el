@@ -55,7 +55,7 @@
                    "postgres://pgeltestuser:pgeltest@localhost/pgeltestdb?application_name=testingtesting"
                    "postgres://pgeltestuser:pgeltest@localhost:5432/pgeltestdb"
                    "postgres://pgeltestuser:pgeltest@localhost:5432/pgeltestdb?sslmode=prefer"
-                   "postgres://%2Fvar%2Frun%2Fpostgresql%2Fs.PGSQL.5432/pgeltestdb"))
+                   "postgres://pgeltestuser:pgeltest@%2Fvar%2Frun%2Fpostgresql%2F.s.PGSQL.5432/pgeltestdb"))
     (let ((con (pg-connect/uri v)))
       (should (process-live-p (pgcon-process con)))
       (pg-disconnect con))))

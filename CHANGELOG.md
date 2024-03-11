@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.30] - Unreleased
+## [0.30] - 2024-03-11
 
 - Add for receiving data in Emacs using the COPY protocol, as a complement to the existing
   functionality which uses the COPY protocol to send data from Emacs to PostgreSQL. This allows you
