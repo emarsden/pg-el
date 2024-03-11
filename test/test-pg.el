@@ -21,6 +21,7 @@
         (port (let ((p (getenv "PGEL_PORT"))) (if p (string-to-number p) 5432))))
     `(with-pg-connection ,con (,db ,user ,password ,host ,port)
          ,@body)))
+(put 'with-pgtest-connection 'lisp-indent-function 'defun)
 
 ;; Connect to the database over an encrypted (TLS) connection
 (defmacro with-pgtest-connection-tls (con &rest body)
@@ -31,6 +32,7 @@
         (port (let ((p (getenv "PGEL_PORT"))) (if p (string-to-number p) 5432))))
     `(with-pg-connection ,con (,db ,user ,password ,host ,port t)
         ,@body)))
+(put 'with-pgtest-connection-tls 'lisp-indent-function 'defun)
 
 (defmacro with-pgtest-connection-local (con &rest body)
   (let* ((db (or (getenv "PGEL_DATABASE") "pgeltestdb"))
@@ -40,6 +42,7 @@
          (path (or (getenv "PGEL_PATH") (format "/var/run/postgresql/.s.PGSQL.%s" port))))
     `(with-pg-connection-local ,con (,path ,db ,user ,password)
         ,@body)))
+(put 'with-pg-connection-local 'lisp-indent-function 'defun)
 
 (defun pg-connection-tests ()
   (dolist (v (list "host=localhost port=5432 dbname=pgeltestdb user=pgeltestuser password=pgeltest"
@@ -84,6 +87,7 @@
   (pg-test-vector con)
   (message "Testing COPY...")
   (pg-test-copy con)
+  (pg-test-copy-large con)
   (message "Testing database creation")
   (pg-test-createdb con)
   (message "Testing unicode names for database, tables, columns")
@@ -614,13 +618,16 @@ bar$$"))))
     (pg-exec con "DROP TABLE IF EXISTS copy_csv")
     (pg-exec con "CREATE TABLE copy_csv (a INT2, b INTEGER, c CHAR, d TEXT)")
     (with-temp-buffer
-      (dotimes (i 1000)
+      (dotimes (i 500)
         (insert (format "%d,%d,%c,%s\n" i (* i i) (ascii i) (random-word))))
+      (dotimes (i 500)
+        ;; Check that quoted strings are accepted by PostgreSQL
+        (insert (format "%d,%d,%c,\"%sfôt\"\n" i (* i i) (ascii i) (random-word))))
       (pg-copy-from-buffer con "COPY copy_csv(a,b,c,d) FROM STDIN WITH (FORMAT CSV)" (current-buffer))
       (let ((res (pg-exec con "SELECT count(*) FROM copy_csv")))
         (should (eql 1000 (car (pg-result res :tuple 0)))))
       (let ((res (pg-exec con "SELECT max(b) FROM copy_csv")))
-        (should (eql 998001 (car (pg-result res :tuple 0)))))
+        (should (eql (* 499 499) (car (pg-result res :tuple 0)))))
       (let ((res (pg-exec con "SELECT * FROM copy_csv LIMIT 3")))
         (message "COPYCSV> %s" (pg-result res :tuples)))
       (pg-exec con "DROP TABLE copy_csv"))
@@ -643,6 +650,29 @@ bar$$"))))
       (should (eql 101 (cl-first (buffer-line-statistics))))
       (should (eql 303 (cl-count ?, (buffer-string)))))
     (pg-exec con "DROP TABLE copy_from")))
+
+;; Test COPY FROM STDIN on a non-trivial CSV file, which contains UTF-8 data
+(defun pg-test-copy-large (con)
+  (with-temp-buffer
+    (url-insert-file-contents "https://www.data.gouv.fr/fr/datasets/r/51606633-fb13-4820-b795-9a2a575a72f1")
+    (pg-exec con "DROP TABLE IF EXISTS cities")
+    (pg-exec con "CREATE TABLE cities(
+              insee_code TEXT NOT NULL,
+              city_code TEXT,
+              zip_code NUMERIC,
+              label TEXT NOT NULL,
+              latitude FLOAT,
+              longitude FLOAT,
+              department_name TEXT,
+              department_number VARCHAR(3),
+              region_name TEXT,
+              region_geojson_name TEXT)")
+    (pg-copy-from-buffer con "COPY cities FROM STDIN WITH (FORMAT CSV, DELIMITER ',', HEADER TRUE)" (current-buffer))
+    (pg-exec con "ALTER TABLE cities DROP COLUMN region_name")
+    (pg-exec con "ALTER TABLE cities DROP COLUMN region_geojson_name")
+    (pg-exec con "ALTER TABLE cities DROP COLUMN label")
+    (pg-exec con "DROP TABLE cities")))
+
 
 
 ;; "SELECT xmlcomment("42") -> "<!--42-->"
