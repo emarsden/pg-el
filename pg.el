@@ -177,6 +177,7 @@ normal or otherwise, the database connection is closed."
      (unwind-protect
          (progn ,@body)
        (when ,con (pg-disconnect ,con)))))
+(put 'with-pg-connection 'lisp-indent-function 'defun)
 
 (defmacro with-pg-connection-local (con connect-args &rest body)
   "Execute BODY forms in a scope with local Unix connection CON created by CONNECT-ARGS.
@@ -188,6 +189,7 @@ normal or otherwise, the database connection is closed."
      (unwind-protect
          (progn ,@body)
        (when ,con (pg-disconnect ,con)))))
+(put 'with-pg-connection 'lisp-indent-function 'defun)
 
 
 (defmacro with-pg-transaction (con &rest body)
@@ -206,6 +208,7 @@ transaction."
          (error
           (message "PostgreSQL error %s" ,exc-sym)
           (pg-exec ,con "ROLLBACK"))))))
+(put 'with-pg-transaction 'lisp-indent-function 'defun)
 
 (defun pg-for-each (con select-form callback)
   "Create a cursor for SELECT-FORM and call CALLBACK for each result.
@@ -1104,7 +1107,8 @@ can be decoded using `pg-result'."
   (unless (cl-search "FROM STDIN" query)
     (signal 'pg-error (list "COPY command must contain 'FROM STDIN'")))
   (pg-connection-set-busy con t)
-  (let ((result (make-pgresult :connection con)))
+  (let ((result (make-pgresult :connection con))
+        (ce (pgcon-client-encoding con)))
     (pg-send-char con ?Q)
     (pg-send-uint con (+ 4 (length query) 1) 4)
     (pg-send-string con query)
@@ -1159,11 +1163,23 @@ can be decoded using `pg-result'."
             (t
              (let ((msg (format "Unknown response type from backend in copy-from-buffer: %s" c)))
                (signal 'pg-protocol-error (list msg))))))))
-    (let ((data (with-current-buffer buf (buffer-string))))
-      (pg-send-char con ?d)
-      (pg-send-uint con (+ 4 (length data)) 4)
-      (pg-send-octets con data))
-    ;; send CopyDone message
+    ;; Send the input buffer in chunks 1000 lines long.
+    (save-excursion
+      (with-current-buffer buf
+        (goto-char (point-min))
+        (while (not (eobp))
+          (let* ((chunk-start (point))
+                 (chunk-end (progn (dotimes (_ 1000)
+                                     (end-of-line)
+                                     (unless (eobp) (forward-char)))
+                                   (point)))
+                 (data (buffer-substring-no-properties chunk-start chunk-end))
+                 (encoded (if ce (encode-coding-string data ce t) data)))
+            ;; a CopyData message with the encoded data
+            (pg-send-char con ?d)
+            (pg-send-uint con (+ 4 (length encoded)) 4)
+            (pg-send-octets con encoded)))))
+    ;; send a CopyDone message
     (pg-send-char con ?c)
     (pg-send-uint con 4 4)
     (pg-flush con)
