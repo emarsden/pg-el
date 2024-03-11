@@ -78,6 +78,7 @@
 (require 'cl-lib)
 (require 'hex-util)
 (require 'bindat)
+(require 'url)
 
 (defvar pg-application-name (or (getenv "PGAPPNAME") "pg.el")
   "The application_name sent to the PostgreSQL backend.
@@ -529,6 +530,87 @@ password, sslmode (partial support) and application_name."
     (pg-connect dbname user password host port tls)))
 
 
+(defun pg-parse-url (url)
+  "Adaptation of function url-generic-parse-url that does not downcase
+the host component of the URL."
+  (if (null url)
+      (url-parse-make-urlobj)
+    (with-temp-buffer
+      ;; Don't let those temp-buffer modifications accidentally
+      ;; deactivate the mark of the current-buffer.
+      (let ((deactivate-mark nil))
+        (set-syntax-table url-parse-syntax-table)
+	(erase-buffer)
+	(insert url)
+	(goto-char (point-min))
+        (let ((save-pos (point))
+              scheme user pass host port file fragment full
+              (inhibit-read-only t))
+
+          ;; 3.1. Scheme
+	  ;; This is nil for a URI that is not fully specified.
+          (when (looking-at "\\([a-zA-Z][-a-zA-Z0-9+.]*\\):")
+	    (goto-char (match-end 0))
+            (setq save-pos (point))
+	    (setq scheme (downcase (match-string 1))))
+
+          ;; 3.2. Authority
+          (when (looking-at "//")
+            (setq full t)
+            (forward-char 2)
+            (setq save-pos (point))
+            (skip-chars-forward "^/?#")
+            (setq host (buffer-substring save-pos (point)))
+	    ;; 3.2.1 User Information
+            (if (string-match "^\\([^@]+\\)@" host)
+                (setq user (match-string 1 host)
+                      host (substring host (match-end 0))))
+            (if (and user (string-match "\\`\\([^:]*\\):\\(.*\\)" user))
+                (setq pass (match-string 2 user)
+                      user (match-string 1 user)))
+            (cond
+	     ;; IPv6 literal address.
+	     ((string-match "^\\(\\[[^]]+\\]\\)\\(?::\\([0-9]*\\)\\)?$" host)
+	      (setq port (match-string 2 host)
+		    host (match-string 1 host)))
+	     ;; Registered name or IPv4 address.
+	     ((string-match ":\\([0-9]*\\)$" host)
+	      (setq port (match-string 1 host)
+		    host (substring host 0 (match-beginning 0)))))
+	    (cond ((equal port "")
+		   (setq port nil))
+		  (port
+		   (setq port (string-to-number port)))))
+
+	  ;; Now point is on the / ? or # which terminates the
+	  ;; authority, or at the end of the URI, or (if there is no
+	  ;; authority) at the beginning of the absolute path.
+
+          (setq save-pos (point))
+          (if (string= "data" scheme)
+	      ;; For the "data" URI scheme, all the rest is the FILE.
+	      (setq file (buffer-substring save-pos (point-max)))
+	    ;; For hysterical raisins, our data structure returns the
+	    ;; path and query components together in one slot.
+	    ;; 3.3. Path
+	    (skip-chars-forward "^?#")
+	    ;; 3.4. Query
+	    (when (looking-at "\\?")
+	      (skip-chars-forward "^#"))
+	    (setq file (buffer-substring save-pos (point)))
+	    ;; 3.5 Fragment
+	    (when (looking-at "#")
+	      (let ((opoint (point)))
+		(forward-char 1)
+                (setq fragment (buffer-substring (point) (point-max)))
+		(delete-region opoint (point-max)))))
+
+          (if (and host (string-match "%[0-9][0-9]" host))
+              (setq host (url-unhex-string host)))
+          (url-parse-make-urlobj scheme user pass host port file
+				 fragment nil full))))))
+
+
 ;; postgresql://[userspec@][hostspec][/dbname][?paramspec]
 ;; Examples:
 ;;   - postgresql://other@localhost/otherdb?connect_timeout=10&application_name=myapp&ssl=true
@@ -545,7 +627,7 @@ for a local Unix domain connection. We do not support all the paramspec keywords
 such as those which specify particular aspects of the TCP connection to PostgreSQL (e.g.
 keepalives_interval). The supported paramspec keywords are sslmode (partial support) and
 application_name."
-  (let* ((parsed (url-generic-parse-url uri))
+  (let* ((parsed (pg-parse-url uri))
          (scheme (url-type parsed)))
     (unless (or (string= "postgres" scheme)
                 (string= "postgresql" scheme))
