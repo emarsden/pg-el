@@ -1711,7 +1711,8 @@ Return nil if the extension could not be loaded."
            (oid (car (pg-result res :tuple 0)))
            (parser (pg-lookup-parser "hstore")))
       (when parser
-        (puthash oid parser pg--parsers-oid)))
+        (puthash oid parser pg--parsers-oid))
+      (puthash "hstore" oid pg--type-oid))
     (pg-register-textual-serializer "hstore"
       (lambda (ht)
         (cl-assert (hash-table-p ht))
