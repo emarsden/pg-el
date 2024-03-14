@@ -1699,6 +1699,8 @@ PostgreSQL and Emacs. CON should no longer be used."
 ;; This function must be called before using the HSTORE extension. It loads the extension if
 ;; necessary, and sets up the parsing support for HSTORE datatypes. This is necessary because
 ;; the hstore type is not defined on startup in the pg_type table.
+;;
+;; https://www.postgresql.org/docs/current/hstore.html
 (defun pg-hstore-setup (con)
   "Prepare for using and parsing HSTORE datatypes on PostgreSQL connection CON.
 Return nil if the extension could not be loaded."
@@ -1709,12 +1711,16 @@ Return nil if the extension could not be loaded."
            (oid (car (pg-result res :tuple 0)))
            (parser (pg-lookup-parser "hstore")))
       (when parser
-        (puthash oid parser pg--parsers-oid)))))
+        (puthash oid parser pg--parsers-oid)))
+    (pg-register-textual-serializer "hstore"
+      (lambda (ht)
+        (cl-assert (hash-table-p ht))
+        (let ((kv (list)))
+          (maphash (lambda (k v) (push (format "\"%s\"=>\"%s\"" k v) kv)) ht)
+          (string-join kv ","))))))
 
 ;; Note however that the hstore type is generally not present in the pg_types table
 ;; upon startup, so we need to call `pg-hstore-setup' before using HSTORE datatypes.
-;;
-;; https://www.postgresql.org/docs/current/hstore.html
 (pg-register-parser "hstore"
   ;; We receive something like "\"a\"=>\"1\", \"b\"=>\"2\""
   (lambda (str encoding)
@@ -2017,13 +2023,6 @@ Return nil if the extension could not be set up."
 ;; for float4 and float8, we don't know how to access the binary representation from Emacs Lisp. 
 ;; here a possible conversion routine
 ;; https://lists.gnu.org/archive/html/help-gnu-emacs/2002-10/msg00724.html
-
-(pg-register-textual-serializer "hstore"
-  (lambda (ht)
-    (cl-assert (hash-table-p ht))
-    (let ((kv (list)))
-      (maphash (lambda (k v) (push (format "\"%s\"=>\"%s\"" k v) kv)) ht)
-      (string-join kv ","))))
 
 (if (fboundp 'json-serialize)
     (pg-register-textual-serializer "json" #'json-serialize)
