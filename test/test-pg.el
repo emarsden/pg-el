@@ -578,7 +578,31 @@ bar$$"))))
         (should (string= "1" (gethash "" hs))))
       (let ((arr (scalar "SELECT akeys('biz=>NULL,baz=>42,boz=>66'::hstore)")))
         (should (cl-find "biz" arr :test #'string=))
-        (should (cl-find "boz" arr :test #'string=))))))
+        (should (cl-find "boz" arr :test #'string=)))
+      ;; see https://github.com/postgres/postgres/blob/9c40db3b02a41e978ebeb2c61930498a36812bbf/contrib/hstore/sql/hstore_utf8.sql
+      (let ((hs (scalar "SELECT 'ą=>é'::hstore")))
+        (should (string= (gethash "ą" hs) "é")))
+      ;; now test serialization support
+      (pg-exec con "DROP TABLE IF EXISTS hstored")
+      (pg-exec con "CREATE TABLE hstored(id SERIAL PRIMARY KEY, meta HSTORE)")
+      (dotimes (i 10)
+        (let ((hs (make-hash-table :test #'equal)))
+          (puthash (format "foobles-%d" i) (format "bazzles-%d" i) hs)
+          (puthash (format "a%d" (1+ i)) (format "%d" (- i)) hs)
+          (pg-exec-prepared con "INSERT INTO hstored(meta) VALUES ($1)"
+                            `((,hs . "hstore")))))
+      (let ((rows (scalar "SELECT count(*) FROM hstored")))
+        (should (eql 10 rows)))
+      (let* ((res (pg-exec con "SELECT meta FROM hstored"))
+             (rows (pg-result res :tuples)))
+        (dolist (ht (mapcar #'car rows))
+          (maphash (lambda (k v)
+                     (should (or (cl-search "foobles" k)
+                                 (eql ?a (aref k 0))))
+                     (should (or (cl-search "bazzles" v)
+                                 (ignore-errors (string-to-number v)))))
+                   ht))))))
+
 
 ;; Testing support for the pgvector extension.
 (defun pg-test-vector (con)

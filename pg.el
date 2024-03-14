@@ -117,6 +117,10 @@ struct.")
 ;; representation.
 (defvar pg--serializers (make-hash-table :test #'equal))
 
+;; Contains an entry for types that serialize to a text format, rather than a binary format (e.g.
+;; HSTORE).
+(defvar pg--textual-serializers (make-hash-table :test #'equal))
+
 ;; Maps from type-name to a parsing function (from string to Emacs native type). This is built
 ;; dynamically at initialization of the connection with the database (once generated, the
 ;; information is shared between connections).
@@ -942,13 +946,19 @@ Uses PostgreSQL connection CON."
            for typ in argument-types
            for v in argument-values
            for serializer = (gethash typ pg--serializers)
-           collect (if serializer
-                       ;; this argument will be sent in binary format
-                       (cons (funcall serializer v) 1)
-                     ;; this argument will be sent in text format
-                     (let* ((raw (if (stringp v) v (format "%s" v)))
-                            (encoded (if ce (encode-coding-string raw ce t) raw)))
-                       (cons encoded 0)))))
+           collect (cond ((gethash typ pg--textual-serializers)
+                          ;; this argument will be sent as text
+                          (let* ((serialized (funcall serializer v))
+                                 (encoded (if ce (encode-coding-string serialized ce t) serialized)))
+                            (cons encoded 0)))
+                         (serializer
+                          ;; this argument will be sent in binary format
+                          (cons (funcall serializer v) 1))
+                         (t
+                          ;; this argument will be sent in text format, raw
+                          (let* ((raw (if (stringp v) v (format "%s" v)))
+                                 (encoded (if ce (encode-coding-string raw ce t) raw)))
+                            (cons encoded 0))))))
          (len (+ 4
                  (1+ (length portal))
                  (1+ (length statement-name))
@@ -1570,6 +1580,7 @@ PostgreSQL and Emacs. CON should no longer be used."
 ;; For Emacs, see coding-system-alist.
 (defconst pg--encoding-names
   '(("UTF8"    . utf-8)
+    ("UNICODE" . utf-8)
     ("UTF16"   . utf-16)
     ("LATIN1"  . latin-1)
     ("LATIN2"  . latin-2)
@@ -1601,7 +1612,7 @@ PostgreSQL and Emacs. CON should no longer be used."
 
 (defun pg-normalize-encoding-name (name)
   "Convert PostgreSQL encoding NAME to an Emacs encoding name."
-  (let ((m (assoc name pg--encoding-names #'string=)))
+  (let ((m (assoc name pg--encoding-names #'string-equal-ignore-case)))
     (when m (cdr m))))
 
 
@@ -1702,6 +1713,8 @@ Return nil if the extension could not be loaded."
 
 ;; Note however that the hstore type is generally not present in the pg_types table
 ;; upon startup, so we need to call `pg-hstore-setup' before using HSTORE datatypes.
+;;
+;; https://www.postgresql.org/docs/current/hstore.html
 (pg-register-parser "hstore"
   ;; We receive something like "\"a\"=>\"1\", \"b\"=>\"2\""
   (lambda (str encoding)
@@ -1914,14 +1927,21 @@ Return nil if the extension could not be set up."
         (apply #'vector (mapcar #'string-to-number segments))))))
 
 
-;; We don't register a serializer for "text" and "varchar", because they are sent in text mode, and
-;; therefore correctly encoded according to the connection encoding.
 (defun pg-register-serializer (type-name serializer)
   (puthash type-name serializer pg--serializers))
-(put 'pg-register-serializer 'lisp-indent-function 'defun)
 
+(defun pg-register-textual-serializer (type-name serializer)
+  (puthash type-name serializer pg--serializers)
+  (puthash type-name t pg--textual-serializers))
+(put 'pg-register-serializer 'lisp-indent-function 'defun)
+(put 'pg-register-textual-serializer 'lisp-indent-function 'defun)
+
+;; We don't register a serializer for "text" and "varchar", because they are sent in text mode, and
+;; therefore correctly encoded according to the connection encoding.
+;;
 ;; (pg-register-serializer "text" #'identity)
 ;; (pg-register-serializer "varchar" #'identity)
+
 (pg-register-serializer "bytea" #'identity)
 (pg-register-serializer "jsonb" #'identity)
 
@@ -1998,10 +2018,17 @@ Return nil if the extension could not be set up."
 ;; here a possible conversion routine
 ;; https://lists.gnu.org/archive/html/help-gnu-emacs/2002-10/msg00724.html
 
+(pg-register-textual-serializer "hstore"
+  (lambda (ht)
+    (cl-assert (hash-table-p ht))
+    (let ((kv (list)))
+      (maphash (lambda (k v) (push (format "\"%s\"=>\"%s\"" k v) kv)) ht)
+      (string-join kv ","))))
+
 (if (fboundp 'json-serialize)
-    (pg-register-serializer "json" #'json-serialize)
+    (pg-register-textual-serializer "json" #'json-serialize)
   (require 'json)
-  (pg-register-serializer "json" #'json-encode))
+  (pg-register-textual-serializer "json" #'json-encode))
 
 
 ;; pwdhash = md5(password + username).hexdigest()

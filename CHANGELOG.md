@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.31] - Unreleased
+
+- Add serialization support for the `hstore` datatype from Emacs Lisp hashtables.
+
+
 ## [0.30] - 2024-03-11
 
 - Add for receiving data in Emacs using the COPY protocol, as a complement to the existing
