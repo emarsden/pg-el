@@ -164,6 +164,20 @@ struct.")
   (with-current-buffer (process-buffer (pgcon-process con))
     pgcon--busy))
 
+;; The qualified name is represented in SQL queries as schema.name. The schema is often either the
+;; username or "public".
+(cl-defstruct pg-qualified-name
+  "The identifier for a table or view which optionally includes a schema."
+  (schema nil)
+  name)
+
+;; Print as "schema.name", for example "public.mytable".
+(defun pg-print-qualified-name (qn)
+  (let ((schema (pg-qualified-name-schema qn))
+        (name (pg-qualified-name-name qn)))
+    (if schema
+        (format "%s.%s" schema name)
+      name)))
 
 (cl-defstruct pgresult
   connection status attributes tuples portal (incomplete nil))
@@ -407,7 +421,7 @@ Uses database DBNAME, user USER and password PASSWORD."
         ;; DateStyle, in_hot_standby, integer_datetimes
         (when (> (length (cl-first items)) 0)
           (when (string= "server_version" (cl-first items))
-            (let ((major (cl-first (split-string (cl-second items) "."))))
+            (let ((major (cl-first (split-string (cl-second items) "\\."))))
               (setf (pgcon-server-version-major con) (string-to-number major))))
           (dolist (handler pg-parameter-change-functions)
             (funcall handler con (cl-first items) (cl-second items))))))
@@ -868,6 +882,15 @@ and the keyword WHAT should be one of
        (signal 'pg-error (list msg))))))
 
 
+(defun pg--escape-identifier-simple (str)
+  (with-temp-buffer
+    (insert ?\")
+    (cl-loop for c across str
+             do (when (eql c ?\") (insert ?\"))
+             (insert c))
+    (insert ?\")
+    (buffer-string)))
+
 ;; Similar to libpq function PQescapeIdentifier.
 ;; See https://www.postgresql.org/docs/current/libpq-exec.html#LIBPQ-EXEC-ESCAPE-STRING
 ;;
@@ -876,17 +899,21 @@ and the keyword WHAT should be one of
 ;; query, using the prepare/bind/execute extended query message flow in PostgreSQL). You might need
 ;; this for example when specifying the name of a column in a SELECT statement. See function
 ;; `pg-exec-prepared' which should be used when possible instead of relying on this function.
-(defun pg-escape-identifier (str)
+(defun pg-escape-identifier (identifier)
   "Escape an SQL identifier, such as a table, column, or function name.
+IDENTIFIER can be a string or a pg-qualified-name (including a schema specifier).
 Similar to libpq function PQescapeIdentifier.
 You should use prepared statements (`pg-exec-prepared') instead of this function whenever possible."
-  (with-temp-buffer
-    (insert ?\")
-    (cl-loop for c across str
-             do (when (eql c ?\") (insert ?\"))
-             (insert c))
-    (insert ?\")
-    (buffer-string)))
+  (cond ((pg-qualified-name-p identifier)
+         (let ((schema (pg-qualified-name-schema identifier))
+               (name (pg-qualified-name-name identifier)))
+           (if schema
+               (format "%s.%s"
+                       (pg--escape-identifier-simple schema)
+                       (pg--escape-identifier-simple name))
+             (pg--escape-identifier-simple name))))
+        (t
+         (pg--escape-identifier-simple identifier))))
 
 (defun pg-escape-literal (str)
   "Escape a string for use within an SQL command.
@@ -1556,7 +1583,7 @@ PostgreSQL and Emacs. CON should no longer be used."
 
 (defun pg-initialize-parsers (con)
   "Initialize the datatype parsers on PostgreSQL connection CON."
-  ;; FIXME this query is retrieving more oids that we we really need
+  ;; FIXME this query is retrieving more oids than we really need
   (let* ((pgtypes (pg-exec con "SELECT typname,oid FROM pg_type"))
          (tuples (pg-result pgtypes :tuples)))
     (dolist (tuple tuples)
@@ -2214,19 +2241,34 @@ Authenticate as USER with PASSWORD."
         (signal 'pg-protocol-error (list msg))))))
 
 
-
 (defun pg-table-owner (con table)
   "Return the owner of TABLE in a PostgreSQL database.
-Uses database connection CON."
-  (let ((res (pg-exec-prepared con
-              "SELECT tableowner FROM pg_catalog.pg_tables WHERE tablename=$1"
-              `((,table . "text")))))
+TABLE can be a string or a qualified name including a schema. Uses database connection CON."
+  (let* ((schema (when (pg-qualified-name-p table)
+                   (pg-qualified-name-schema table)))
+         (table-name (if (pg-qualified-name-p table)
+                         (pg-qualified-name-name table)
+                       table))
+         (schema-sql (if schema "AND schemaname=$2" ""))
+         (sql (format "SELECT tableowner FROM pg_catalog.pg_tables WHERE tablename=$1 %s" schema-sql))
+         (args (if schema
+                   `((,table-name . "text") (,schema . "text"))
+                 `((,table-name . "text"))))
+         (res (pg-exec-prepared con sql args)))
     (cl-first (pg-result res :tuple 0))))
 
 ;; As per https://www.postgresql.org/docs/current/sql-comment.html
 (defun pg-table-comment (con table)
-  (let* ((res (pg-exec-prepared con "SELECT obj_description($1::regclass::oid, 'pg_class')"
-                                `((,table . "text"))))
+  "Return the comment on TABLE in a PostgreSQL database.
+TABLE can be a string or a qualified name including a schema. Uses database connection CON."
+  (let* ((schema (when (pg-qualified-name-p table)
+                   (pg-qualified-name-schema table)))
+         (table-name (if (pg-qualified-name-p table)
+                         (pg-qualified-name-name table)
+                       table))
+         (qn (if schema (format "%s.%s" schema table-name) table-name))
+         (res (pg-exec-prepared con "SELECT obj_description($1::regclass::oid, 'pg_class')"
+                                `((,qn . "text"))))
          (tuples (pg-result res :tuples)))
     (when tuples
       (caar tuples))))
@@ -2447,9 +2489,15 @@ Uses database connection CON."
   "List of the tables present in the database we are connected to via CON.
 Only tables to which the current user has access are listed."
   (cond ((> (pgcon-server-version-major con) 7)
-         (let ((res (pg-exec con "SELECT table_name FROM information_schema.tables
+         (let ((res (pg-exec con "SELECT table_schema,table_name FROM information_schema.tables
                 WHERE table_schema NOT IN ('pg_catalog', 'information_schema') AND table_type='BASE TABLE'")))
-           (apply #'append (pg-result res :tuples))))
+           (cl-loop
+            for tuple in (pg-result res :tuples)
+            collect (let ((schema (cl-first tuple))
+                          (name (cl-second tuple)))
+                      (if (string= "public" schema)
+                          name
+                        (make-pg-qualified-name :schema schema :name name))))))
         (t
          (let ((res (pg-exec con "SELECT relname FROM pg_class c WHERE "
                              "c.relkind = 'r' AND "
@@ -2460,9 +2508,15 @@ Only tables to which the current user has access are listed."
 (defun pg-columns (con table)
   "List of the columns present in TABLE over PostgreSQL connection CON."
   (cond ((> (pgcon-server-version-major con) 7)
-         (let* ((sql (format "SELECT column_name FROM information_schema.columns
-                       WHERE table_schema='public' AND table_name = '%s'" table))
-                (res (pg-exec con sql)))
+         (let* ((schema (if (pg-qualified-name-p table)
+                           (pg-qualified-name-schema table)
+                         "public"))
+                (tname (if (pg-qualified-name-p table)
+                           (pg-qualified-name-name table)
+                         table))
+                (sql "SELECT column_name FROM information_schema.columns
+                      WHERE table_schema=$1 AND table_name = $2")
+                (res (pg-exec-prepared con sql `((,schema . "text") (,tname . "text")))))
            (apply #'append (pg-result res :tuples))))
         (t
          (let* ((sql (format "SELECT * FROM %s WHERE 0 = 1" table))
@@ -2472,9 +2526,16 @@ Only tables to which the current user has access are listed."
 (defun pg-column-default (con table column)
   "Return the default value for COLUMN in PostgreSQL TABLE.
 Using connection to PostgreSQL CON."
-  (let* ((sql "SELECT column_default FROM information_schema.columns
-               WHERE (table_schema, table_name, column_name) = ('public', $1, $2)")
-         (res (pg-exec-prepared con sql `((,table . "text") (,column . "text")))))
+  (let* ((schema (if (pg-qualified-name-p table)
+                     (pg-qualified-name-schema table)
+                   "public"))
+         (tname (if (pg-qualified-name-p table)
+                    (pg-qualified-name-name table)
+                  table))
+         (sql "SELECT column_default FROM information_schema.columns
+               WHERE (table_schema, table_name, column_name) = ($1, $2, $3)")
+         (params `((,schema . "text") (,tname . "text") (,column . "text")))
+         (res (pg-exec-prepared con sql params)))
     (caar (pg-result res :tuples))))
 
 (defun pg-backend-version (con)

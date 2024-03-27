@@ -4,6 +4,15 @@
 
 - Add serialization support for the `hstore` datatype from Emacs Lisp hashtables.
 
+- Add support for schema-qualified names for tables and roles. These are names of the form
+  `public.tablename` or `username.tablename` (see the PostgreSQL documentation for `CREATE SCHEMA`).
+  “Ordinary” table names in the `public` schema can be specified as a simple string. Table names
+  with a different schema are represented by `pg-qualified-name` objects (these are cl-defstruct
+  objects). Functions that take a table name as an argument (such as `pg-columns` accept either a
+  normal string or a `pg-qualified-name` object. Functions that return table names, in particular
+  `pg-tables`, will return strings for tables in the normal `public` schema, and `pg-qualified-name`
+  objects otherwise.
+
 
 ## [0.30] - 2024-03-11
 
