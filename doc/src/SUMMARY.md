@@ -6,7 +6,7 @@
 - [Using pg-el](./usage.md)
 - [Collation support](./collation.md)
 - [The COPY protocol](./copy-protocol.md)
-- [Using schema-qualified names](./schema.md)
+- [Using schema-qualified names](./schemas.md)
 - [Special pg-el features](./special-features.md)
 - [API](./API.md)
 - [Feedback](./feedback.md)
