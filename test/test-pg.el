@@ -508,21 +508,93 @@ bar$$"))))
     (should (zerop (cl-search "CREATE" (pg-result res :status)))))
   (let ((res (pg-exec con "CREATE TABLE IF NOT EXISTS custom.newtable(id INT4)")))
     (should (zerop (cl-search "CREATE" (pg-result res :status)))))
-  (let ((res (pg-exec con "CREATE SCHEMA IF NOT EXISTS fancy")))
-    (should (zerop (cl-search "CREATE" (pg-result res :status)))))
-  (let ((res (pg-exec con "CREATE TABLE IF NOT EXISTS fancy.really(id SERIAL)")))
-    (should (zerop (cl-search "CREATE" (pg-result res :status)))))
   (let ((tables (pg-tables con)))
     (should (cl-find "newtable" tables
                      :test #'string=
                      :key (lambda (tbl) (if (pg-qualified-name-p tbl)
-                                       (pg-qualified-name-name tbl)
-                                     tbl)))))
-  (pg-exec con "DROP TABLE custom.newtable")
-  (pg-exec con "DROP SCHEMA custom")
-  (pg-exec con "DROP TABLE fancy.really")
-  (pg-exec con "DROP SCHEMA fancy"))
-  
+                                            (pg-qualified-name-name tbl)
+                                          tbl)))))
+  ;; now try some strange names for schemas and tables to test quoting
+  (let* ((sql (format "CREATE SCHEMA IF NOT EXISTS %s" (pg-escape-identifier "fan.cy")))
+         (res (pg-exec con sql)))
+    (should (zerop (cl-search "CREATE" (pg-result res :status)))))
+  (let* ((sql (format "CREATE TABLE IF NOT EXISTS %s.%s(id INT4)"
+                      (pg-escape-identifier "fan.cy")
+                      (pg-escape-identifier "re'ally")))
+         (res (pg-exec con sql)))
+    (should (zerop (cl-search "CREATE" (pg-result res :status)))))
+  (let ((tables (pg-tables con)))
+    (should (cl-find "re'ally" tables
+                     :test #'string=
+                     :key (lambda (tbl) (if (pg-qualified-name-p tbl)
+                                            (pg-qualified-name-name tbl)
+                                          tbl)))))
+  (let* ((sql (format "CREATE TABLE IF NOT EXISTS %s.%s(id INT4)"
+                      (pg-escape-identifier "fan.cy")
+                      (pg-escape-identifier "en-ough")))
+         (res (pg-exec con sql)))
+    (should (zerop (cl-search "CREATE" (pg-result res :status)))))
+  (let ((tables (pg-tables con)))
+    (should (cl-find "en-ough" tables
+                     :test #'string=
+                     :key (lambda (tbl) (if (pg-qualified-name-p tbl)
+                                            (pg-qualified-name-name tbl)
+                                          tbl)))))
+  (let* ((sql (format "CREATE TABLE IF NOT EXISTS %s.%s(id INT4)"
+                      (pg-escape-identifier "fan.cy")
+                      (pg-escape-identifier "tri\"cks")))
+         (res (pg-exec con sql)))
+    (should (zerop (cl-search "CREATE" (pg-result res :status)))))
+  (let ((tables (pg-tables con)))
+    (should (cl-find "tri\"cks" tables
+                     :test #'string=
+                     :key (lambda (tbl) (if (pg-qualified-name-p tbl)
+                                            (pg-qualified-name-name tbl)
+                                          tbl)))))
+  ;; SQL query using "manual" escaping of the components of a qualified name
+  (let* ((schema (pg-escape-identifier "fan.cy"))
+         (table (pg-escape-identifier "re'ally"))
+         (sql (format "INSERT INTO %s.%s VALUES($1)" schema table))
+         (res (pg-exec-prepared con sql `((42 . "int4")))))
+    (should (zerop (cl-search "INSERT" (pg-result res :status)))))
+  ;; Dynamic SQL query using our printing support for qualified names
+  (let* ((qn (make-pg-qualified-name :schema "fan.cy" :name "re'ally"))
+         (pqn (pg-print-qualified-name qn))
+         (sql (format "INSERT INTO %s VALUES($1)" pqn))
+         (res (pg-exec-prepared con sql `((44 . "int4")))))
+    (should (zerop (cl-search "INSERT" (pg-result res :status)))))
+  ;; SQL function call using a parameter and our printing support for qualified names
+  (let* ((qn (make-pg-qualified-name :schema "fan.cy" :name "re'ally"))
+         (pqn (pg-print-qualified-name qn))
+         (sql "SELECT pg_total_relation_size($1)")
+         (res (pg-exec-prepared con sql `((,pqn . "text"))))
+         (size (cl-first (pg-result res :tuple 0))))
+    (should (<= 0 size 10000)))
+  (let* ((qn (make-pg-qualified-name :schema "fan.cy" :name "tri\"cks"))
+         (pqn (pg-print-qualified-name qn))
+         (sql "SELECT pg_total_relation_size($1)")
+         (res (pg-exec-prepared con sql `((,pqn . "text"))))
+         (size (cl-first (pg-result res :tuple 0))))
+    (should (<= 0 size 10000)))
+  (let ((res (pg-exec con "DROP TABLE custom.newtable")))
+    (should (zerop (cl-search "DROP" (pg-result res :status)))))
+  (let ((res (pg-exec con (format "DROP TABLE %s.%s"
+                                  (pg-escape-identifier "fan.cy")
+                                  (pg-escape-identifier "re'ally")))))
+    (should (zerop (cl-search "DROP" (pg-result res :status)))))
+  (let ((res (pg-exec con (format "DROP TABLE %s.%s"
+                                  (pg-escape-identifier "fan.cy")
+                                  (pg-escape-identifier "en-ough")))))
+    (should (zerop (cl-search "DROP" (pg-result res :status)))))
+  (let* ((qn (make-pg-qualified-name :schema "fan.cy" :name "tri\"cks"))
+         (pqn (pg-print-qualified-name qn))
+         (res (pg-exec con (format "DROP TABLE %s" pqn))))
+    (should (zerop (cl-search "DROP" (pg-result res :status)))))
+  (let ((res (pg-exec con "DROP SCHEMA custom")))
+    (should (zerop (cl-search "DROP" (pg-result res :status)))))
+  (let ((res (pg-exec con (format "DROP SCHEMA %s" (pg-escape-identifier "fan.cy")))))
+    (should (zerop (cl-search "DROP" (pg-result res :status))))))
+
 
 ;; https://www.postgresql.org/docs/15/functions-json.html
 (defun pg-test-json (con)

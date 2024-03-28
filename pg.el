@@ -171,10 +171,10 @@ struct.")
   (schema nil)
   name)
 
-;; Print as "schema.name", for example "public.mytable".
+;; Print as "\"schema\".\"name\"", for example "\"public\".\"mytable\"".
 (defun pg-print-qualified-name (qn)
-  (let ((schema (pg-qualified-name-schema qn))
-        (name (pg-qualified-name-name qn)))
+  (let ((schema (pg-escape-identifier (pg-qualified-name-schema qn)))
+        (name (pg-escape-identifier (pg-qualified-name-name qn))))
     (if schema
         (format "%s.%s" schema name)
       name)))
