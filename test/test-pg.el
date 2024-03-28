@@ -540,9 +540,9 @@ bar$$"))))
                      :key (lambda (tbl) (if (pg-qualified-name-p tbl)
                                             (pg-qualified-name-name tbl)
                                           tbl)))))
-  (let* ((sql (format "CREATE TABLE IF NOT EXISTS %s.%s(id INT4)"
-                      (pg-escape-identifier "fan.cy")
-                      (pg-escape-identifier "tri\"cks")))
+  (let* ((qn (make-pg-qualified-name :schema "fan.cy" :name "tri\"cks"))
+         (sql (format "CREATE TABLE IF NOT EXISTS %s(id INT4)"
+                      (pg-print-qualified-name qn)))
          (res (pg-exec con sql)))
     (should (zerop (cl-search "CREATE" (pg-result res :status)))))
   (let ((tables (pg-tables con)))

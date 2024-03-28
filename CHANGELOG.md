@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.31] - Unreleased
+## [0.31] - 2024-03-28
 
 - Add serialization support for the `hstore` datatype from Emacs Lisp hashtables.
 
