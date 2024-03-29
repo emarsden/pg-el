@@ -422,7 +422,7 @@ Uses database DBNAME, user USER and password PASSWORD."
         (when (> (length (cl-first items)) 0)
           (when (string= "server_version" (cl-first items))
             (let ((major (cl-first (split-string (cl-second items) "\\."))))
-              (setf (pgcon-server-version-major con) (string-to-number major))))
+              (setf (pgcon-server-version-major con) (cl-parse-integer major))))
           (dolist (handler pg-parameter-change-functions)
             (funcall handler con (cl-first items) (cl-second items))))))
 
@@ -598,7 +598,7 @@ the host component of the URL."
 	    (cond ((equal port "")
 		   (setq port nil))
 		  (port
-		   (setq port (string-to-number port)))))
+		   (setq port (cl-parse-integer port)))))
 
 	  ;; Now point is on the / ? or # which terminates the
 	  ;; authority, or at the end of the URI, or (if there is no
@@ -874,7 +874,7 @@ and the keyword WHAT should be one of
     (:oid
      (let ((status (pgresult-status result)))
        (if (string= "INSERT" (substring status 0 6))
-           (string-to-number (substring status 7 (cl-position ? status :start 7)))
+           (cl-parse-integer (substring status 7 (cl-position ? status :start 7)))
          (let ((msg (format "Only INSERT commands generate an oid: %s" status)))
            (signal 'pg-error (list msg))))))
     (t
@@ -1590,7 +1590,7 @@ PostgreSQL and Emacs. CON should no longer be used."
       (let* ((typname (cl-first tuple))
              ;; we need to parse this explicitly, because the value parsing infrastructure is not
              ;; yet set up
-             (oid (string-to-number (cl-second tuple)))
+             (oid (cl-parse-integer (cl-second tuple)))
              (parser (gethash typname pg--parsers-name)))
         (puthash oid typname pg--type-name)
         (puthash typname oid pg--type-oid)
@@ -1768,7 +1768,7 @@ Return nil if the extension could not be loaded."
 
 (defun pg-number-parser (str _encoding)
   "Parse PostgreSQL value STR as a number."
-  (string-to-number str))
+  (cl-parse-integer str))
 
 (pg-register-parser "count" #'pg-number-parser)
 (pg-register-parser "smallint" #'pg-number-parser)
@@ -1808,7 +1808,7 @@ Return nil if the extension could not be loaded."
                  (eql (aref str (1- len)) ?}))
       (signal 'pg-protocol-error (list "Unexpected format for int array")))
     (let ((segments (split-string (cl-subseq str 1 (- len 1)) ",")))
-      (apply #'vector (mapcar #'string-to-number segments)))))
+      (apply #'vector (mapcar #'cl-parse-integer segments)))))
 
 (pg-register-parser "_int2" #'pg-intarray-parser)
 (pg-register-parser "_int2vector" #'pg-intarray-parser)
@@ -1958,7 +1958,7 @@ Return nil if the extension could not be set up."
                    (eql (aref s (1- len)) ?\]))
         (signal 'pg-protocol-error (list "Unexpected format for VECTOR embedding")))
       (let ((segments (split-string (cl-subseq s 1 (1- len)) ",")))
-        (apply #'vector (mapcar #'string-to-number segments))))))
+        (apply #'vector (mapcar #'cl-parse-integer segments))))))
 
 
 (defun pg-register-serializer (type-name serializer)
@@ -2171,7 +2171,7 @@ Authenticate as USER with PASSWORD."
                   (s (substring s= 2))
                   (salt (base64-decode-string s))
                   (i= (cl-find "i=" components :key (lambda (s) (substring s 0 2)) :test #'string=))
-                  (iterations (string-to-number (substring i= 2)))
+                  (iterations (cl-parse-integer (substring i= 2)))
                   (salted-password (pg-pbkdf2-hash-sha256 password salt iterations))
                   ;; beware: gnutls-hash-mac will zero out its first argument (the "secret")!
                   (client-key (gnutls-hash-mac 'SHA256 (cl-copy-seq salted-password) "Client Key"))
@@ -2261,14 +2261,9 @@ TABLE can be a string or a qualified name including a schema. Uses database conn
 (defun pg-table-comment (con table)
   "Return the comment on TABLE in a PostgreSQL database.
 TABLE can be a string or a qualified name including a schema. Uses database connection CON."
-  (let* ((schema (when (pg-qualified-name-p table)
-                   (pg-qualified-name-schema table)))
-         (table-name (if (pg-qualified-name-p table)
-                         (pg-qualified-name-name table)
-                       table))
-         (qn (if schema (format "%s.%s" schema table-name) table-name))
-         (res (pg-exec-prepared con "SELECT obj_description($1::regclass::oid, 'pg_class')"
-                                `((,qn . "text"))))
+  (let* ((t-id (pg-escape-identifier table))
+         (sql "SELECT obj_description($1::regclass::oid, 'pg_class')")
+         (res (pg-exec-prepared con sql `((,t-id . "text"))))
          (tuples (pg-result res :tuples)))
     (when tuples
       (caar tuples))))

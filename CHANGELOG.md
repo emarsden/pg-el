@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.32] - Unreleased
+
+- Integer datatypes are now parsed with `cl-parse-integer` instead of `string-to-number` to provide
+  error detection.
+
+
 ## [0.31] - 2024-03-28
 
 - Add serialization support for the `hstore` datatype from Emacs Lisp hashtables.
@@ -12,6 +18,8 @@
   normal string or a `pg-qualified-name` object. Functions that return table names, in particular
   `pg-tables`, will return strings for tables in the normal `public` schema, and `pg-qualified-name`
   objects otherwise.
+
+- Fix bug in the parsing of `pgcon-server-version-major`.
 
 
 ## [0.30] - 2024-03-11
