@@ -1900,7 +1900,7 @@ Return nil if the extension could not be loaded."
 (pg-register-parser "date" #'pg-date-parser)
 
 (defconst pg--ISODATE_REGEX
-  (concat "\\([0-9]+\\)-\\([0-9][0-9]\\)-\\([0-9][0-9]\\) " ; Y-M-D
+  (concat "\\([0-9]+\\)-\\([0-9][0-9]\\)-\\([0-9][0-9]\\)[ T]" ; Y-M-D
           "\\([0-9][0-9]\\):\\([0-9][0-9]\\):\\([.0-9]+\\)" ; H:M:S.S
           "\\([-+][0-9]+\\)?")) ; TZ
 
@@ -2056,6 +2056,18 @@ Return nil if the extension could not be set up."
     (pg-register-textual-serializer "json" #'json-serialize)
   (require 'json)
   (pg-register-textual-serializer "json" #'json-encode))
+
+;; We parse these into an Emacs Lisp "encoded-time", which is represented as a list of two integers.
+;; Serialize them back to an ISO timestamp.
+(defun pg--serialize-encoded-time (encoded-time)
+  (cl-assert (listp encoded-time))
+  (cl-assert (integerp (car encoded-time)))
+  (cl-assert (integerp (cadr encoded-time)))
+  (format-time-string "%Y-%m-%dT%T" encoded-time))
+
+(pg-register-textual-serializer "timestamp"  #'pg--serialize-encoded-time)
+(pg-register-textual-serializer "timestamptz" #'pg--serialize-encoded-time)
+(pg-register-textual-serializer "datetime" #'pg--serialize-encoded-time)
 
 
 ;; pwdhash = md5(password + username).hexdigest()

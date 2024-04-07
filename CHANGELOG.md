@@ -5,6 +5,8 @@
 - Integer datatypes are now parsed with `cl-parse-integer` instead of `string-to-number` to provide
   error detection.
 
+- Add serialization support for the PostgreSQL `timestamp`, `timestamptz` and `datetime` types.
+
 
 ## [0.31] - 2024-03-28
 
