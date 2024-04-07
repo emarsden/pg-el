@@ -144,6 +144,7 @@ struct.")
   secret
   (client-encoding 'utf-8)
   (timeout 10)
+  query-log
   connect-info)
 
 ;; Used to save the connection-specific position in our input buffer.
@@ -163,6 +164,12 @@ struct.")
 (defun pg-connection-busy-p (con)
   (with-current-buffer (process-buffer (pgcon-process con))
     pgcon--busy))
+
+(defun pg-enable-query-log (con)
+  "Enable logging of PostgreSQL queries on connection CON.
+Queries are logged to a buffer identified by `pgcon-query-log'."
+  (unless (pgcon-query-log con)
+    (setf (pgcon-query-log con) (generate-new-buffer " *PostgreSQL query log*"))))
 
 ;; The qualified name is represented in SQL queries as schema.name. The schema is often either the
 ;; username or "public".
@@ -713,6 +720,9 @@ Return a result structure which can be decoded using `pg-result'."
          (ce (pgcon-client-encoding con))
          (encoded (if ce (encode-coding-string sql ce t) sql)))
     ;; (message "pg-exec: %s" sql)
+    (when (pgcon-query-log con)
+      (with-current-buffer (pgcon-query-log con)
+        (insert sql "\n")))
     (when (> (length encoded) pg--MAX_MESSAGE_LEN)
       (let ((msg (format "SQL statement too long: %s" sql)))
         (signal 'pg-error (list msg))))
@@ -1164,6 +1174,10 @@ avoid SQL injection attacks. Returns a pgresult structure that
 can be decoded with function `pg-result'. It returns at most
 MAX-ROWS rows (a value of zero indicates no limit). If more rows
 are available, they can later be retrieved with `pg-fetch'."
+  (when (pgcon-query-log con)
+    (with-current-buffer (pgcon-query-log con)
+      (insert query "\n")
+      (insert (format "   %s\n" typed-arguments))))
   (let* ((argument-types (mapcar #'cdr typed-arguments))
          (ps-name (pg-prepare con query argument-types))
          (portal-name (pg-bind con ps-name typed-arguments :portal portal))
@@ -1550,7 +1564,9 @@ PostgreSQL and Emacs. CON should no longer be used."
   (pg-send-uint con 4 4)
   (pg-flush con)
   (delete-process (pgcon-process con))
-  (kill-buffer (process-buffer (pgcon-process con))))
+  (kill-buffer (process-buffer (pgcon-process con)))
+  (when (pgcon-query-log con)
+    (kill-buffer (pgcon-query-log con))))
 
 
 ;; type coercion support ==============================================
@@ -1744,6 +1760,7 @@ Return nil if the extension could not be loaded."
       (lambda (ht)
         (cl-assert (hash-table-p ht))
         (let ((kv (list)))
+          ;; FIXME need to escape \" characters in k and v
           (maphash (lambda (k v) (push (format "\"%s\"=>\"%s\"" k v) kv)) ht)
           (string-join kv ","))))))
 
@@ -2255,7 +2272,7 @@ Authenticate as USER with PASSWORD."
 
 (defun pg-table-owner (con table)
   "Return the owner of TABLE in a PostgreSQL database.
-TABLE can be a string or a qualified name including a schema. Uses database connection CON."
+TABLE can be a string or a schema-qualified name. Uses database connection CON."
   (let* ((schema (when (pg-qualified-name-p table)
                    (pg-qualified-name-schema table)))
          (table-name (if (pg-qualified-name-p table)
@@ -2272,7 +2289,7 @@ TABLE can be a string or a qualified name including a schema. Uses database conn
 ;; As per https://www.postgresql.org/docs/current/sql-comment.html
 (defun pg-table-comment (con table)
   "Return the comment on TABLE in a PostgreSQL database.
-TABLE can be a string or a qualified name including a schema. Uses database connection CON."
+TABLE can be a string or a schema-qualified name. Uses database connection CON."
   (let* ((t-id (pg-escape-identifier table))
          (sql "SELECT obj_description($1::regclass::oid, 'pg_class')")
          (res (pg-exec-prepared con sql `((,t-id . "text"))))

@@ -7,6 +7,12 @@
 
 - Add serialization support for the PostgreSQL `timestamp`, `timestamptz` and `datetime` types.
 
+- New feature: logging of SQL queries sent to PostgreSQL on a per-connection basis. Call function
+  `pg-enable-query-log` on a connection object, and SQL sent to the backend by `pg-exec` and
+  `pg-exec-prepared` will be logged to a buffer named ` *PostgreSQL query log*` (made unique if
+  multiple pg-el connections have been made). The name of the buffer is given by accessor function
+  `pgcon-query-log` on the connection object.
+
 
 ## [0.31] - 2024-03-28
 
