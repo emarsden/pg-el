@@ -13,6 +13,9 @@
   multiple pg-el connections have been made). The name of the buffer is given by accessor function
   `pgcon-query-log` on the connection object.
 
+- New variable `pg-connect-timeout` to set a timeout (in seconds) for attempts to connect to
+  PostgreSQL over the network (does not apply to Unix socket connections).
+
 
 ## [0.31] - 2024-03-28
 

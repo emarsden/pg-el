@@ -86,6 +86,9 @@ This information appears in queries to the `pg_stat_activity' table
 and (depending on server configuration) in the connection log.")
 
 
+(defvar pg-connect-timeout 30
+  "Timeout in seconds for establishing the network connection to PostgreSQL.")
+
 (defvar pg-disable-type-coercion nil
   "*Non-nil disables the type coercion mechanism.
 The default is nil, which means that data recovered from the database
@@ -112,6 +115,7 @@ struct.")
 (define-error 'pg-error "PostgreSQL error" 'error)
 (define-error 'pg-protocol-error "PostgreSQL protocol error" 'pg-error)
 (define-error 'pg-copy-failed "PostgreSQL COPY failed" 'pg-error)
+(define-error 'pg-connect-timeout "PostgreSQL connection attempt timed out" 'pg-error)
 
 ;; Maps from type-name to a function that converts from text representation to wire-level binary
 ;; representation.
@@ -457,7 +461,13 @@ attempt to establish an encrypted connection to PostgreSQL."
   (let* ((buf (generate-new-buffer " *PostgreSQL*"))
          (process (open-network-stream "postgres" buf host port :coding nil
                                        :nowait t :nogreeting t))
-         (con (make-pgcon :dbname dbname :process process)))
+         (con (make-pgcon :dbname dbname :process process))
+         (watchdog (run-at-time pg-connect-timeout nil
+                                (lambda ()
+                                  (unless (memq (process-status process) '(open listen))
+                                    (delete-process process)
+                                    (kill-buffer buf)
+                                    (signal 'pg-connect-timeout (list "PostgreSQL connection timed out")))))))
     (with-current-buffer buf
       (set-process-coding-system process 'binary 'binary)
       (set-buffer-multibyte nil)
@@ -645,13 +655,16 @@ the host component of the URL."
 (defun pg-connect/uri (uri)
   "Connect to PostgreSQL with parameters specified by URI.
 A connection URI is of the form
-`postgresql://[userspec@][hostspec][/dbname][?paramspec]'. `userspec' is of the form
-username:password. If hostspec is a string representing a local path (e.g.
-`%2Fvar%2Flib%2Fpostgresql' with percent-encoding) then it is interpreted as a Unix pathname used
-for a local Unix domain connection. We do not support all the paramspec keywords supported by libpq,
-such as those which specify particular aspects of the TCP connection to PostgreSQL (e.g.
-keepalives_interval). The supported paramspec keywords are sslmode (partial support) and
-application_name."
+`postgresql://[userspec@][hostspec][/dbname][?paramspec]'.
+`userspec' is of the form username:password. If hostspec is a
+string representing a local path (e.g.
+`%2Fvar%2Flib%2Fpostgresql' with percent-encoding) then it is
+interpreted as a Unix pathname used for a local Unix domain
+connection. We do not support all the paramspec keywords
+supported by libpq, such as those which specify particular
+aspects of the TCP connection to PostgreSQL (e.g.
+keepalives_interval). The supported paramspec keywords are
+sslmode (partial support) and application_name."
   (let* ((parsed (pg-parse-url uri))
          (scheme (url-type parsed)))
     (unless (or (string= "postgres" scheme)
@@ -704,8 +717,8 @@ application_name."
 
 (defun pg-add-notification-handler (con handler)
   "Register HANDLER for NotificationResponse messages on CON.
-A handler takes two arguments: the channel and the payload. These correspond to SQL-level
-NOTIFY channel, \\='payload\\='."
+A handler takes two arguments: the channel and the payload. These
+correspond to SQL-level NOTIFY channel, \\='payload\\='."
   (with-current-buffer (process-buffer (pgcon-process con))
     (push handler pgcon--notification-handlers)))
 
@@ -911,9 +924,10 @@ and the keyword WHAT should be one of
 ;; `pg-exec-prepared' which should be used when possible instead of relying on this function.
 (defun pg-escape-identifier (identifier)
   "Escape an SQL identifier, such as a table, column, or function name.
-IDENTIFIER can be a string or a pg-qualified-name (including a schema specifier).
-Similar to libpq function PQescapeIdentifier.
-You should use prepared statements (`pg-exec-prepared') instead of this function whenever possible."
+IDENTIFIER can be a string or a pg-qualified-name (including a
+schema specifier). Similar to libpq function PQescapeIdentifier.
+You should use prepared statements (`pg-exec-prepared') instead
+of this function whenever possible."
   (cond ((pg-qualified-name-p identifier)
          (let ((schema (pg-qualified-name-schema identifier))
                (name (pg-qualified-name-name identifier)))
@@ -927,8 +941,9 @@ You should use prepared statements (`pg-exec-prepared') instead of this function
 
 (defun pg-escape-literal (str)
   "Escape a string for use within an SQL command.
-Similar to libpq function PQescapeLiteral.
-You should use prepared statements (`pg-exec-prepared') instead of this function whenever possible."
+Similar to libpq function PQescapeLiteral. You should use
+prepared statements (`pg-exec-prepared') instead of this function
+whenever possible."
   (with-temp-buffer
     (insert ?E)
     (insert ?\')
@@ -971,7 +986,7 @@ PostgreSQL type names of the form (\"int4\" \"text\" \"bool\")."
   name)
 
 (cl-defun pg-bind (con statement-name typed-arguments &key (portal ""))
-  "Bind the SQL prepared statement STATEMENT-NAME to arguments TYPED-ARGUMENTS.
+  "Bind the SQL prepared statement STATEMENT-NAME to TYPED-ARGUMENTS.
 The STATEMENT-NAME should have been returned by function `pg-prepare'.
 TYPE-ARGUMENTS is a list of the form ((42 . \"int4\") (\"foo\" . \"text\")).
 Uses PostgreSQL connection CON."
@@ -1745,7 +1760,7 @@ PostgreSQL and Emacs. CON should no longer be used."
 ;;
 ;; https://www.postgresql.org/docs/current/hstore.html
 (defun pg-hstore-setup (con)
-  "Prepare for using and parsing HSTORE datatypes on PostgreSQL connection CON.
+  "Prepare for use of HSTORE datatypes on PostgreSQL connection CON.
 Return nil if the extension could not be loaded."
   (when (condition-case nil
             (pg-exec con "CREATE EXTENSION IF NOT EXISTS hstore")
@@ -1955,7 +1970,7 @@ Return nil if the extension could not be loaded."
 ;; This function must be called before using the pgvector extension. It loads the extension if
 ;; necessary, and sets up the parsing support for vector datatypes.
 (defun pg-vector-setup (con)
-  "Prepare for using and parsing VECTOR datatypes on PostgreSQL connection CON.
+  "Prepare for use of VECTOR datatypes on PostgreSQL connection CON.
 Return nil if the extension could not be set up."
   (when (condition-case nil
             (pg-exec con "CREATE EXTENSION IF NOT EXISTS vector")
@@ -2272,7 +2287,8 @@ Authenticate as USER with PASSWORD."
 
 (defun pg-table-owner (con table)
   "Return the owner of TABLE in a PostgreSQL database.
-TABLE can be a string or a schema-qualified name. Uses database connection CON."
+TABLE can be a string or a schema-qualified name.
+Uses database connection CON."
   (let* ((schema (when (pg-qualified-name-p table)
                    (pg-qualified-name-schema table)))
          (table-name (if (pg-qualified-name-p table)
@@ -2563,7 +2579,8 @@ Using connection to PostgreSQL CON."
     (caar (pg-result res :tuples))))
 
 (defun pg-backend-version (con)
-  "Version and operating environment of backend that we are connected to by CON.
+  "Version and operating environment of PostgreSQL backend.
+Concerns the backend that we are connected to over connection CON.
 PostgreSQL returns the version as a string. CrateDB returns it as an integer."
   (let ((res (pg-exec con "SELECT version()")))
     (cl-first (pg-result res :tuple 0))))
