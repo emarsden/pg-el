@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.32] - Unreleased
+## [0.32] - 2024-04-14
 
 - Integer datatypes are now parsed with `cl-parse-integer` instead of `string-to-number` to provide
   error detection.
