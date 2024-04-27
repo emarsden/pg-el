@@ -210,7 +210,8 @@ normal or otherwise, the database connection is closed."
 (put 'with-pg-connection 'lisp-indent-function 'defun)
 
 (defmacro with-pg-connection-local (con connect-args &rest body)
-  "Execute BODY forms in a scope with local Unix connection CON created by CONNECT-ARGS.
+  "Execute BODY forms in a scope with local Unix connection CON
+created by CONNECT-ARGS.
 The database connection is bound to the variable CON. If the
 connection is unsuccessful, the forms are not evaluated.
 Otherwise, the BODY forms are executed, and upon termination,
@@ -2088,6 +2089,14 @@ Return nil if the extension could not be set up."
     (pg-register-textual-serializer "json" #'json-serialize)
   (require 'json)
   (pg-register-textual-serializer "json" #'json-encode))
+
+(defun pg--serialize-encoded-time-date (encoded-time)
+  (cl-assert (listp encoded-time))
+  (cl-assert (integerp (car encoded-time)))
+  (cl-assert (integerp (cadr encoded-time)))
+  (format-time-string "%Y-%m-%d" encoded-time))
+
+(pg-register-textual-serializer "date" #'pg--serialize-encoded-time-date)
 
 ;; We parse these into an Emacs Lisp "encoded-time", which is represented as a list of two integers.
 ;; Serialize them back to an ISO timestamp.
