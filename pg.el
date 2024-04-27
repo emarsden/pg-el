@@ -462,13 +462,13 @@ attempt to establish an encrypted connection to PostgreSQL."
   (let* ((buf (generate-new-buffer " *PostgreSQL*"))
          (process (open-network-stream "postgres" buf host port :coding nil
                                        :nowait t :nogreeting t))
-         (con (make-pgcon :dbname dbname :process process))
-         (watchdog (run-at-time pg-connect-timeout nil
-                                (lambda ()
-                                  (unless (memq (process-status process) '(open listen))
-                                    (delete-process process)
-                                    (kill-buffer buf)
-                                    (signal 'pg-connect-timeout (list "PostgreSQL connection timed out")))))))
+         (con (make-pgcon :dbname dbname :process process)))
+    (run-at-time pg-connect-timeout nil
+                 (lambda ()
+                   (unless (memq (process-status process) '(open listen))
+                     (delete-process process)
+                     (kill-buffer buf)
+                     (signal 'pg-connect-timeout (list "PostgreSQL connection timed out")))))
     (with-current-buffer buf
       (set-process-coding-system process 'binary 'binary)
       (set-buffer-multibyte nil)
