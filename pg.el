@@ -2018,26 +2018,28 @@ Return nil if the extension could not be set up."
 
 (pg-register-serializer "char"
   (lambda (v)
-    (cl-assert (<= 0 v 255))
+    (cl-assert (<= 0 v 255) t "Value out of range for CHAR type")
     (string v)))
 
 (pg-register-serializer "bpchar"
   (lambda (v)
-    (cl-assert (<= 0 v 255))
+    (cl-assert (<= 0 v 255) t "Value out of range for BPCHAR type")
     (string v)))
 
 ;; see https://www.postgresql.org/docs/current/datatype-numeric.html
 (pg-register-serializer "int2"
   (lambda (v)
     (cl-assert (integerp v))
-    (cl-assert (<= (- (expt 2 15)) v (expt 2 15)))
+    (cl-assert (<= (- (expt 2 15)) v (expt 2 15))
+               t "Value out of range for INT2 type")
     ;; This use of bindat-type makes us depend on Emacs 28.1, released in April 2022.
     (bindat-pack (bindat-type sint 16 nil) v)))
 
 (pg-register-serializer "smallint"
   (lambda (v)
     (cl-assert (integerp v))
-    (cl-assert (<= (- (expt 2 15)) v (expt 2 15)))
+    (cl-assert (<= (- (expt 2 15)) v (expt 2 15))
+               t "Value out of range for SMALLINT type")
     (bindat-pack (bindat-type sint 16 nil) v)))
 
 (pg-register-serializer "int4"
