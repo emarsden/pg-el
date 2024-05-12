@@ -73,6 +73,7 @@
       (pg-disconnect con))))
 
 (defun pg-run-tests (con)
+  (pg-enable-query-log con)
   (message "Backend major-version is %s" (pgcon-server-version-major con))
   (message "Testing basic type parsing")
   (pg-test-basic con)
