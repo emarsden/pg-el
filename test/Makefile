@@ -132,9 +132,19 @@ test-neon: test-pg.el
 
 
 
-# CrateDB uses a default database name of "doc" that we can't set via Docker
+# CrateDB uses a default database name of "doc" that we can't set via Docker. Last tested with
+# cratedb v5.7.1. Doesn't get very far through the tests: CrateDB doesn't accept a query which only
+# contains an SQL comment.
+#
+# https://hub.docker.com/_/crate/
 test-cratedb: test-pg.el
-	PGEL_DATABASE=doc make test
+	podman run --rm --name cratedb \
+          --publish=4200:4200 \
+          --publish=5789:5789 \
+          -e CRATE_HEAP_SIZE=1g \
+          -d docker.io/crate -Cdiscovery.type=single-node -Cpsql.port=5789
+	sleep 5
+	PGEL_DATABASE=doc PGEL_USER=crate PGEL_DATABASE=postgres PGEL_PORT=5789 make test
 
 # Version 23.1.13 of CockroachDB doesn't get very far through the tests, failing on the boolean
 # vector syntax b'1001000'.
