@@ -9,7 +9,7 @@ jobs:
 
     steps:
       - name: Set up pre-installed PostgreSQL
-        uses: nyurik/action-setup-postgis@v1
+        uses: ikalnytskyi/action-setup-postgres@v6
         with:
           username: pgeltestuser
           password: pgeltest

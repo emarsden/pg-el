@@ -9,7 +9,7 @@ jobs:
 
     steps:
       - name: Set up pre-installed PostgreSQL
-        uses: ikalnytskyi/action-setup-postgres@v4
+        uses: ikalnytskyi/action-setup-postgres@v6
         with:
           username: pgeltestuser
           password: pgeltest
@@ -19,7 +19,7 @@ jobs:
       - name: Install Emacs
         uses: purcell/setup-emacs@master
         with:
-           version: 29.1
+           version: 29.3
 
       - name: Check out repository code
         uses: actions/checkout@v4
