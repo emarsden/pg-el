@@ -5,14 +5,17 @@
 [![test-pgv16](https://github.com/emarsden/pg-el/workflows/test-pgv16/badge.svg)](https://github.com/emarsden/pg-el/workflows/test-pgv16/badge.svg)
 
 
-This module lets you access the PostgreSQL 🐘 object-relational DBMS from Emacs, using its
+This library lets you access the PostgreSQL 🐘 object-relational DBMS from Emacs, using its
 socket-level frontend/backend protocol. The module is capable of automatic type coercions from a
 range of SQL types to the equivalent Emacs Lisp type.
 
 📖 You may be interested in the [user manual](https://emarsden.github.io/pg-el/).
 
+This is a developer-oriented library, which won’t be useful to end users. If you’re looking for a
+browsing/editing interface to PostgreSQL in Emacs, you may be interested in
+[PGmacs](https://github.com/emarsden/pgmacs/).
 
-Including support for:
+This library has support for:
 
 - **SCRAM-SHA-256 authentication** (the default authentication method since PostgreSQL version 14),
   as well as MD5 and password authentication. There is currently no support for authentication
@@ -38,7 +41,7 @@ Including support for:
 - Connections over TCP or (on Unix machines) a local Unix socket.
 
 
-The code has been tested with PostgreSQL versions 16.2, 15.4, 13.8, 11.17, and 10.22 on Linux. It is
+The code has been tested with PostgreSQL versions 16.3, 15.4, 13.8, 11.17, and 10.22 on Linux. It is
 also tested via GitHub actions on MacOS and Windows, using the PostgreSQL version which is
 pre-installed in the virtual images (currently 14.8). This library also works against other
 databases that implement the PostgreSQL wire protocol:
@@ -49,18 +52,18 @@ databases that implement the PostgreSQL wire protocol:
   that this database does not implement the large object functionality, and its interpretation of
   SQL occasionally differs from that of PostgreSQL.
 
-- [CrateDB](https://crate.io/): tested with version 5.0.1.
+- [CrateDB](https://crate.io/): tested with version 5.7.1
 
 - [QuestDB](https://questdb.io/): tested against version 6.5.4
 
-- [ParadeDB](https://www.paradedb.com/) 
+- [ParadeDB](https://www.paradedb.com/): tested with version 0.6.1
 
-Tested with Emacs versions 29.1, 28.2, 27.2 and 26.3. Emacs versions older than 26.1 will not work
+Tested with Emacs versions 29.3, 28.2, 27.2 and 26.3. Emacs versions older than 26.1 will not work
 against a recent PostgreSQL version (whose default configuration requires SCRAM-SHA-256
-authentication), because they don't include the GnuTLS support which we use to calculate HMACs. They
+authentication), because they don’t include the GnuTLS support which we use to calculate HMACs. They
 may however work against a database set up to allow unauthenticated local connections. Emacs
 versions older than 28.1 (from April 2022) will not be able to use the extended query protocol
-(prepared statements), because they don't have the necessary bindat functionality. It should however
+(prepared statements), because they don’t have the necessary bindat functionality. It should however
 be easy to update the installed version of bindat.el for these older versions.
 
 You may be interested in an alternative library [emacs-libpq](https://github.com/anse1/emacs-libpq)

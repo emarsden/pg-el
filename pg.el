@@ -1190,6 +1190,7 @@ avoid SQL injection attacks. Returns a pgresult structure that
 can be decoded with function `pg-result'. It returns at most
 MAX-ROWS rows (a value of zero indicates no limit). If more rows
 are available, they can later be retrieved with `pg-fetch'."
+  ;; (message "pg-exec-prepared: %s with %s" query typed-arguments)
   (when (pgcon-query-log con)
     (with-current-buffer (pgcon-query-log con)
       (insert query "\n")

@@ -2,7 +2,7 @@
 
 ## [0.33] - Unreleased
 
-- Datatypes of type `DATE` are now serialized correctly when using the extended query protocol.
+- Add serialization support for the PostgreSQL `date` type.
 
 
 ## [0.32] - 2024-04-14
