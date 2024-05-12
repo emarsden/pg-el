@@ -149,11 +149,17 @@ test-cockroachdb: test-pg.el
 	podman rm cockroachdb
 
 
-# The current version of QuestDB (based on PostgreSQL 12.3) doesn't get very far through the
-# tests; it fails on "SELECT 1::integer" because it doesn't recognize integer as a type.
+# The current version of QuestDB (based on PostgreSQL 12.3) doesn't get very far through the tests;
+# it fails on "SELECT 1::integer" because it doesn't recognize integer as a type. Also DELETE
+# statements are not supported.
+#
+# https://questdb.io/docs/configuration/
 test-questdb: test-pg.el
 	podman run --rm --name questdb \
-	  --publish 8812:8812 \
+          --publish 8812:8812 \
+          --publish 9000:9000 \
+          -e QDB_PG_USER=pgeltestuser \
+          -e QDB_PG_PASSWORD=pgeltest \
 	  -d docker.io/questdb/questdb
 	sleep 5
 	PGEL_DATABASE=postgres PGEL_USER=admin PGEL_PASSWORD="quest" PGEL_PORT=8812 make test
@@ -165,15 +171,20 @@ test-questdb: test-pg.el
 # extensions. LISTEN/NOTIFY is not supported.
 test-yugabyte: test-pg.el
 	podman run --rm --name yugabyte \
+          --publish 7000:7000 \
+          --publish 9000:9000 \
+          --publish 15433:15433 \
 	  --publish 5433:5433 \
 	  -d docker.io/yugabytedb/yugabyte \
 	  bin/yugabyted start \
 	  --base_dir=/tmp \
-	  --daemon=false
+	  --background=false
 	sleep 10
 	PGEL_DATABASE=yugabyte PGEL_USER=yugabyte PGEL_PASSWORD="" PGEL_PORT=5433 make test
 	podman stop yugabyte
 	podman rm yugabyte
+
+
 
 # 20230807 this container fails to run with podman with a permission denied on su
 test-greenplum: test-pg.el
@@ -189,15 +200,18 @@ test-greenplum: test-pg.el
 
 # https://docs.paradedb.com/introduction#get-started
 #
-# As of 2024-01, the paradedb docker image is built on a Debian PostgreSQL 16.1.
+# As of 2024-05, the paradedb docker image is built on a Debian PostgreSQL 16.2.
 test-paradedb: test-pg.el
 	podman run --rm --name paradedb \
 	  --publish 5441:5441 \
-	  -e POSTGRES_DB=pgeltestdb \
-	  -e POSTGRES_USER=pgeltestuser \
-	  -e POSTGRES_PASSWORD=pgeltest \
-	  -e PGPORT=5441 \
-	  -d docker.io/paradedb/paradedb:latest
+          -e POSTGRES_DATABASE=pgeltestdb \
+          -e POSTGRESQL_PORT_NUMBER=5441 \
+          -e PGPORT=5441 \
+          -e POSTGRESQL_MASTER_PORT_NUMBER=5441 \
+          -e POSTGRES_USERNAME=pgeltestuser \
+          -e POSTGRESQL_PASSWORD=pgeltest \
+          -e POSTGRESQL_POSTGRES_PASSWORD=pgeltest \
+          -d docker.io/paradedb/paradedb:latest
 	sleep 5
 	PGEL_PORT=5441 emacs -Q --batch -l ../pg.el -l test-pg.el -f pg-test
 	podman stop paradedb
