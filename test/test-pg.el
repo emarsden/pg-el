@@ -734,7 +734,7 @@ bar$$"))))
       ;; "BIGINT GENERATED ALWAYS AS IDENTITY" is more standard than "BIGSERIAL"
       (pg-exec con "CREATE TABLE items (id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, embedding vector(4))")
       (dotimes (_ 1000)
-        (let ((new (format "[%d,%d,%d,%d]" (random 55) (random 66) (random 77) (random 88))))
+        (let ((new (vector (random 55) (random 66) (random 77) (random 88))))
           (pg-exec-prepared con "INSERT INTO items(embedding) VALUES($1)"
                             `((,new . "vector")))))
       (let ((res (pg-exec con "SELECT embedding FROM items ORDER BY embedding <-> '[1,1,1,1]' LIMIT 1")))

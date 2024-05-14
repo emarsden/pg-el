@@ -29,8 +29,7 @@
 ;;
 ;; This module lets you access the PostgreSQL object-relational DBMS from Emacs, using its
 ;; socket-level frontend/backend protocol. The module is capable of automatic type coercions from a
-;; range of SQL types to the equivalent Emacs Lisp type. This is a low level API, and won't be
-;; useful to end users.
+;; range of SQL types to the equivalent Emacs Lisp type.
 ;;
 ;; Supported features:
 ;;
@@ -44,12 +43,16 @@
 ;;
 ;;  - Asynchronous handling of LISTEN/NOTIFY notification messages from PostgreSQL, allowing the
 ;;    implementation of publish-subscribe type architectures (PostgreSQL as an "event broker" or
-;;    "message bus" and Emacs as event publisher and consumer.
+;;    "message bus" and Emacs as event publisher and consumer).
 ;;
 ;;  - Support for PostgreSQL's extended query syntax, that allows for parameterized queries to
 ;;    protect from SQL injection issues.
 ;;
-
+;; This is a low level API, and won't be useful to end users. If you're looking for a
+;; browsing/editing interface to PostgreSQL, see the PGmacs module from
+;; https://github.com/emarsden/pgmacs/.
+;;
+;;
 ;; Entry points
 ;; ------------
 ;;
@@ -194,7 +197,7 @@ Queries are logged to a buffer identified by `pgcon-query-log'."
   connection status attributes tuples portal (incomplete nil))
 
 (defsubst pg-flush (con)
-  (accept-process-output (pgcon-process con) 1))
+  (accept-process-output (pgcon-process con) 0.1))
 
 ;; this is ugly because lambda lists don't do destructuring
 (defmacro with-pg-connection (con connect-args &rest body)
@@ -1983,8 +1986,7 @@ Return nil if the extension could not be set up."
       (when parser
         (puthash oid parser pg--parsers-oid)))))
 
-;; pgvector embeddings are sent by the database as strings, in the form "[1,2,3]". We don't need to
-;; define a serialization function because we send the embeddings a strings.
+;; pgvector embeddings are sent by the database as strings, in the form "[1,2,3]".
 (pg-register-parser "vector"
   (lambda (s _e)
     (let ((len (length s)))
@@ -2112,6 +2114,13 @@ Return nil if the extension could not be set up."
 (pg-register-textual-serializer "timestamp"  #'pg--serialize-encoded-time)
 (pg-register-textual-serializer "timestamptz" #'pg--serialize-encoded-time)
 (pg-register-textual-serializer "datetime" #'pg--serialize-encoded-time)
+
+;; Serialize an elisp vector of integers to a string of the form "[44,55,66]"
+(pg-register-textual-serializer "vector"
+  (lambda (v)
+    (cl-assert (vectorp v))
+    (cl-assert (cl-every #'integerp v))
+    (concat "[" (string-join (mapcar #'prin1-to-string v) ",") "]")))
 
 
 ;; pwdhash = md5(password + username).hexdigest()
@@ -2655,10 +2664,11 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
   (let ((process (pgcon-process con)))
     ;; (accept-process-output process 0.1)
     (with-current-buffer (process-buffer process)
-      (dotimes (_i (pgcon-timeout con))
-        (when (null (char-after pgcon--position))
-          (sleep-for 0.1)
-          (accept-process-output process 1.0)))
+      (when (null (char-after pgcon--position))
+        (dotimes (_i (pgcon-timeout con))
+          (when (null (char-after pgcon--position))
+            (sleep-for 0.1)
+            (accept-process-output process 1.0))))
       (when (null (char-after pgcon--position))
         (let ((msg (format "Timeout in pg-read-char reading from %s" con)))
           (signal 'pg-error (list msg))))
@@ -2696,10 +2706,11 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
       (let* ((start pgcon--position)
              (end (+ start count)))
         ;; (accept-process-output process 0.1)
-        (dotimes (_i (pgcon-timeout con))
-          (when (> end (point-max))
-            (sleep-for 0.1)
-            (accept-process-output process 1.0)))
+        (when (> end (point-max))
+          (dotimes (_i (pgcon-timeout con))
+            (when (> end (point-max))
+              (sleep-for 0.1)
+              (accept-process-output process 1.0))))
         (when (> end (point-max))
           (let ((msg (format "Timeout in pg-read-chars reading from %s" con)))
             (signal 'pg-error (list msg))))

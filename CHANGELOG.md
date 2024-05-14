@@ -4,6 +4,8 @@
 
 - Add serialization support for the PostgreSQL `date` type.
 
+- Add serialization support for the `vector` type used by the pgvector extension.
+
 
 ## [0.32] - 2024-04-14
 
