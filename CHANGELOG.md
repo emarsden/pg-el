@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.33] - Unreleased
+## [0.33] - 2024-05-14
 
 - Add serialization support for the PostgreSQL `date` type.
 
