@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.34] - Unreleased
+
+- Add deserialization support for the `tsvector` type, used by the PostgreSQL full text search
+  functionality. They will now be parsed into a list of `pg-ts` structures.
+
+
 ## [0.33] - 2024-05-14
 
 - Add serialization support for the PostgreSQL `date` type.

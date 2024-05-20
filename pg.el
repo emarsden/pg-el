@@ -6,7 +6,7 @@
 ;; Version: 0.33
 ;; Keywords: data comm database postgresql
 ;; URL: https://github.com/emarsden/pg-el
-;; Package-Requires: ((emacs "28.1"))
+;; Package-Requires: ((emacs "28.1") (peg "1.0"))
 ;; SPDX-License-Identifier: GPL-2.0-or-later
 ;;
 ;; This file is free software: you can redistribute it and/or modify
@@ -82,6 +82,7 @@
 (require 'hex-util)
 (require 'bindat)
 (require 'url)
+(require 'peg)
 
 (defvar pg-application-name (or (getenv "PGAPPNAME") "pg.el")
   "The application_name sent to the PostgreSQL backend.
@@ -1968,6 +1969,57 @@ Return nil if the extension could not be loaded."
 (pg-register-parser "reltime" #'pg-text-parser)     ; don't know how to parse these
 (pg-register-parser "timespan" #'pg-text-parser)
 (pg-register-parser "tinterval" #'pg-text-parser)
+
+;; A tsvector is a type used by PostgreSQL to support full-text search in documents.
+;;
+;; Possible input formats:
+;;   "'a' 'and' 'ate' 'cat' 'fat' 'mat' 'on' 'rat' 'sat'"
+;;   "'    ' 'contains' 'lexeme' 'spaces' 'the'"
+;;   "'Joe''s' 'a' 'contains' 'lexeme' 'quote' 'the'"
+;;   "'a':1,6,10 'and':8 'ate':9 'cat':3"
+;;   "'a':1A 'cat':5 'fat':2B,4C"
+;;
+;; Parse this to a list of pg-ts.
+(cl-defstruct pg-ts
+  "A component of a PostgreSQL tsvector, comprising lexeme and its weighted-positions."
+  lexeme weighted-positions)
+
+;; https://elpa.gnu.org/packages/peg.html
+(defun pg-tsvector-parser (str _encoding)
+  (with-temp-buffer
+    (insert str)
+    (goto-char (point-min))
+    (with-peg-rules
+        ((tsvector tslist (eol))
+         (tslist ts (* (and (+ [space]) ts)))
+         (ts lexeme positions
+             `(lx wpos -- (make-pg-ts :lexeme lx :weighted-positions wpos)))
+         ;; We want 'Joe''s' to be parsed as the lexeme "Joe's"
+         (lexeme "'" (substring (or (+ (or [alpha] "''")) (+ [space]))) "'"
+                 `(lx -- (string-replace "''" "'" lx)))
+         (positions (or (and ":" (list (* (and position ",")) position))
+                        `(-- nil)))
+         (position (and (substring (+ [digit])) opt-weight)
+                   `(pos w -- (cons (string-to-number pos) w)))
+         ;; The default weight is :D. It's omitted in the default PostgreSQL string format for a
+         ;; tsvector, but it seems better to make it explicit.
+         (opt-weight (or weight `(-- (intern ":D"))))
+         (weight (substring (or [A-D] [a-d]))
+                 `(w -- (intern (concat ":" (upcase w))))))
+      (peg-run (peg tsvector)))))
+
+;; (pg-tsvector-parser "'foo'" nil)
+;; (pg-tsvector-parser "'foo' 'bar'" nil)
+;; (pg-tsvector-parser "'    ' 'contains' 'lexeme' 'spaces' 'the'" nil)
+;; (pg-tsvector-parser "'fooé' 'bar':44 'bizzles':1" nil)
+;; (pg-tsvector-parser "'foo' 'bar':4 'bizlles':1,2,10" nil)
+;; (pg-tsvector-parser "'a':1A 'cat':5 'fat':2B,4C" nil)
+;; (pg-tsvector-parser "'Joe''s' 'a' 'contains' 'lexeme' 'quote' 'the'" nil)
+
+(pg-register-parser "tsvector" #'pg-tsvector-parser)
+
+
+;; TODO: also define a parser for the tsquery type
 
 
 ;;; Support for the pgvector extension (vector similarity search).

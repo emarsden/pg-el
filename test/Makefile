@@ -1,21 +1,29 @@
+EMACS ?= emacs
 WORKDIR := $(shell mktemp -d)
+PEG := $(shell mktemp --tmpdir --suffix .el pgelpeg-XXXX)
+PEGURL = "https://git.savannah.gnu.org/cgit/emacs/elpa.git/plain/peg.el?h=externals/peg"
 
+# We can't use the package management machinery when starting Emacs with "-Q", so download
+# and load our peg dependency explicitly.
+.PHONY: peg
+peg:
+	wget -q -O ${PEG} ${PEGURL}
 
-test: test-pg.el
-	emacs -Q --batch -l ../pg.el -l test-pg.el -f pg-test
+test: test-pg.el peg
+	${EMACS} -Q --batch -l ${PEG} -l ../pg.el -l test-pg.el -f pg-test
 
 # Run tests over an encrypted connection to PostgreSQL. Encryption is not available for all versions
 # and installations (the PostgreSQL backend needs to be set up with TLS certificates), so this is a
 # separate test target.
-test-tls: test-pg.el
-	emacs -Q --batch -l ../pg.el -l test-pg.el -f pg-test-tls
+test-tls: test-pg.el peg
+	${EMACS} -Q --batch -l ${PEG} -l ../pg.el -l test-pg.el -f pg-test-tls
 
 # Run tests over a local Unix socket connection to PostgreSQL.
-test-local: test-pg.el
-	emacs -Q --batch -l ../pg.el -l test-pg.el -f pg-test-local
+test-local: test-pg.el peg
+	${EMACS} -Q --batch -l ${PEG} -l ../pg.el -l test-pg.el -f pg-test-local
 
-test-connections: test-pg.el
-	emacs -Q --batch -l ../pg.el -l test-pg.el -f pg-connection-tests
+test-connections: test-pg.el peg
+	${EMACS} -Q --batch -l ${PEG} -l ../pg.el -l test-pg.el -f pg-connection-tests
 
 
 # Using Docker images for Emacs from https://hub.docker.com/r/silex/emacs/ and the locally installed
@@ -26,7 +34,7 @@ test-emacs28: test-pg.el
 	   -v ${WORKDIR}:/tmp \
 	   --network slirp4netns:allow_host_loopback=true -e PGEL_HOSTNAME=10.0.2.2 \
 	   docker.io/silex/emacs:28.1 \
-	   emacs -Q --batch -l /tmp/pg.el -l /tmp/test-pg.el -f pg-test
+	   ${EMACS} -Q --batch -l /tmp/pg.el -l /tmp/test-pg.el -f pg-test
 
 test-emacs27: test-pg.el
 	cp ../pg.el test-pg.el ${WORKDIR}
@@ -34,7 +42,7 @@ test-emacs27: test-pg.el
 	   -v ${WORKDIR}:/tmp \
 	   --network slirp4netns:allow_host_loopback=true -e PGEL_HOSTNAME=10.0.2.2 \
 	   docker.io/silex/emacs:27.2 \
-	   emacs -Q --batch -l /tmp/pg.el -l /tmp/test-pg.el -f pg-test
+	   ${EMACS} -Q --batch -l /tmp/pg.el -l /tmp/test-pg.el -f pg-test
 
 # The extended query support will not work in Emacs versions before 28.1, because functionality
 # provided by the bindat libary is needed. However, other functionality based on the simple query
@@ -45,19 +53,19 @@ test-emacs26: test-pg.el
 	   -v ${WORKDIR}:/tmp \
 	   --network slirp4netns:allow_host_loopback=true -e PGEL_HOSTNAME=10.0.2.2 \
 	   docker.io/silex/emacs:26.3-alpine-ci \
-	   emacs -Q --batch -l /tmp/pg.el -l /tmp/test-pg.el -f pg-test
+	   ${EMACS} -Q --batch -l /tmp/pg.el -l /tmp/test-pg.el -f pg-test
 
 # Emacs versions older than 26.1 will not work against a recent PostgreSQL version (that is set up
 # to require SCRAM-SHA-256 authentication), because they don't include the GnuTLS support which we
 # use to calculate HMACs. They may however work against a database set up to not require
 # authentication for local connections.
-test-emacs25: test-pg.el
+test-emacs25: test-pg.el peg
 	cp ../pg.el test-pg.el ${WORKDIR}
 	podman run --rm -it \
 	   -v ${WORKDIR}:/tmp \
 	   --network slirp4netns:allow_host_loopback=true -e PGEL_HOSTNAME=10.0.2.2 \
 	   docker.io/silex/emacs:25.3 \
-	   emacs -Q --batch -l /tmp/pg.el -l /tmp/test-pg.el -f pg-test
+	   ${EMACS} -Q --batch -l ${PEG} -l /tmp/pg.el -l /tmp/test-pg.el -f pg-test
 
 test-postgresql14: test-pg.el
 	podman run --name pgsql \
@@ -68,7 +76,7 @@ test-postgresql14: test-pg.el
 	   -e PGPORT=5439 \
 	   -d docker.io/library/postgres:14
 	sleep 5
-	PGEL_PORT=5439 emacs -Q --batch -l ../pg.el -l test-pg.el -f pg-test
+	PGEL_PORT=5439 ${EMACS} -Q --batch -l ../pg.el -l test-pg.el -f pg-test
 	podman stop pgsql
 	podman rm pgsql
 
@@ -81,7 +89,7 @@ test-postgresql13: test-pg.el
 	   -e PGPORT=5439 \
 	   -d docker.io/library/postgres:13-alpine
 	sleep 5
-	PGEL_PORT=5439 emacs -Q --batch -l ../pg.el -l test-pg.el -f pg-test
+	PGEL_PORT=5439 ${EMACS} -Q --batch -l ../pg.el -l test-pg.el -f pg-test
 	podman stop pgsql
 	podman rm pgsql
 
@@ -95,7 +103,7 @@ test-postgresql12: test-pg.el
 	   -e PGPORT=5439 \
 	   docker.io/library/postgres:12-alpine
 	sleep 5
-	PGEL_PORT=5439 emacs -Q --batch -l ../pg.el -l test-pg.el -f pg-test
+	PGEL_PORT=5439 ${EMACS} -Q --batch -l ../pg.el -l test-pg.el -f pg-test
 	podman stop pgsql
 	podman rm pgsql
 
@@ -109,7 +117,7 @@ test-postgresql11: test-pg.el
 	   -e PGPORT=5437 \
 	   docker.io/library/postgres:11-alpine
 	sleep 5
-	PGEL_PORT=5437 emacs -Q --batch -l ../pg.el -l test-pg.el -f pg-test
+	PGEL_PORT=5437 ${EMACS} -Q --batch -l ../pg.el -l test-pg.el -f pg-test
 	podman stop pgsql
 	podman rm pgsql
 
@@ -117,18 +125,18 @@ test-postgresql11: test-pg.el
 # Supabase (https://supabase.com) provide hosted PostgreSQL instances with convenient web
 # dashboards, management APIs and integrations with authentication libraries. They have a free tier.
 # As of 2023-08, they are running PostgreSQL 15.1 on Aarch64.
-test-supabase: test-pg.el
-	PGEL_PASSWORD=foobles PGEL_HOSTNAME=db.foobles.supabase.co PGEL_USER=postgres PGEL_DATABASE=postgres emacs -Q --batch -l ../pg.el -l test-pg.el -f pg-test
+test-supabase: test-pg.el peg
+	PGEL_PASSWORD=foobles PGEL_HOSTNAME=db.foobles.supabase.co PGEL_USER=postgres PGEL_DATABASE=postgres ${EMACS} -Q --batch -l -l ${PEG} ../pg.el -l test-pg.el -f pg-test
 
-test-supabase-tls: test-pg.el
-	PGEL_PASSWORD=foobles PGEL_HOSTNAME=db.foobles.supabase.co PGEL_USER=postgres PGEL_DATABASE=postgres emacs -Q --batch -l ../pg.el -l test-pg.el -f pg-test-tls
+test-supabase-tls: test-pg.el peg
+	PGEL_PASSWORD=foobles PGEL_HOSTNAME=db.foobles.supabase.co PGEL_USER=postgres PGEL_DATABASE=postgres ${EMACS} -Q --batch -l ${PEG} -l ../pg.el -l test-pg.el -f pg-test-tls
 
 
 # Neon (https://neon.tech/) provide hosted "serverless" PostgreSQL instances, which allow convenient
 # automated scalability according to load. They have a free tier. As of 2023-11, they are running
 # PostgreSQL 15.4 on AMD64.
-test-neon: test-pg.el
-	PGEL_PASSWORD=foobles PGEL_HOSTNAME=foobles.eu-central-1.aws.neon.tech PGEL_USER=username PGEL_DATABASE=main emacs -Q --batch -l ../pg.el -l test-pg.el -f pg-test-tls
+test-neon: test-pg.el peg
+	PGEL_PASSWORD=foobles PGEL_HOSTNAME=foobles.eu-central-1.aws.neon.tech PGEL_USER=username PGEL_DATABASE=main ${EMACS} -Q --batch -l ${PEG} -l ../pg.el -l test-pg.el -f pg-test-tls
 
 
 
@@ -223,7 +231,7 @@ test-paradedb: test-pg.el
           -e POSTGRESQL_POSTGRES_PASSWORD=pgeltest \
           -d docker.io/paradedb/paradedb:latest
 	sleep 5
-	PGEL_PORT=5441 emacs -Q --batch -l ../pg.el -l test-pg.el -f pg-test
+	PGEL_PORT=5441 make test
 	podman stop paradedb
 	podman rm paradedb
 
@@ -232,18 +240,18 @@ test-paradedb: test-pg.el
 # We run 4 separate Emacs instances, and one central PostgreSQL used as a "message broker" or "event
 # bus". Note that CPU usage in this simple demo is very low.
 pubsub: notification-subscriber.el notification-publisher.el
-	emacs -Q --batch -l ../pg.el -l notification-subscriber.el -f do-listener &
-	emacs -Q --batch -l ../pg.el -l notification-subscriber.el -f do-listener &
-	emacs -Q --batch -l ../pg.el -l notification-subscriber.el -f do-listener &
+	${EMACS} -Q --batch -l ../pg.el -l notification-subscriber.el -f do-listener &
+	${EMACS} -Q --batch -l ../pg.el -l notification-subscriber.el -f do-listener &
+	${EMACS} -Q --batch -l ../pg.el -l notification-subscriber.el -f do-listener &
 	sleep 1
-	emacs -Q --batch -l ../pg.el -l notification-publisher.el -f do-publisher
+	${EMACS} -Q --batch -l ../pg.el -l notification-publisher.el -f do-publisher
 
 
 bench-uncompiled: test-pg.el
-	emacs -Q --batch -l ../pg.el -l test-pg.el -f pg-bench
+	${EMACS} -Q --batch -l ../pg.el -l test-pg.el -f pg-bench
 
 bench-bytecompiled: test-pg.el
-	emacs -Q --batch --eval '(byte-compile-file "../pg.el")' -l ../pg.elc -l test-pg.el -f pg-bench
+	${EMACS} -Q --batch --eval '(byte-compile-file "../pg.el")' -l ../pg.elc -l test-pg.el -f pg-bench
 
 bench-nativecompiled: test-pg.el
-	emacs -Q --batch --eval '(load (native-compile "../pg.el"))' -l test-pg.el -f pg-bench
+	${EMACS} -Q --batch --eval '(load (native-compile "../pg.el"))' -l test-pg.el -f pg-bench
