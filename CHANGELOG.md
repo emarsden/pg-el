@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.34] - Unreleased
+## [0.34] - 2024-05-20
 
 - Add deserialization support for the `tsvector` type, used by the PostgreSQL full text search
   functionality. They will now be parsed into a list of `pg-ts` structures.

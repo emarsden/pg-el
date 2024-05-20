@@ -3,7 +3,7 @@
 ;; Copyright: (C) 1999-2002, 2022-2024  Eric Marsden
 
 ;; Author: Eric Marsden <eric.marsden@risk-engineering.org>
-;; Version: 0.33
+;; Version: 0.34
 ;; Keywords: data comm database postgresql
 ;; URL: https://github.com/emarsden/pg-el
 ;; Package-Requires: ((emacs "28.1") (peg "1.0"))
@@ -1676,9 +1676,9 @@ PostgreSQL and Emacs. CON should no longer be used."
 
 (defun pg-normalize-encoding-name (name)
   "Convert PostgreSQL encoding NAME to an Emacs encoding name."
-  (let ((m (assoc name pg--encoding-names #'string-equal-ignore-case)))
-    (when m (cdr m))))
-
+  (if (fboundp 'string-equal-ignore-case)
+      (cdr (assoc name pg--encoding-names #'string-equal-ignore-case))
+    (cdr (assoc name pg--encoding-names #'string-equal))))
 
 (defun pg-register-parser (type-name parser)
   (puthash type-name parser pg--parsers-name))
