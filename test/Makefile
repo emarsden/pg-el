@@ -1,6 +1,9 @@
 EMACS ?= emacs
 WORKDIR := $(shell mktemp -d)
-PEG := $(shell mktemp --tmpdir --suffix .el pgelpeg-XXXX)
+# recipe below doesn't work on MacOS, where the --suffix argument isn't supported
+# PEG := $(shell mktemp --tmpdir --suffix .el pgelpeg-XXXX)
+TMPTEMPLATE := $(shell mktemp -t pgelpeg-XXXX)
+PEG := $(shell mktemp ${TMPTEMPLATE}XXX.el)
 PEGURL = "https://git.savannah.gnu.org/cgit/emacs/elpa.git/plain/peg.el?h=externals/peg"
 
 default: test
@@ -9,7 +12,7 @@ default: test
 # and load our peg dependency explicitly.
 .PHONY: peg
 peg:
-	wget -q -O ${PEG} ${PEGURL}
+	curl --silent --output ${PEG} ${PEGURL}
 
 test: test-pg.el peg
 	${EMACS} -Q --batch -l ${PEG} -l ../pg.el -l test-pg.el -f pg-test
