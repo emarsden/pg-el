@@ -809,7 +809,7 @@ bar$$"))))
     ;; testing COPY TO STDOUT
     (pg-exec con "DROP TABLE IF EXISTS copy_from")
     (pg-exec con "CREATE TABLE copy_from (a INT2, b INTEGER, c CHAR, d TEXT)")
-    (dotimes (i 100)
+    (dotimes (_i 100)
       (pg-exec-prepared con "INSERT INTO copy_from VALUES($1,$2,$3,$4)"
                         `((,(random 100) . "int2")
                           (,(- (random 1000000) 500000) . "int4")
@@ -851,7 +851,7 @@ bar$$"))))
 
 
 ;; "SELECT xmlcomment("42") -> "<!--42-->"
-(defun pg-test-xmlbinary (con)
+(defun pg-test-xmlbinary (_con)
   nil)
 
 ;; Testing for the data access functions. Expected output is something
