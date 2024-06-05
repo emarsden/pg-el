@@ -258,7 +258,14 @@ bar$$"))))
     (should (string= "abcdef" (car (row "SELECT 'abc' || 'def'"))))
     (should (string= "howdy" (car (row "SELECT 'howdy'::text"))))
     (should (string= "gday" (car (row "SELECT 'gday'::varchar(20)"))))
-    (should (string= (md5 "foobles") (car (row "SELECT md5('foobles')"))))))
+    (should (string= (md5 "foobles") (car (row "SELECT md5('foobles')"))))
+    ;; This setting defined in PostgreSQL v8.2. A value of 120007 means major version 12, minor
+    ;; version 7. The value in pgcon-server-version-major is obtained by parsing the server_version
+    ;; string sent by the backend on startup.
+    (let* ((version-str (car (row "SELECT current_setting('server_version_num')")))
+           (version-num (cl-parse-integer version-str)))
+      (should (eql (pgcon-server-version-major con)
+                   (/ version-num 10000))))))
 
 (defun pg-test-insert (con)
   (cl-flet ((scalar (sql) (cl-first (pg-result (pg-exec con sql) :tuple 0))))
