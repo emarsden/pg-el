@@ -41,12 +41,13 @@ This library has support for:
 - Connections over TCP or (on Unix machines) a local Unix socket.
 
 
-The code has been tested with PostgreSQL versions 16.3, 15.4, 13.8, 11.17, and 10.22 on Linux. It is
-also tested via GitHub actions on MacOS and Windows, using the PostgreSQL version which is
-pre-installed in the virtual images (currently 14.8). This library also works against other
+The code has been tested with PostgreSQL versions 17beta1, 16.3, 15.4, 13.8, 11.17, and 10.22 on
+Linux. It is also tested via GitHub actions on MacOS and Windows, using the PostgreSQL version which
+is pre-installed in the virtual images (currently 14.8). This library also works against other
 databases that implement the PostgreSQL wire protocol:
 
-- [YugabyteDB](https://yugabyte.com/): tested against version 2.19
+- [YugabyteDB](https://yugabyte.com/): tested against version 2.21, mostly working though the
+  `pg_sequences` table is not implemented so certain tests fail.
 
 - [CockroachDB](https://github.com/cockroachdb/cockroach): tested with CockroachDB CCL v23.1. Note
   that this database does not implement the large object functionality, and its interpretation of
@@ -57,6 +58,9 @@ databases that implement the PostgreSQL wire protocol:
 - [QuestDB](https://questdb.io/): tested against version 6.5.4
 
 - [ParadeDB](https://www.paradedb.com/): tested with version 0.6.1
+
+- Untested but likely to work: Amazon RDS, Google Cloud SQL, Azure Database for PostgreSQL, Amazon
+  Auroa, Google AlloyDB, CitusData, Google Spanner.
 
 Tested with Emacs versions 29.3, 28.2, 27.2 and 26.3. Emacs versions older than 26.1 will not work
 against a recent PostgreSQL version (whose default configuration requires SCRAM-SHA-256
@@ -82,7 +86,13 @@ then saying
 
      M-x package-install RET pg
 
-To install manually, place the file `pg.el` in a directory on your `load-path`, byte-compile it
+Alternatively, you can install the library from the latest Github revision using:
+
+     (unless (package-installed-p 'pg)
+        (package-vc-install "https://github.com/emarsden/pg-el" nil nil 'pg))
+
+
+To install **manually**, place the file `pg.el` in a directory on your `load-path`, byte-compile it
 (using for example `B` in dired) and add the following to your Emacs initialization file:
 
     (require 'pg)
