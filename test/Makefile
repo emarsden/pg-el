@@ -3,8 +3,9 @@ WORKDIR := $(shell mktemp -d)
 # recipe below doesn't work on MacOS, where the --suffix argument isn't supported
 # PEG := $(shell mktemp --tmpdir --suffix .el pgelpeg-XXXX)
 TMPTEMPLATE := $(shell mktemp -t pgelpeg-XXXX)
-PEG := $(shell mktemp ${TMPTEMPLATE}XXX.el)
+TMPPEG := $(shell mktemp ${TMPTEMPLATE}XXX.el)
 PEGURL = "https://git.savannah.gnu.org/cgit/emacs/elpa.git/plain/peg.el?h=externals/peg"
+PEG := $(shell realpath peg.el)
 
 default: test
 
@@ -12,30 +13,29 @@ default: test
 # and load our peg dependency explicitly.
 .PHONY: peg
 peg:
-	curl --silent --output ${PEG} ${PEGURL}
+	curl --silent --output ${TMPPEG} ${PEGURL}
 
-test: test-pg.el peg
+test: test-pg.el
 	${EMACS} -Q --batch -l ${PEG} -l ../pg.el -l test-pg.el -f pg-test
 
 # Run tests over an encrypted connection to PostgreSQL. Encryption is not available for all versions
 # and installations (the PostgreSQL backend needs to be set up with TLS certificates), so this is a
 # separate test target.
-test-tls: test-pg.el peg
+test-tls: test-pg.el
 	${EMACS} -Q --batch -l ${PEG} -l ../pg.el -l test-pg.el -f pg-test-tls
 
 # Run tests over a local Unix socket connection to PostgreSQL.
-test-local: test-pg.el peg
+test-local: test-pg.el
 	${EMACS} -Q --batch -l ${PEG} -l ../pg.el -l test-pg.el -f pg-test-local
 
-test-connections: test-pg.el peg
+test-connections: test-pg.el
 	${EMACS} -Q --batch -l ${PEG} -l ../pg.el -l test-pg.el -f pg-connection-tests
 
 
 # Using Docker images for Emacs from https://hub.docker.com/r/silex/emacs/ and the locally installed
 # PostgreSQL.
-test-emacs28: test-pg.el peg
-	cp ../pg.el test-pg.el ${WORKDIR}
-	cp ${PEG} ${WORKDIR}/peg.el
+test-emacs28: test-pg.el
+	cp ${PEG} ../pg.el test-pg.el ${WORKDIR}
 	podman run --rm -it \
 	   -v ${WORKDIR}:/tmp \
 	   --network slirp4netns:allow_host_loopback=true -e PGEL_HOSTNAME=10.0.2.2 \
@@ -44,9 +44,8 @@ test-emacs28: test-pg.el peg
 
 # The peg.el library doesn't actually compile with Emacs 27 (void-function byte-run--set-speed), so
 # this doesn't work.
-test-emacs27: test-pg.el peg
-	cp ../pg.el test-pg.el ${WORKDIR}
-	cp ${PEG} ${WORKDIR}/peg.el
+test-emacs27: test-pg.el
+	cp ${PEG} ../pg.el test-pg.el ${WORKDIR}
 	podman run --rm -it \
 	   -v ${WORKDIR}:/tmp \
 	   --network slirp4netns:allow_host_loopback=true -e PGEL_HOSTNAME=10.0.2.2 \
@@ -142,17 +141,17 @@ test-postgresql11: test-pg.el
 # Supabase (https://supabase.com) provide hosted PostgreSQL instances with convenient web
 # dashboards, management APIs and integrations with authentication libraries. They have a free tier.
 # As of 2023-08, they are running PostgreSQL 15.1 on Aarch64.
-test-supabase: test-pg.el peg
+test-supabase: test-pg.el
 	PGEL_PASSWORD=foobles PGEL_HOSTNAME=db.foobles.supabase.co PGEL_USER=postgres PGEL_DATABASE=postgres $(MAKE) test
 
-test-supabase-tls: test-pg.el peg
+test-supabase-tls: test-pg.el
 	PGEL_PASSWORD=foobles PGEL_HOSTNAME=db.foobles.supabase.co PGEL_USER=postgres PGEL_DATABASE=postgres $(MAKE) test-tls
 
 
 # Neon (https://neon.tech/) provide hosted "serverless" PostgreSQL instances, which allow convenient
 # automated scalability according to load. They have a free tier. As of 2023-11, they are running
 # PostgreSQL 15.4 on AMD64.
-test-neon: test-pg.el peg
+test-neon: test-pg.el
 	PGEL_PASSWORD=foobles PGEL_HOSTNAME=foobles.eu-central-1.aws.neon.tech PGEL_USER=username PGEL_DATABASE=main $(MAKE) test-tls
 
 
@@ -309,10 +308,15 @@ pubsub: notification-subscriber.el notification-publisher.el
 
 
 bench-uncompiled: test-pg.el
-	${EMACS} -Q --batch -l ../pg.el -l test-pg.el -f pg-bench
+	${EMACS} -Q --batch -l ${PEG} -l ../pg.el -l test-pg.el -f pg-bench
 
 bench-bytecompiled: test-pg.el
-	${EMACS} -Q --batch --eval '(byte-compile-file "../pg.el")' -l ../pg.elc -l test-pg.el -f pg-bench
+	${EMACS} -Q --batch -l ${PEG} --eval "(byte-compile-file \"${PEG}\")"
+	${EMACS} -Q --batch -l peg.elc --eval '(byte-compile-file "../pg.el")'
+	${EMACS} -Q --batch -l peg.elc -l ../pg.elc -l test-pg.el -f pg-bench
 
 bench-nativecompiled: test-pg.el
-	${EMACS} -Q --batch --eval '(load (native-compile "../pg.el"))' -l test-pg.el -f pg-bench
+	${EMACS} -Q --batch -l ${PEG} \
+	   --eval "(load (native-compile \"${PEG}\"))" \
+	   --eval "(load (native-compile \"../pg.el\"))" \
+	   -l test-pg.el -f pg-bench
