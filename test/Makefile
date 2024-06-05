@@ -77,8 +77,20 @@ test-emacs25: test-pg.el
 	   docker.io/silex/emacs:25.3 \
 	   ${EMACS} -Q --batch -l ${PEG} -l ../pg.el -l test-pg.el -f pg-test
 
+test-postgresql17b: test-pg.el
+	podman run --rm --name pgsql \
+	   --publish 5439:5439 \
+	   -e POSTGRES_DB=pgeltestdb \
+	   -e POSTGRES_USER=pgeltestuser \
+	   -e POSTGRES_PASSWORD=pgeltest \
+	   -e PGPORT=5439 \
+	   -d docker.io/library/postgres:17beta1-alpine3.20
+	sleep 5
+	PGEL_PORT=5439 $(MAKE) test
+	podman stop pgsql
+
 test-postgresql14: test-pg.el
-	podman run --name pgsql \
+	podman run --rm --name pgsql \
 	   --publish 5439:5439 \
 	   -e POSTGRES_DB=pgeltestdb \
 	   -e POSTGRES_USER=pgeltestuser \
@@ -88,10 +100,9 @@ test-postgresql14: test-pg.el
 	sleep 5
 	PGEL_PORT=5439 $(MAKE) test
 	podman stop pgsql
-	podman rm pgsql
 
 test-postgresql13: test-pg.el
-	podman run --name pgsql \
+	podman run --rm --name pgsql \
 	   --publish 5439:5439 \
 	   -e POSTGRES_DB=pgeltestdb \
 	   -e POSTGRES_USER=pgeltestuser \
@@ -101,11 +112,9 @@ test-postgresql13: test-pg.el
 	sleep 5
 	PGEL_PORT=5439 $(MAKE) test
 	podman stop pgsql
-	podman rm pgsql
 
 test-postgresql12: test-pg.el
-	podman run --detach \
-	   --name pgsql \
+	podman run --rm --name pgsql \
 	   --publish 5439:5439 \
 	   -e POSTGRES_DB=pgeltestdb \
 	   -e POSTGRES_USER=pgeltestuser \
@@ -115,11 +124,9 @@ test-postgresql12: test-pg.el
 	sleep 5
 	PGEL_PORT=5439 $(MAKE) test
 	podman stop pgsql
-	podman rm pgsql
 
 test-postgresql11: test-pg.el
-	podman run --detach \
-	   --name pgsql \
+	podman run --rm --name pgsql \
 	   --publish 5437:5437 \
 	   -e POSTGRES_DB=pgeltestdb \
 	   -e POSTGRES_USER=pgeltestuser \
@@ -195,8 +202,8 @@ test-questdb: test-pg.el
 	podman rm questdb
 
 
-# Yugabyte 2.19 is based on PostgreSQL 11.2. This works very well, including the HSTORE and pgvector
-# extensions. LISTEN/NOTIFY is not supported.
+# Yugabyte 2.21 is based on PostgreSQL 11.2. This works very well, including the HSTORE and pgvector
+# extensions. The sequence test fails (SELECT last_value FROM pg_sequences). LISTEN/NOTIFY is not supported.
 test-yugabyte: test-pg.el
 	podman run --rm --name yugabyte \
           --publish 7000:7000 \
@@ -205,6 +212,7 @@ test-yugabyte: test-pg.el
 	  --publish 5433:5433 \
 	  -d docker.io/yugabytedb/yugabyte \
 	  bin/yugabyted start \
+	  --advertise_address localhost \
 	  --base_dir=/tmp \
 	  --background=false
 	sleep 10
@@ -212,6 +220,29 @@ test-yugabyte: test-pg.el
 	podman stop yugabyte
 	podman rm yugabyte
 
+
+# https://docs.immudb.io/master/running/download.html
+#
+# immadmin doesn't seem to provide a useful way to provide password via environment
+# not to be used in a non-interactive manner
+#
+# We see a protocol error "database name not provided" after the StartupMessage
+# whereas psql is able to connect when disabling TLS
+#   psql "sslmode=disable host=localhost port=5667 dbname=pgeltestdb user=pgeltestuser password=pgeltest"
+# though few SQL commands work.
+test-immudb: test-pg.el
+	podman run --rm --name immudb \
+	  --net host \
+          -d docker.io/codenotary/immudb:latest \
+            --pgsql-server --pgsql-server-port 5667 \
+	    --admin-password pgeltest --force-admin-password
+	sleep 2
+	echo pgeltest|podman exec -ti immudb immuadmin login immudb
+	podman exec -ti immudb immuadmin database create pgeltestdb
+	expect -c 'spawn podman exec -ti immudb immuadmin user create pgeltestuser readwrite pgeltestdb;sleep 0.1;expect "Choose a password for";send "pgeltest\r";expect "continue with your password instead.*Y/n";send "Y\r";expect "Confirm password";send "pgeltest\r";exit'
+	PGEL_DATABASE=pgeltestdb PGEL_USER=pgeltestuser PGEL_PASSWORD=pgeltest PGEL_PORT=5667 $(MAKE) test	
+	podman stop immudb
+	podman rm immudb
 
 
 # 20230807 this container fails to run with podman with a permission denied on su
@@ -244,6 +275,26 @@ test-paradedb: test-pg.el
 	PGEL_PORT=5441 $(MAKE) test
 	podman stop paradedb
 	podman rm paradedb
+
+
+
+# Tested 2024-05 with v24.4. Clickhouse fails to start with podman: error related to setting the max
+# core size.
+test-clickhouse: test-pg.el
+	echo '<clickhouse><postgresql_port>5491</postgresql_port><core_dump><size_limit>7741824</size_limit></core_dump></clickhouse>' > /tmp/clickhouse-config.xml
+	sudo podman run --rm --name clickhouse \
+	   --ulimit nofile=62144:62144 --ulimit core=234567:234567 \
+	   -v /tmp/clickhouse-config.xml:/etc/clickhouse-server/config.xml \
+	   --publish 5491:5491 \
+	   -p 18123:8123 -p19000:9000 \
+	   -e CLICKHOUSE_DB=pgeltestdb \
+	   -e CLICKHOUSE_USER=pgeltestuser \
+	   -e CLICKHOUSE_PASSWORD=pgeltest \
+	   -d docker.io/clickhouse/clickhouse-server
+	sleep 5
+	PGEL_PORT=5491 $(MAKE) test
+	podman stop clickhouse
+	podman rm clickhouse
 
 
 # Testing the asynchronous notification support implemented in v0.24 to run a publish-subcribe test.
