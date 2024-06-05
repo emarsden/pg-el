@@ -2603,7 +2603,7 @@ TABLE can be a string or a schema-qualified name. Uses database connection CON."
 ;; file /usr/local/src/pgsql/src/bin/psql/psql.c
 ;; =====================================================================
 (defun pg-databases (con)
-  "List of the databases in the PostgreSQL server to which we are connected via CON."
+  "List of the databases in the PostgreSQL server we are connected to via CON."
   (let ((res (pg-exec con "SELECT datname FROM pg_database")))
     (apply #'append (pg-result res :tuples))))
 
