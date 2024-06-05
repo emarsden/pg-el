@@ -93,6 +93,9 @@ and (depending on server configuration) in the connection log.")
 (defvar pg-connect-timeout 30
   "Timeout in seconds for establishing the network connection to PostgreSQL.")
 
+(defvar pg-read-timeout 10
+  "Timeout in seconds when reading data from PostgreSQL.")
+
 (defvar pg-disable-type-coercion nil
   "*Non-nil disables the type coercion mechanism.
 The default is nil, which means that data recovered from the database
@@ -151,7 +154,7 @@ struct.")
   server-version-major
   secret
   (client-encoding 'utf-8)
-  (timeout 10)
+  (timeout pg-read-timeout)
   query-log
   connect-info)
 
@@ -437,8 +440,14 @@ Uses database DBNAME, user USER and password PASSWORD."
         ;; DateStyle, in_hot_standby, integer_datetimes
         (when (> (length (cl-first items)) 0)
           (when (string= "server_version" (cl-first items))
-            (let ((major (cl-first (split-string (cl-second items) "\\."))))
-              (setf (pgcon-server-version-major con) (cl-parse-integer major))))
+            ;; We need to accept a version string of the form "17beta1" as well as "16.1"
+            (let* ((major (cl-first (split-string (cl-second items) "\\.")))
+                   (major-numeric (apply #'string
+                                         (cl-loop
+                                          for c across major
+                                          while (<= ?0 c ?9)
+                                          collect c))))
+              (setf (pgcon-server-version-major con) (cl-parse-integer major-numeric))))
           (dolist (handler pg-parameter-change-functions)
             (funcall handler con (cl-first items) (cl-second items))))))
 

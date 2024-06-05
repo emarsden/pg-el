@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.35] - Unreleased
+
+- New variable `pg-read-timeout` allows you to specify a timeout expressed in seconds when reading
+  data from PostgreSQL over the network. A complement to the variable `pg-connect-timeout`.
+
+- Accept a `server_version` backend parameter of the form "17beta1", in addition to the standard
+  format of the form "16.3".
+
 ## [0.34] - 2024-05-20
 
 - Add deserialization support for the `tsvector` type, used by the PostgreSQL full text search
