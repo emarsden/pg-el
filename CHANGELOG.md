@@ -1,12 +1,13 @@
 # Changelog
 
-## [0.35] - Unreleased
+## [0.35] - 2024-06-08
 
 - New variable `pg-read-timeout` allows you to specify a timeout expressed in seconds when reading
   data from PostgreSQL over the network. A complement to the variable `pg-connect-timeout`.
 
 - Accept a `server_version` backend parameter of the form "17beta1", in addition to the standard
-  format of the form "16.3".
+  format of the form "16.3". Tests pass with PostgreSQL 17 beta1.
+
 
 ## [0.34] - 2024-05-20
 
