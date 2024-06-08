@@ -1,68 +1,69 @@
 EMACS ?= emacs
 WORKDIR := $(shell mktemp -d)
-# recipe below doesn't work on MacOS, where the --suffix argument isn't supported
-# PEG := $(shell mktemp --tmpdir --suffix .el pgelpeg-XXXX)
-TMPTEMPLATE := $(shell mktemp -t pgelpeg-XXXX)
-TMPPEG := $(shell mktemp ${TMPTEMPLATE}XXX.el)
-PEGURL = "https://git.savannah.gnu.org/cgit/emacs/elpa.git/plain/peg.el?h=externals/peg"
-PEG := $(shell realpath peg.el)
+
+export DEPS_DIR = $(shell realpath .deps)
 
 default: test
 
-# We can't use the package management machinery when starting Emacs with "-Q", so download
-# and load our peg dependency explicitly.
-.PHONY: peg
-peg:
-	curl --silent --output ${TMPPEG} ${PEGURL}
+.PHONY: install-deps
+install-deps:
+	rm -rf ${DEPS_DIR}
+	${EMACS} -Q --batch ../pg.el -l $(shell realpath install-deps.el)
 
-test: test-pg.el
-	${EMACS} -Q --batch -l ${PEG} -l ../pg.el -l test-pg.el -f pg-test
+test: test-pg.el install-deps
+	${EMACS} -Q --batch -l load-deps.el -l ../pg.el -l test-pg.el -f pg-test
+	rm -rf ${DEPS_DIR}
 
 # Run tests over an encrypted connection to PostgreSQL. Encryption is not available for all versions
 # and installations (the PostgreSQL backend needs to be set up with TLS certificates), so this is a
 # separate test target.
-test-tls: test-pg.el
-	${EMACS} -Q --batch -l ${PEG} -l ../pg.el -l test-pg.el -f pg-test-tls
+test-tls: test-pg.el install-deps
+	${EMACS} -Q --batch -l load-deps.el -l ../pg.el -l test-pg.el -f pg-test-tls
+	rm -rf ${DEPS_DIR}
 
 # Run tests over a local Unix socket connection to PostgreSQL.
-test-local: test-pg.el
-	${EMACS} -Q --batch -l ${PEG} -l ../pg.el -l test-pg.el -f pg-test-local
+test-local: test-pg.el install-deps
+	${EMACS} -Q --batch -l load-deps.el -l ../pg.el -l test-pg.el -f pg-test-local
+	rm -rf ${DEPS_DIR}
 
-test-connections: test-pg.el
-	${EMACS} -Q --batch -l ${PEG} -l ../pg.el -l test-pg.el -f pg-connection-tests
+test-connections: test-pg.el install-deps
+	${EMACS} -Q --batch -l load-deps.el -l ../pg.el -l test-pg.el -f pg-connection-tests
+	rm -rf ${DEPS_DIR}
 
 
 # Using Docker images for Emacs from https://hub.docker.com/r/silex/emacs/ and the locally installed
 # PostgreSQL.
 test-emacs28: test-pg.el
-	cp ${PEG} ../pg.el test-pg.el ${WORKDIR}
+	cp install-deps.el load-deps.el ../pg.el test-pg.el ${WORKDIR}
 	podman run --rm -it \
 	   -v ${WORKDIR}:/tmp \
+	   -e DEPS_DIR=/tmp/deps \
 	   --network slirp4netns:allow_host_loopback=true -e PGEL_HOSTNAME=10.0.2.2 \
 	   docker.io/silex/emacs:28.1 \
-	   ${EMACS} -Q --batch -l /tmp/peg.el -l /tmp/pg.el -l /tmp/test-pg.el -f pg-test
+	   ${EMACS} -Q --batch /tmp/pg.el -l /tmp/install-deps.el -l /tmp/load-deps.el -l /tmp/pg.el -l /tmp/test-pg.el -f pg-test
 
 # The peg.el library doesn't actually compile with Emacs 27 (void-function byte-run--set-speed), so
 # this doesn't work.
 test-emacs27: test-pg.el
-	cp ${PEG} ../pg.el test-pg.el ${WORKDIR}
+	cp install-deps.el load-deps.el ../pg.el test-pg.el ${WORKDIR}
 	podman run --rm -it \
 	   -v ${WORKDIR}:/tmp \
+	   -e DEPS_DIR=/tmp/deps \
 	   --network slirp4netns:allow_host_loopback=true -e PGEL_HOSTNAME=10.0.2.2 \
 	   docker.io/silex/emacs:27.2 \
-	   ${EMACS} -Q --batch -l /tmp/peg.el --eval '(byte-compile-file "/tmp/peg.el")' && \
-	   ${EMACS} -Q --batch -l /tmp/peg.elc -l /tmp/pg.el -l /tmp/test-pg.el -f pg-test
+	   ${EMACS} -Q --batch /tmp/pg.el -l /tmp/install-deps.el -l /tmp/load-deps.el -l /tmp/pg.el -l /tmp/test-pg.el -f pg-test
 
 # The extended query support will not work in Emacs versions before 28.1, because functionality
 # provided by the bindat libary is needed. However, other functionality based on the simple query
 # protocol (the pg-exec function) should work fine.
 test-emacs26: test-pg.el
-	cp ../pg.el test-pg.el ${WORKDIR}
+	cp install-deps.el load-deps.el ../pg.el test-pg.el ${WORKDIR}
 	podman run --rm -it \
 	   -v ${WORKDIR}:/tmp \
+	   -e DEPS_DIR=/tmp/deps \
 	   --network slirp4netns:allow_host_loopback=true -e PGEL_HOSTNAME=10.0.2.2 \
 	   docker.io/silex/emacs:26.3-alpine-ci \
-	   ${EMACS} -Q --batch -l ${PEG} -l ../pg.el -l test-pg.el -f pg-test
+	   ${EMACS} -Q --batch /tmp/pg.el -l /tmp/install-deps.el -l /tmp/load-deps.el -l /tmp/pg.el -l /tmp/test-pg.el -f pg-test
 
 # Emacs versions older than 26.1 will not work against a recent PostgreSQL version (that is set up
 # to require SCRAM-SHA-256 authentication), because they don't include the GnuTLS support which we
@@ -72,9 +73,10 @@ test-emacs25: test-pg.el
 	cp ../pg.el test-pg.el ${WORKDIR}
 	podman run --rm -it \
 	   -v ${WORKDIR}:/tmp \
+	   -e DEPS_DIR=/tmp/deps \
 	   --network slirp4netns:allow_host_loopback=true -e PGEL_HOSTNAME=10.0.2.2 \
 	   docker.io/silex/emacs:25.3 \
-	   ${EMACS} -Q --batch -l ${PEG} -l ../pg.el -l test-pg.el -f pg-test
+	   ${EMACS} -Q --batch /tmp/pg.el -l /tmp/install-deps.el -l /tmp/load-deps.el -l /tmp/pg.el -l /tmp/test-pg.el -f pg-test
 
 test-postgresql17b: test-pg.el
 	podman run --rm --name pgsql \
@@ -135,7 +137,6 @@ test-postgresql11: test-pg.el
 	sleep 5
 	PGEL_PORT=5437 $(MAKE) test
 	podman stop pgsql
-	podman rm pgsql
 
 
 # Supabase (https://supabase.com) provide hosted PostgreSQL instances with convenient web
@@ -169,6 +170,7 @@ test-cratedb: test-pg.el
           -d docker.io/crate -Cdiscovery.type=single-node -Cpsql.port=5789
 	sleep 5
 	PGEL_DATABASE=doc PGEL_USER=crate PGEL_DATABASE=postgres PGEL_PORT=5789 $(MAKE) test
+	podman stop cratedb
 
 # Version 23.1.13 of CockroachDB doesn't get very far through the tests, failing on the boolean
 # vector syntax b'1001000'.
@@ -180,7 +182,6 @@ test-cockroachdb: test-pg.el
 	sleep 5
 	PGEL_DATABASE=postgres PGEL_USER=root PGEL_PASSWORD="" PGEL_PORT=26257 $(MAKE) test
 	podman stop cockroachdb
-	podman rm cockroachdb
 
 
 # The current version of QuestDB (based on PostgreSQL 12.3) doesn't get very far through the tests;
@@ -198,7 +199,6 @@ test-questdb: test-pg.el
 	sleep 5
 	PGEL_DATABASE=postgres PGEL_USER=admin PGEL_PASSWORD="quest" PGEL_PORT=8812 $(MAKE) test
 	podman stop questdb
-	podman rm questdb
 
 
 # Yugabyte 2.21 is based on PostgreSQL 11.2. This works very well, including the HSTORE and pgvector
@@ -217,7 +217,6 @@ test-yugabyte: test-pg.el
 	sleep 10
 	PGEL_DATABASE=yugabyte PGEL_USER=yugabyte PGEL_PASSWORD="" PGEL_PORT=5433 $(MAKE) test
 	podman stop yugabyte
-	podman rm yugabyte
 
 
 # https://docs.immudb.io/master/running/download.html
@@ -241,7 +240,6 @@ test-immudb: test-pg.el
 	expect -c 'spawn podman exec -ti immudb immuadmin user create pgeltestuser readwrite pgeltestdb;sleep 0.1;expect "Choose a password for";send "pgeltest\r";expect "continue with your password instead.*Y/n";send "Y\r";expect "Confirm password";send "pgeltest\r";exit'
 	PGEL_DATABASE=pgeltestdb PGEL_USER=pgeltestuser PGEL_PASSWORD=pgeltest PGEL_PORT=5667 $(MAKE) test	
 	podman stop immudb
-	podman rm immudb
 
 
 # 20230807 this container fails to run with podman with a permission denied on su
@@ -253,7 +251,6 @@ test-greenplum: test-pg.el
 	sleep 5
 	PGEL_DATABASE=postgres PGEL_USER=gpadmin PGEL_PASSWORD="greenplum" PGEL_PORT=5433 $(MAKE) test
 	podman stop greenplum
-	podman rm greenplum
 
 
 # https://docs.paradedb.com/introduction#get-started
@@ -273,8 +270,6 @@ test-paradedb: test-pg.el
 	sleep 5
 	PGEL_PORT=5441 $(MAKE) test
 	podman stop paradedb
-	podman rm paradedb
-
 
 
 # Tested 2024-05 with v24.4. Clickhouse fails to start with podman: error related to setting the max
@@ -307,16 +302,14 @@ pubsub: notification-subscriber.el notification-publisher.el
 	${EMACS} -Q --batch -l ../pg.el -l notification-publisher.el -f do-publisher
 
 
-bench-uncompiled: test-pg.el
-	${EMACS} -Q --batch -l ${PEG} -l ../pg.el -l test-pg.el -f pg-bench
+bench-uncompiled: test-pg.el install-deps
+	${EMACS} -Q --batch -l load-deps.el -l ../pg.el -l test-pg.el -f pg-bench
+	rm -rf ${DEPS_DIR}
 
-bench-bytecompiled: test-pg.el
-	${EMACS} -Q --batch -l ${PEG} --eval "(byte-compile-file \"${PEG}\")"
-	${EMACS} -Q --batch -l peg.elc --eval '(byte-compile-file "../pg.el")'
-	${EMACS} -Q --batch -l peg.elc -l ../pg.elc -l test-pg.el -f pg-bench
+bench-bytecompiled: test-pg.el install-deps
+	${EMACS} -Q --batch -l load-deps.el --eval '(byte-compile-file "../pg.el")'
+	${EMACS} -Q --batch -l load-deps.el -l ../pg.elc -l test-pg.el -f pg-bench
 
-bench-nativecompiled: test-pg.el
-	${EMACS} -Q --batch -l ${PEG} \
-	   --eval "(load (native-compile \"${PEG}\"))" \
-	   --eval "(load (native-compile \"../pg.el\"))" \
+bench-nativecompiled: test-pg.el install-deps
+	${EMACS} -Q --batch -l load-deps.el --eval "(load (native-compile \"../pg.el\"))" \
 	   -l test-pg.el -f pg-bench
