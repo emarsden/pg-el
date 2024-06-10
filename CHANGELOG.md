@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.36] - Unreleased
+
+- Parse the PostgreSQL UUID type as text.
+
+- Parse the PostgreSQL XML type as text.
+
+- Fix serialization for the PostgreSQL BPCHAR type.
+
+
 ## [0.35] - 2024-06-08
 
 - New variable `pg-read-timeout` allows you to specify a timeout expressed in seconds when reading

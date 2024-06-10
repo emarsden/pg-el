@@ -2087,11 +2087,6 @@ Return nil if the extension could not be set up."
     (cl-assert (<= 0 v 255) t "Value out of range for CHAR type")
     (string v)))
 
-(pg-register-serializer "bpchar"
-  (lambda (v)
-    (cl-assert (<= 0 v 255) t "Value out of range for BPCHAR type")
-    (string v)))
-
 ;; see https://www.postgresql.org/docs/current/datatype-numeric.html
 (pg-register-serializer "int2"
   (lambda (v)
