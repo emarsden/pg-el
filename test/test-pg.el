@@ -4,6 +4,21 @@
 ;;; Copyright: (C) 2022-2024  Eric Marsden
 
 
+;; pgeltestdb=> CREATE TYPE mood AS ENUM ('sad', 'ok', 'happy');
+;; CREATE TYPE
+;; pgeltestdb=> CREATE TABLE person (
+;;                                   name text,
+;;                                   current_mood mood
+;;                                   );
+;; CREATE TABLE
+;; pgeltestdb=> INSERT INTO person VALUES ('Moe', 'happy');
+;; INSERT 0 1
+;; pgeltestdb=> INSERT INTO person VALUES ('John', 'sad');
+;; INSERT 0 1
+
+;; FIXME need to extend pg--lookup-type-name so that when we query with an oid which is not in our
+;; cache, we requery PG for new OIDs, associated for example with a newly-defined enum
+
 (require 'cl-lib)
 (require 'pg)
 (require 'ert)

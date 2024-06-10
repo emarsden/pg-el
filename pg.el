@@ -1734,6 +1734,8 @@ PostgreSQL and Emacs. CON should no longer be used."
 (pg-register-parser "name" #'pg-text-parser)
 (pg-register-parser "text" #'pg-text-parser)
 (pg-register-parser "varchar" #'pg-text-parser)
+(pg-register-parser "xml" #'pg-text-parser)
+(pg-register-parser "uuid" #'pg-text-parser)
 
 (pg-register-parser "bytea"
   ;; BYTEA binary strings (sequence of octets), that use hex escapes. Note
