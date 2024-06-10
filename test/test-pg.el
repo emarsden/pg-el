@@ -105,6 +105,7 @@
     (pg-test-insert/prepared con))
   (pg-test-collation con)
   (pg-test-xml con)
+  (pg-test-uuid con)
   (message "Testing field extraction routines...")
   (pg-test-result con)
   (pg-test-bytea con)
@@ -443,16 +444,35 @@ bar$$"))))
     (should (eql (scalar "SELECT date '2001-10-01' - date '2001-09-28'") 3))))
 
 
-;; We are not parsing XML values. Very basic testing here. PostgreSQL is not always compiled with
+;; https://www.postgresql.org/docs/current/datatype-xml.html#DATATYPE-XML-CREATING
+;;
+;; We are handling XML as an Emacs Lisp string. PostgreSQL is not always compiled with
 ;; XML support, so check for that first.
 (defun pg-test-xml (con)
   (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0))))
     (unless (or (cl-search "CockroachDB" (pg-backend-version con))
                 (cl-search "-YB-" (pg-backend-version con)))
-      ;; we are not parsing XML values
       (unless (zerop (scalar "SELECT COUNT(*) FROM pg_type WHERE typname='xml'"))
+        (should (string= "<foo attr=\"45\">bar</foo>"
+                         (scalar "SELECT XMLPARSE (CONTENT '<foo attr=\"45\">bar</foo>')")))
         (should (string= (scalar "SELECT xmlforest('abc' AS foo, 123 AS bar)")
                          "<foo>abc</foo><bar>123</bar>"))))))
+
+;; https://www.postgresql.org/docs/current/datatype-uuid.html
+(defun pg-test-uuid (con)
+  (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0))))
+    (should (string= "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+                     (scalar "SELECT 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'::uuid")))
+    (should (string= "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+                     (scalar "SELECT 'A0EEBC99-9C0B-4EF8-BB6D-6BB9BD380A11'::uuid")))
+    (dotimes (_i 30)
+      (let ((uuid (scalar "SELECT gen_random_uuid()"))
+            (re (concat "\\<[[:xdigit:]]\\{8\\}-"
+                        "[[:xdigit:]]\\{4\\}-"
+                        "[[:xdigit:]]\\{4\\}-"
+                        "[[:xdigit:]]\\{4\\}-"
+                        "[[:xdigit:]]\\{12\\}\\>")))
+        (should (string-match re uuid))))))
 
 
 ;; https://www.postgresql.org/docs/current/collation.html
