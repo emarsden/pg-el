@@ -2049,7 +2049,8 @@ Return nil if the extension could not be set up."
       (when parser
         (puthash oid parser pg--parsers-oid)))))
 
-;; pgvector embeddings are sent by the database as strings, in the form "[1,2,3]".
+;; pgvector embeddings are sent by the database as strings, in the form "[1,2,3]" or ["0.015220831,
+;; 0.039211094, 0.02235647]"
 (pg-register-parser "vector"
   (lambda (s _e)
     (let ((len (length s)))
@@ -2057,7 +2058,7 @@ Return nil if the extension could not be set up."
                    (eql (aref s (1- len)) ?\]))
         (signal 'pg-protocol-error (list "Unexpected format for VECTOR embedding")))
       (let ((segments (split-string (cl-subseq s 1 (1- len)) ",")))
-        (apply #'vector (mapcar #'cl-parse-integer segments))))))
+        (apply #'vector (mapcar #'string-to-number segments))))))
 
 
 (defun pg-register-serializer (type-name serializer)
@@ -2070,10 +2071,13 @@ Return nil if the extension could not be set up."
 (put 'pg-register-textual-serializer 'lisp-indent-function 'defun)
 
 ;; We don't register a serializer for "text" and "varchar", because they are sent in text mode, and
-;; therefore correctly encoded according to the connection encoding.
+;; therefore correctly encoded according to the connection encoding. Likewise for the "uuid" and
+;; "xml" types.
 ;;
 ;; (pg-register-serializer "text" #'identity)
 ;; (pg-register-serializer "varchar" #'identity)
+;; (pg-register-serializer "uuid" #'identity)
+;; (pg-register-serializer "xml" #'identity)
 
 (pg-register-serializer "bytea" #'identity)
 (pg-register-serializer "jsonb" #'identity)
@@ -2173,11 +2177,11 @@ Return nil if the extension could not be set up."
 (pg-register-textual-serializer "timestamptz" #'pg--serialize-encoded-time)
 (pg-register-textual-serializer "datetime" #'pg--serialize-encoded-time)
 
-;; Serialize an elisp vector of integers to a string of the form "[44,55,66]"
+;; Serialize an elisp vector of numbers (integers or floats) to a string of the form "[44,55,66]"
 (pg-register-textual-serializer "vector"
   (lambda (v)
     (cl-assert (vectorp v))
-    (cl-assert (cl-every #'integerp v))
+    (cl-assert (cl-every #'numberp v))
     (concat "[" (string-join (mapcar #'prin1-to-string v) ",") "]")))
 
 

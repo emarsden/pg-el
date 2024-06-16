@@ -8,6 +8,9 @@
 
 - Fix serialization for the PostgreSQL BPCHAR type.
 
+- Fix serialization and deserialization for the PostgreSQL VECTOR type used by the `pgvector`
+  extension. Vector embeddings can be floating point numbers, not just integers.
+
 
 ## [0.35] - 2024-06-08
 
