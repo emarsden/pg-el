@@ -4,21 +4,6 @@
 ;;; Copyright: (C) 2022-2024  Eric Marsden
 
 
-;; pgeltestdb=> CREATE TYPE mood AS ENUM ('sad', 'ok', 'happy');
-;; CREATE TYPE
-;; pgeltestdb=> CREATE TABLE person (
-;;                                   name text,
-;;                                   current_mood mood
-;;                                   );
-;; CREATE TABLE
-;; pgeltestdb=> INSERT INTO person VALUES ('Moe', 'happy');
-;; INSERT 0 1
-;; pgeltestdb=> INSERT INTO person VALUES ('John', 'sad');
-;; INSERT 0 1
-
-;; FIXME need to extend pg--lookup-type-name so that when we query with an oid which is not in our
-;; cache, we requery PG for new OIDs, associated for example with a newly-defined enum
-
 (require 'cl-lib)
 (require 'pg)
 (require 'ert)
@@ -112,6 +97,7 @@
   (pg-test-sequence con)
   (pg-test-array con)
   (pg-test-schemas con)
+  (pg-test-enums con)
   (pg-test-json con)
   (pg-test-server-prepare con)
   (pg-test-hstore con)
@@ -465,14 +451,16 @@ bar$$"))))
                      (scalar "SELECT 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'::uuid")))
     (should (string= "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
                      (scalar "SELECT 'A0EEBC99-9C0B-4EF8-BB6D-6BB9BD380A11'::uuid")))
-    (dotimes (_i 30)
-      (let ((uuid (scalar "SELECT gen_random_uuid()"))
-            (re (concat "\\<[[:xdigit:]]\\{8\\}-"
-                        "[[:xdigit:]]\\{4\\}-"
-                        "[[:xdigit:]]\\{4\\}-"
-                        "[[:xdigit:]]\\{4\\}-"
-                        "[[:xdigit:]]\\{12\\}\\>")))
-        (should (string-match re uuid))))))
+    ;; Apparently only defined from PostgreSQL v13 onwards.
+    (when (pg-function-p con "gen_random_uuid")
+      (dotimes (_i 30)
+        (let ((uuid (scalar "SELECT gen_random_uuid()"))
+              (re (concat "\\<[[:xdigit:]]\\{8\\}-"
+                          "[[:xdigit:]]\\{4\\}-"
+                          "[[:xdigit:]]\\{4\\}-"
+                          "[[:xdigit:]]\\{4\\}-"
+                          "[[:xdigit:]]\\{12\\}\\>")))
+          (should (string-match re uuid)))))))
 
 
 ;; https://www.postgresql.org/docs/current/collation.html
@@ -658,6 +646,27 @@ bar$$"))))
     (should (zerop (cl-search "DROP" (pg-result res :status)))))
   (let ((res (pg-exec con (format "DROP SCHEMA %s" (pg-escape-identifier "fan.cy")))))
     (should (zerop (cl-search "DROP" (pg-result res :status))))))
+
+
+;; https://www.postgresql.org/docs/current/datatype-enum.html
+;;
+;; PostgreSQL support for ENUMs: defining a new ENUM leads to the creation of a new PostgreSQL OID
+;; value for the new type. This means our cache mapping oid to type name, created when we establish
+;; the connection, might become invalid and need to be refreshed.
+(defun pg-test-enums (con)
+  (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0))))
+    (pg-exec con "DROP TYPE IF EXISTS rating CASCADE")
+    (pg-exec con "CREATE TYPE rating AS ENUM('ungood', 'good', 'plusgood', 'doubleplusgood', 'plusungood', 'doubleplusungood')")
+    (pg-exec con "DROP TABLE IF EXISTS act")
+    (pg-exec con "CREATE TABLE act(name TEXT, value RATING)")
+    (pg-exec con "INSERT INTO act VALUES('thoughtcrime', 'doubleplusungood')")
+    (pg-exec con "INSERT INTO act VALUES('thinkpol', 'doubleplusgood')")
+    (sleep-for 2.0)
+    (pg-exec-prepared con "INSERT INTO act VALUES('blackwhite', $1)"
+                      `(("good" . "rating")))
+    (message "Rating plusgood is %s" (scalar "SELECT 'plusgood'::rating"))
+    (pg-exec con "DROP TABLE act")
+    (pg-exec con "DROP TYPE rating")))
 
 
 ;; https://www.postgresql.org/docs/15/functions-json.html
