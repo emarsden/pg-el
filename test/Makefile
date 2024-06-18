@@ -1,14 +1,14 @@
 EMACS ?= emacs
 WORKDIR := $(shell mktemp -d)
 
-export DEPS_DIR = $(shell realpath .deps)
+export DEPS_DIR = $(shell realpath -s .deps)
 
 default: test
 
 .PHONY: install-deps
 install-deps:
 	rm -rf ${DEPS_DIR}
-	${EMACS} -Q --batch ../pg.el -l $(shell realpath install-deps.el)
+	${EMACS} -Q --batch ../pg.el -l install-deps.el
 
 test: test-pg.el install-deps
 	${EMACS} -Q --batch -l load-deps.el -l ../pg.el -l test-pg.el -f pg-test
@@ -28,6 +28,10 @@ test-local: test-pg.el install-deps
 
 test-connections: test-pg.el install-deps
 	${EMACS} -Q --batch -l load-deps.el -l ../pg.el -l test-pg.el -f pg-connection-tests
+	rm -rf ${DEPS_DIR}
+
+test-pgvector: test-pgvector.el install-deps
+	${EMACS} -Q --batch -l load-deps.el -l ../pg.el -l test-pgvector.el -f pg-test
 	rm -rf ${DEPS_DIR}
 
 
@@ -88,6 +92,18 @@ test-postgresql17b: test-pg.el
 	   -d docker.io/library/postgres:17beta1-alpine3.20
 	sleep 5
 	PGEL_PORT=5439 $(MAKE) test
+	podman stop pgsql
+
+test-postgresql16: test-pg.el
+	podman run --rm --name pgsql \
+	   --publish 5416:5416 \
+	   -e POSTGRES_DB=pgeltestdb \
+	   -e POSTGRES_USER=pgeltestuser \
+	   -e POSTGRES_PASSWORD=pgeltest \
+	   -e PGPORT=5416 \
+	   -d docker.io/library/postgres:16.3-bullseye
+	sleep 5
+	PGEL_PORT=5416 $(MAKE) test
 	podman stop pgsql
 
 test-postgresql14: test-pg.el
@@ -155,6 +171,19 @@ test-supabase-tls: test-pg.el
 test-neon: test-pg.el
 	PGEL_PASSWORD=foobles PGEL_HOSTNAME=foobles.eu-central-1.aws.neon.tech PGEL_USER=username PGEL_DATABASE=main $(MAKE) test-tls
 
+
+# https://docs.timescale.com/self-hosted/latest/install/installation-docker/
+test-timescale: test-pg.el
+	podman run --rm --name timescale \
+	   --publish 5981:5981 \
+	   -e POSTGRES_DB=pgeltestdb \
+	   -e POSTGRES_USER=pgeltestuser \
+	   -e POSTGRES_PASSWORD=pgeltest \
+	   -e PGPORT=5981 \
+	   docker.io/timescale/timescaledb-ha:pg16
+	sleep 5
+	PGEL_PORT=5981 $(MAKE) test-pgvector
+	podman stop timescale
 
 
 # CrateDB uses a default database name of "doc" that we can't set via Docker. Last tested with
@@ -288,7 +317,6 @@ test-clickhouse: test-pg.el
 	sleep 5
 	PGEL_PORT=5491 $(MAKE) test
 	podman stop clickhouse
-	podman rm clickhouse
 
 
 # Testing the asynchronous notification support implemented in v0.24 to run a publish-subcribe test.
