@@ -1,10 +1,12 @@
 EMACS ?= emacs
 WORKDIR := $(shell mktemp -d)
 
-export DEPS_DIR = $(shell realpath -s .deps)
+export DEPS_DIR = $(shell realpath .deps)
 
 default: test
 
+# Note: we have to include test/ in test/install-deps.el because when we load ../pg.el we change the
+# current directory to the parent of test.
 .PHONY: install-deps
 install-deps:
 	rm -rf ${DEPS_DIR}
