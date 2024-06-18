@@ -8,7 +8,9 @@ default: test
 .PHONY: install-deps
 install-deps:
 	rm -rf ${DEPS_DIR}
-	${EMACS} -Q --batch ../pg.el -l install-deps.el
+	pwd
+	ls -l
+	${EMACS} -Q --batch ../pg.el -l ./install-deps.el
 
 test: test-pg.el install-deps
 	${EMACS} -Q --batch -l load-deps.el -l ../pg.el -l test-pg.el -f pg-test
