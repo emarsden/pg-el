@@ -2,7 +2,7 @@ EMACS ?= emacs
 WORKDIR := $(shell mktemp -d)
 
 # export DEPS_DIR = $(shell realpath .deps)
-export DEPS_DIR = $(shell mktemp -d --tmpdir emacsdepsXXXX)
+export DEPS_DIR := $(shell mktemp -d --tmpdir emacsdepsXXXX)
 
 default: test
 
@@ -10,32 +10,26 @@ default: test
 # current directory to the parent of test.
 .PHONY: install-deps
 install-deps:
-	rm -rf ${DEPS_DIR}
 	${EMACS} -Q --batch ../pg.el -l test/install-deps.el
 
 test: test-pg.el install-deps
-	${EMACS} -Q --batch -L . -l load-deps.el -l ../pg.el -l test-pg.el -f pg-test
-	rm -rf ${DEPS_DIR}
+	${EMACS} -Q --batch -l load-deps.el -l ../pg.el -l test-pg.el -f pg-test
 
 # Run tests over an encrypted connection to PostgreSQL. Encryption is not available for all versions
 # and installations (the PostgreSQL backend needs to be set up with TLS certificates), so this is a
 # separate test target.
 test-tls: test-pg.el install-deps
 	${EMACS} -Q --batch -l load-deps.el -l ../pg.el -l test-pg.el -f pg-test-tls
-	rm -rf ${DEPS_DIR}
 
 # Run tests over a local Unix socket connection to PostgreSQL.
 test-local: test-pg.el install-deps
 	${EMACS} -Q --batch -l load-deps.el -l ../pg.el -l test-pg.el -f pg-test-local
-	rm -rf ${DEPS_DIR}
 
 test-connections: test-pg.el install-deps
 	${EMACS} -Q --batch -l load-deps.el -l ../pg.el -l test-pg.el -f pg-connection-tests
-	rm -rf ${DEPS_DIR}
 
 test-pgvector: test-pgvector.el install-deps
 	${EMACS} -Q --batch -l load-deps.el -l ../pg.el -l test-pgvector.el -f pg-test
-	rm -rf ${DEPS_DIR}
 
 
 # Using Docker images for Emacs from https://hub.docker.com/r/silex/emacs/ and the locally installed
