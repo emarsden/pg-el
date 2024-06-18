@@ -1,7 +1,8 @@
 EMACS ?= emacs
 WORKDIR := $(shell mktemp -d)
 
-export DEPS_DIR = $(shell realpath .deps)
+# export DEPS_DIR = $(shell realpath .deps)
+export DEPS_DIR = $(shell mktemp -d emacsdepsXXXX)
 
 default: test
 
