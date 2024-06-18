@@ -2,6 +2,9 @@
 
 ## [0.36] - Unreleased
 
+- New utility function `pg-function-p` which checks whether a function with a specified name is
+  defined in PostgreSQL.
+
 - Parse the PostgreSQL UUID type as text.
 
 - Parse the PostgreSQL XML type as text.

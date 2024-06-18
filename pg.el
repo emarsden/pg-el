@@ -970,13 +970,24 @@ whenever possible."
     (buffer-string)))
 
 
-(defun pg--lookup-oid (type-name)
+;; We look up the type-name in our OID cache. If it's not found, we force a refresh of our OID
+;; cache, because a new type might have been defined using CREATE TYPE, either in this session since
+;; connection establishment when we populated the cache, or in a parallel connection to PostgreSQL.
+(defun pg--lookup-oid (con type-name)
+  "Return the PostgreSQL OID associated with TYPE-NAME."
   (or (gethash type-name pg--type-oid)
-      (signal 'pg-error (list (format "Undefined PostgreSQL type %s" type-name)))))
+      (progn
+        (pg-initialize-parsers con)
+        (or (gethash type-name pg--type-oid)
+            (signal 'pg-error (list (format "Undefined PostgreSQL type %s" type-name)))))))
 
-(defun pg--lookup-type-name (oid)
+(defun pg--lookup-type-name (con oid)
+  "Return the PostgreSQL type name associated with OID."
   (or (gethash oid pg--type-name)
-      (signal 'pg-error (list (format "Unknown PostgreSQL oid %d" oid)))))
+      (progn
+        (pg-initialize-parsers con)
+        (or (gethash oid pg--type-name)
+            (signal 'pg-error (list (format "Unknown PostgreSQL oid %d" oid)))))))
 
 
 (cl-defun pg-prepare (con query argument-types &key (name ""))
@@ -986,7 +997,7 @@ unnamed prepared statement). ARGUMENT-TYPES is a list of
 PostgreSQL type names of the form (\"int4\" \"text\" \"bool\")."
   (let* ((ce (pgcon-client-encoding con))
          (query/enc (if ce (encode-coding-string query ce t) query))
-         (oids (mapcar #'pg--lookup-oid argument-types))
+         (oids (mapcar (lambda (oid) (pg--lookup-oid con oid)) argument-types))
          (len (+ 4 (1+ (length name)) (1+ (length query/enc)) 2 (* 4 (length oids)))))
     ;; send a Parse message
     (pg-connection-set-busy con t)
@@ -1627,8 +1638,15 @@ PostgreSQL and Emacs. CON should no longer be used."
 ;; https://www.npgsql.org/dev/types.html for useful information on the wire format for various
 ;; types.
 
+;; This function is generally called upon establishing a connection to PostgreSQL. It may also be
+;; called later when we encounter an OID that is not present in the cache, indicating that some
+;; other activity has led to the creation of new PostgreSQL types (e.g. "CREATE TYPE ..."), and that
+;; we need to repopulate our caches.
 (defun pg-initialize-parsers (con)
   "Initialize the datatype parsers on PostgreSQL connection CON."
+  (clrhash pg--type-name)
+  (clrhash pg--type-oid)
+  (clrhash pg--parsers-oid)
   ;; FIXME this query is retrieving more oids than we really need
   (let* ((pgtypes (pg-exec con "SELECT typname,oid FROM pg_type"))
          (tuples (pg-result pgtypes :tuples)))
@@ -2403,6 +2421,13 @@ TABLE can be a string or a schema-qualified name. Uses database connection CON."
      ;; We can't use a prepared statement in this situation.
      (pg-exec ,con sql)
      ,comment))
+
+(defun pg-function-p (con name)
+  "Returns non-null when a function with NAME is defined in PostgreSQL.
+Uses database connection CON."
+  (let* ((sql "SELECT * FROM pg_proc WHERE proname = $1")
+         (res (pg-exec-prepared con sql `((,name . "text")))))
+    (pg-result res :tuples)))
 
 
 ;; large object support ================================================
