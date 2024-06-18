@@ -8,12 +8,10 @@ default: test
 .PHONY: install-deps
 install-deps:
 	rm -rf ${DEPS_DIR}
-	pwd
-	ls -l
-	${EMACS} -Q --batch ../pg.el -l ./install-deps.el
+	${EMACS} -Q --batch ../pg.el -l test/install-deps.el
 
 test: test-pg.el install-deps
-	${EMACS} -Q --batch -l load-deps.el -l ../pg.el -l test-pg.el -f pg-test
+	${EMACS} -Q --batch -L . -l load-deps.el -l ../pg.el -l test-pg.el -f pg-test
 	rm -rf ${DEPS_DIR}
 
 # Run tests over an encrypted connection to PostgreSQL. Encryption is not available for all versions
