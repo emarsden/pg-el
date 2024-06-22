@@ -997,6 +997,9 @@ unnamed prepared statement). ARGUMENT-TYPES is a list of
 PostgreSQL type names of the form (\"int4\" \"text\" \"bool\")."
   (let* ((ce (pgcon-client-encoding con))
          (query/enc (if ce (encode-coding-string query ce t) query))
+         ;; FIXME probably want to send oid of 0 for all types except for well-known system ones.
+         ;; Otherwise we run the risk of our client-side oid-type cache becoming invalid due to a
+         ;; "CREATE TYPE" or "DROP TYPE" in another connection.
          (oids (mapcar (lambda (oid) (pg--lookup-oid con oid)) argument-types))
          (len (+ 4 (1+ (length name)) (1+ (length query/enc)) 2 (* 4 (length oids)))))
     ;; send a Parse message
@@ -2812,7 +2815,7 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
            concat (byte-to-string ch)))
 
 (cl-defstruct pgerror
-  severity sqlstate message detail hint table column dtype)
+  severity sqlstate message detail hint table column dtype file line routine where)
 
 (defun pg-read-error-response (con)
   (let* ((response-len (pg-read-net-int con 4))
@@ -2843,6 +2846,18 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
                   (?H
                    (setf (pgerror-hint err)
                          (decode-coding-string val ce)))
+                  (?F
+                   (setf (pgerror-file err)
+                         (decode-coding-string val ce)))
+                  (?L
+                   (setf (pgerror-line err)
+                         (decode-coding-string val ce)))
+                  (?R
+                   (setf (pgerror-routine err)
+                         (decode-coding-string val ce)))
+                  (?W
+                   (setf (pgerror-where err)
+                         (decode-coding-string val ce)))
                   (?t
                    (setf (pgerror-table err) val))
                   (?c
@@ -2858,22 +2873,23 @@ presented to the user."
   (let ((e (pg-read-error-response con))
         (extra (list)))
     (when (pgerror-detail e)
-      (push ", " extra)
-      (push (pgerror-detail e) extra))
+      (push (format "detail: %s" (pgerror-detail e)) extra))
     (when (pgerror-hint e)
-      (push ", " extra)
       (push (format "hint: %s" (pgerror-hint e)) extra))
     (when (pgerror-table e)
-      (push ", " extra)
       (push (format "table: %s" (pgerror-table e)) extra))
     (when (pgerror-column e)
-      (push ", " extra)
       (push (format "column: %s" (pgerror-column e)) extra))
-    (setf extra (nreverse extra))
-    (pop extra)
-    (setf extra (butlast extra))
-    (when extra
-      (setf extra (append (list " (") extra (list ")"))))
+    (when (pgerror-file e)
+      (push (format "file: %s" (pgerror-file e)) extra))
+    (when (pgerror-line e)
+      (push (format "line: %s" (pgerror-line e)) extra))
+    (when (pgerror-routine e)
+      (push (format "routine: %s" (pgerror-routine e)) extra))
+    (when (pgerror-dtype e)
+      (push (format "dtype: %s" (pgerror-dtype e)) extra))
+    (when (pgerror-where e)
+      (push (format "where: %s" (pgerror-where e)) extra))
     ;; now read the ReadyForQuery message. We don't always receive this immediately; for example if
     ;; an incorrect username is sent during startup, PostgreSQL sends an ErrorMessage then an
     ;; AuthenticationSASL message. In that case, unread the message type octet so that it can
@@ -2885,11 +2901,11 @@ presented to the user."
     ;; message length then status, discarded
     (pg-read-net-int con 4)
     (pg-read-char con)
-    (let ((msg (format "%s%s: %s%s"
+    (let ((msg (format "%s%s: %s (%s)"
                        (pgerror-severity e)
                        (or (concat " " context) "")
                        (pgerror-message e)
-                       (apply #'concat extra))))
+                       (string-join extra ", "))))
       (signal 'pg-error (list msg)))))
 
 (defun pg-log-notice (notice)
