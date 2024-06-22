@@ -3,7 +3,6 @@ on: push
 
 jobs:
   runner-job:
-    # using the PostgreSQL version pre-installed on GitHub's Windows virtual images
     runs-on: windows-latest
     timeout-minutes: 20
 
