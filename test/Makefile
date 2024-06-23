@@ -223,7 +223,7 @@ test-questdb: test-pg.el
           -e QDB_PG_PASSWORD=pgeltest \
 	  -d docker.io/questdb/questdb
 	sleep 5
-	PGEL_DATABASE=postgres PGEL_USER=admin PGEL_PASSWORD="quest" PGEL_PORT=8812 $(MAKE) test
+	PGEL_HOSTNAME=127.0.0.1 PGEL_DATABASE=postgres PGEL_USER=pgeltestuser PGEL_PASSWORD=pgeltest PGEL_PORT=8812 $(MAKE) test
 	podman stop questdb
 
 
@@ -268,7 +268,7 @@ test-immudb: test-pg.el
 	podman stop immudb
 
 
-# 20230807 this container fails to run with podman with a permission denied on su
+# 20230807 this container fails to run in podman with a permission denied on su
 test-greenplum: test-pg.el
 	podman run --rm --name greenplum \
 	  --publish 5433:5433 \
@@ -279,9 +279,10 @@ test-greenplum: test-pg.el
 	podman stop greenplum
 
 
+# An ElasticSearch alternative, built as a PostgreSQL extension.
 # https://docs.paradedb.com/introduction#get-started
 #
-# As of 2024-05, the paradedb docker image is built on a Debian PostgreSQL 16.2.
+# As of 2024-06, the paradedb docker image is built on a Debian PostgreSQL 16.3.
 test-paradedb: test-pg.el
 	podman run --rm --name paradedb \
 	  --publish 5441:5441 \
@@ -298,15 +299,15 @@ test-paradedb: test-pg.el
 	podman stop paradedb
 
 
-# Tested 2024-05 with v24.4. Clickhouse fails to start with podman: error related to setting the max
-# core size.
+# Tested 2024-06 with v24.5. Very limited PostgreSQL support: there is no pg_type table so
+# we can't retrieve information regarding the OID of builtin types.
 test-clickhouse: test-pg.el
-	echo '<clickhouse><postgresql_port>5491</postgresql_port><core_dump><size_limit>7741824</size_limit></core_dump></clickhouse>' > /tmp/clickhouse-config.xml
-	sudo podman run --rm --name clickhouse \
+	echo '<clickhouse><postgresql_port>5491</postgresql_port><core_dump><size_limit>0</size_limit></core_dump></clickhouse>' > /tmp/pgel-config.xml
+	podman run --rm --name clickhouse \
 	   --ulimit nofile=62144:62144 --ulimit core=234567:234567 \
-	   -v /tmp/clickhouse-config.xml:/etc/clickhouse-server/config.xml \
+	   -v /tmp/pgel-config.xml:/etc/clickhouse-server/config.d/pgel-config.xml \
 	   --publish 5491:5491 \
-	   -p 18123:8123 -p19000:9000 \
+	   -p 18123:8123 -p 9000:9000 \
 	   -e CLICKHOUSE_DB=pgeltestdb \
 	   -e CLICKHOUSE_USER=pgeltestuser \
 	   -e CLICKHOUSE_PASSWORD=pgeltest \
