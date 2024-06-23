@@ -394,6 +394,7 @@ Uses database DBNAME, user USER and password PASSWORD."
         (and (not pg-disable-type-coercion)
              (zerop (hash-table-count pg--parser-by-oid))
              (pg-initialize-parsers con))
+        ;; This statement fails on ClickHouse (and the database immediately closes the connection!).
         (pg-exec con "SET datestyle = 'ISO'")
         (pg-enable-async-notification-handlers con)
         (pg-connection-set-busy con nil)
@@ -1653,6 +1654,10 @@ PostgreSQL and Emacs. CON should no longer be used."
 ;; called later when we encounter an OID that is not present in the cache, indicating that some
 ;; other activity has led to the creation of new PostgreSQL types (e.g. "CREATE TYPE ..."), and that
 ;; we need to repopulate our caches.
+;;
+;; Some databases such as Clickhouse that implement the PostgreSQL wire protocol do implement the
+;; pg_type table. They send all data in textual format with an OID of zero. For this reason, we
+;; tolerate an error in the query on pg_type and leave all our oid-related caches empty.
 (defun pg-initialize-parsers (con)
   "Initialize the datatype parsers on PostgreSQL connection CON."
   (clrhash pg--parser-by-oid)
@@ -1665,8 +1670,9 @@ PostgreSQL and Emacs. CON should no longer be used."
     (let* ((qnames (mapcar (lambda (tn) (format "'%s'" tn)) type-names))
            (sql (format "SELECT typname,oid FROM pg_type WHERE typname IN (%s)"
                         (string-join qnames ",")))
-           (res (pg-exec con sql)))
-      (dolist (row (pg-result res :tuples))
+           (res (ignore-errors (pg-exec con sql)))
+           (rows (and res (pg-result res :tuples))))
+      (dolist (row rows)
         (let* ((typname (cl-first row))
                (oid (cl-parse-integer (cl-second row)))
                (parser (gethash typname pg--parser-by-typname)))
@@ -1828,7 +1834,7 @@ Return nil if the extension could not be loaded."
           (maphash (lambda (k v) (push (format "\"%s\"=>\"%s\"" k v) kv)) ht)
           (string-join kv ","))))))
 
-;; Note however that the hstore type is generally not present in the pg_types table
+;; Note however that the hstore type is generally not present in the pg_type table
 ;; upon startup, so we need to call `pg-hstore-setup' before using HSTORE datatypes.
 (pg-register-parser "hstore"
   ;; We receive something like "\"a\"=>\"1\", \"b\"=>\"2\""
@@ -2919,17 +2925,19 @@ presented to the user."
       (push (format "dtype: %s" (pgerror-dtype e)) extra))
     (when (pgerror-where e)
       (push (format "where: %s" (pgerror-where e)) extra))
-    ;; now read the ReadyForQuery message. We don't always receive this immediately; for example if
+    ;; Now read the ReadyForQuery message. We don't always receive this immediately; for example if
     ;; an incorrect username is sent during startup, PostgreSQL sends an ErrorMessage then an
     ;; AuthenticationSASL message. In that case, unread the message type octet so that it can
-    ;; potentially be handled after the error is signaled.
-    (let ((c (pg-read-char con)))
-      (unless (eql c ?Z)
-        (message "Unexpected message type after ErrorMsg: %s" c)
-        (pg-unread-char con)))
-    ;; message length then status, discarded
-    (pg-read-net-int con 4)
-    (pg-read-char con)
+    ;; potentially be handled after the error is signaled. Some databases like Clickhouse
+    ;; immediately close their connection on error, so we ignore any errors here.
+    (ignore-errors
+      (let ((c (pg-read-char con)))
+        (unless (eql c ?Z)
+          (message "Unexpected message type after ErrorMsg: %s" c)
+          (pg-unread-char con)))
+      ;; Read message length then status, which we discard.
+      (pg-read-net-int con 4)
+      (pg-read-char con))
     (let ((msg (format "%s%s: %s (%s)"
                        (pgerror-severity e)
                        (or (concat " " context) "")
