@@ -2672,40 +2672,46 @@ Uses database connection CON."
 (defun pg-tables (con)
   "List of the tables present in the database we are connected to via CON.
 Only tables to which the current user has access are listed."
-  (cond ((> (pgcon-server-version-major con) 7)
-         (let ((res (pg-exec con "SELECT table_schema,table_name FROM information_schema.tables
+  (let ((default-schema (if (cl-search "CrateDB" (pg-backend-version con))
+                            "postgres"
+                          "public")))
+    (cond ((> (pgcon-server-version-major con) 7)
+           (let ((res (pg-exec con "SELECT table_schema,table_name FROM information_schema.tables
                 WHERE table_schema NOT IN ('pg_catalog', 'information_schema') AND table_type='BASE TABLE'")))
-           (cl-loop
-            for tuple in (pg-result res :tuples)
-            collect (let ((schema (cl-first tuple))
-                          (name (cl-second tuple)))
-                      (if (string= "public" schema)
-                          name
-                        (make-pg-qualified-name :schema schema :name name))))))
-        (t
-         (let ((res (pg-exec con "SELECT relname FROM pg_class c WHERE "
-                             "c.relkind = 'r' AND "
-                             "c.relname !~ '^pg_' AND "
-                             "c.relname !~ '^sql_' ORDER BY relname")))
-           (apply #'append (pg-result res :tuples))))))
+             (cl-loop
+              for tuple in (pg-result res :tuples)
+              collect (let ((schema (cl-first tuple))
+                            (name (cl-second tuple)))
+                        (if (string= schema default-schema)
+                            name
+                          (make-pg-qualified-name :schema schema :name name))))))
+          (t
+           (let ((res (pg-exec con "SELECT relname FROM pg_class c WHERE "
+                               "c.relkind = 'r' AND "
+                               "c.relname !~ '^pg_' AND "
+                               "c.relname !~ '^sql_' ORDER BY relname")))
+             (apply #'append (pg-result res :tuples)))))))
 
 (defun pg-columns (con table)
   "List of the columns present in TABLE over PostgreSQL connection CON."
-  (cond ((> (pgcon-server-version-major con) 7)
-         (let* ((schema (if (pg-qualified-name-p table)
-                           (pg-qualified-name-schema table)
-                         "public"))
-                (tname (if (pg-qualified-name-p table)
-                           (pg-qualified-name-name table)
-                         table))
-                (sql "SELECT column_name FROM information_schema.columns
+  (let ((default-schema (if (cl-search "CrateDB" (pg-backend-version con))
+                            "postgres"
+                          "public")))
+    (cond ((> (pgcon-server-version-major con) 7)
+           (let* ((schema (if (pg-qualified-name-p table)
+                              (pg-qualified-name-schema table)
+                            default-schema))
+                  (tname (if (pg-qualified-name-p table)
+                             (pg-qualified-name-name table)
+                           table))
+                  (sql "SELECT column_name FROM information_schema.columns
                       WHERE table_schema=$1 AND table_name = $2")
-                (res (pg-exec-prepared con sql `((,schema . "text") (,tname . "text")))))
-           (apply #'append (pg-result res :tuples))))
-        (t
-         (let* ((sql (format "SELECT * FROM %s WHERE 0 = 1" table))
-                (res (pg-exec con sql)))
-           (mapcar #'car (pg-result res :attributes))))))
+                  (res (pg-exec-prepared con sql `((,schema . "text") (,tname . "text")))))
+             (apply #'append (pg-result res :tuples))))
+          (t
+           (let* ((sql (format "SELECT * FROM %s WHERE 0 = 1" table))
+                  (res (pg-exec con sql)))
+             (mapcar #'car (pg-result res :attributes)))))))
 
 (defun pg-column-default (con table column)
   "Return the default value for COLUMN in PostgreSQL TABLE.

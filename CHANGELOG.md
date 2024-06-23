@@ -21,6 +21,8 @@
 - Fix serialization and deserialization for the PostgreSQL VECTOR type used by the `pgvector`
   extension. Vector embeddings can be floating point numbers, not just integers.
 
+- Implement some workarounds better to support CrateDB.
+
 
 ## [0.35] - 2024-06-08
 
