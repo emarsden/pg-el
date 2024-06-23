@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.36] - Unreleased
+## [0.36] - 2024-06-23
 
 - New utility function `pg-function-p` which checks whether a function with a specified name is
   defined in PostgreSQL.
