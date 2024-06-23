@@ -5,6 +5,13 @@
 - New utility function `pg-function-p` which checks whether a function with a specified name is
   defined in PostgreSQL.
 
+- Better support for the dynamic creation of PostgreSQL types. The cache used to map between
+  PostgreSQL type names and the corresponding OIDs is now only used for builtin PostgreSQL types,
+  which should not change over time. Values of all other PostgreSQL types, in particular new types
+  created using `CREATE TYPE`, will be sent over the wire using the pseudo-OID of 0, telling
+  PostgreSQL to look up the OID on the backend. This avoids the possibility of invalid cached OID
+  values caused by type creation or destruction on other connections to PostgreSQL.
+
 - Parse the PostgreSQL UUID type as text.
 
 - Parse the PostgreSQL XML type as text.

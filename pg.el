@@ -135,16 +135,16 @@ struct.")
 ;; Maps from type-name to a parsing function (from string to Emacs native type). This is built
 ;; dynamically at initialization of the connection with the database (once generated, the
 ;; information is shared between connections).
-(defvar pg--parsers-name (make-hash-table :test #'equal))
+(defvar pg--parser-by-typname (make-hash-table :test #'equal))
 
 ;; Maps from oid (an integer) to a parsing function.
-(defvar pg--parsers-oid (make-hash-table :test #'eql))
+(defvar pg--parser-by-oid (make-hash-table :test #'eql))
 
-;; Maps from type-name to PostgreSQL oid.
-(defvar pg--type-oid (make-hash-table :test #'equal))
+;; Maps from type-name to PostgreSQL oid, for PostgreSQL builtin types.
+(defvar pg--oid-by-typname (make-hash-table :test #'equal))
 
 ;; Maps from oid to type-name.
-(defvar pg--type-name (make-hash-table :test #'eql))
+(defvar pg--type-name-by-oid (make-hash-table :test #'eql))
 
 
 (cl-defstruct pgcon
@@ -392,7 +392,7 @@ Uses database DBNAME, user USER and password PASSWORD."
         (when (eql ?E status)
           (message "PostgreSQL ReadyForQuery message with error status"))
         (and (not pg-disable-type-coercion)
-             (zerop (hash-table-count pg--parsers-oid))
+             (zerop (hash-table-count pg--parser-by-oid))
              (pg-initialize-parsers con))
         (pg-exec con "SET datestyle = 'ISO'")
         (pg-enable-async-notification-handlers con)
@@ -974,19 +974,19 @@ whenever possible."
 ;; cache, because a new type might have been defined using CREATE TYPE, either in this session since
 ;; connection establishment when we populated the cache, or in a parallel connection to PostgreSQL.
 (defun pg--lookup-oid (con type-name)
-  "Return the PostgreSQL OID associated with TYPE-NAME."
-  (or (gethash type-name pg--type-oid)
+  "Return the PostgreSQL OID associated with TYPE-NAME.
+This may force a refresh of the OID-typename cache if TYPE-NAME is not known."
+  (or (gethash type-name pg--oid-by-typname)
       (progn
         (pg-initialize-parsers con)
-        (or (gethash type-name pg--type-oid)
-            (signal 'pg-error (list (format "Undefined PostgreSQL type %s" type-name)))))))
+        (gethash type-name pg--oid-by-typname))))
 
 (defun pg--lookup-type-name (con oid)
   "Return the PostgreSQL type name associated with OID."
-  (or (gethash oid pg--type-name)
+  (or (gethash oid pg--type-name-by-oid)
       (progn
         (pg-initialize-parsers con)
-        (or (gethash oid pg--type-name)
+        (or (gethash oid pg--type-name-by-oid)
             (signal 'pg-error (list (format "Unknown PostgreSQL oid %d" oid)))))))
 
 
@@ -995,23 +995,31 @@ whenever possible."
 The prepared statement may be given optional NAME (defaults to an
 unnamed prepared statement). ARGUMENT-TYPES is a list of
 PostgreSQL type names of the form (\"int4\" \"text\" \"bool\")."
-  (let* ((ce (pgcon-client-encoding con))
-         (query/enc (if ce (encode-coding-string query ce t) query))
-         ;; FIXME probably want to send oid of 0 for all types except for well-known system ones.
-         ;; Otherwise we run the risk of our client-side oid-type cache becoming invalid due to a
-         ;; "CREATE TYPE" or "DROP TYPE" in another connection.
-         (oids (mapcar (lambda (oid) (pg--lookup-oid con oid)) argument-types))
-         (len (+ 4 (1+ (length name)) (1+ (length query/enc)) 2 (* 4 (length oids)))))
-    ;; send a Parse message
-    (pg-connection-set-busy con t)
-    (pg-send-char con ?P)
-    (pg-send-uint con len 4)
-    (pg-send-string con name)
-    (pg-send-string con query/enc)
-    (pg-send-uint con (length oids) 2)
-    (dolist (oid oids)
-      (pg-send-uint con oid 4)))
-  name)
+  (cl-flet ((oid-for (type-name)
+              ;; If we have defined a serializer for type-name and we know the corresponding OID, we
+              ;; will be sending this type in binary form: return that OID. Otherwise, return the
+              ;; pseudo-OID value of 0 to tell PostgreSQL that we are sending this type in text
+              ;; format.
+              (if (or (gethash type-name pg--serializers)
+                      (gethash type-name pg--textual-serializers))
+                  (or (pg--lookup-oid con type-name)
+                      (signal 'pg-error
+                              (list (format "Don't know the OID for PostgreSQL type %s" type-name))))
+                0)))
+    (let* ((ce (pgcon-client-encoding con))
+           (query/enc (if ce (encode-coding-string query ce t) query))
+           (oids (mapcar #'oid-for argument-types))
+           (len (+ 4 (1+ (length name)) (1+ (length query/enc)) 2 (* 4 (length oids)))))
+      ;; send a Parse message
+      (pg-connection-set-busy con t)
+      (pg-send-char con ?P)
+      (pg-send-uint con len 4)
+      (pg-send-string con name)
+      (pg-send-string con query/enc)
+      (pg-send-uint con (length oids) 2)
+      (dolist (oid oids)
+        (pg-send-uint con oid 4)))
+    name))
 
 (cl-defun pg-bind (con statement-name typed-arguments &key (portal ""))
   "Bind the SQL prepared statement STATEMENT-NAME to TYPED-ARGUMENTS.
@@ -1647,25 +1655,28 @@ PostgreSQL and Emacs. CON should no longer be used."
 ;; we need to repopulate our caches.
 (defun pg-initialize-parsers (con)
   "Initialize the datatype parsers on PostgreSQL connection CON."
-  (clrhash pg--type-name)
-  (clrhash pg--type-oid)
-  (clrhash pg--parsers-oid)
-  ;; FIXME this query is retrieving more oids than we really need
-  (let* ((pgtypes (pg-exec con "SELECT typname,oid FROM pg_type"))
-         (tuples (pg-result pgtypes :tuples)))
-    (dolist (tuple tuples)
-      (let* ((typname (cl-first tuple))
-             ;; we need to parse this explicitly, because the value parsing infrastructure is not
-             ;; yet set up
-             (oid (cl-parse-integer (cl-second tuple)))
-             (parser (gethash typname pg--parsers-name)))
-        (puthash oid typname pg--type-name)
-        (puthash typname oid pg--type-oid)
-        (when parser
-          (puthash oid parser pg--parsers-oid))))))
+  (clrhash pg--parser-by-oid)
+  (clrhash pg--type-name-by-oid)
+  (clrhash pg--oid-by-typname)
+  (let ((type-names (list)))
+    (maphash (lambda (k _v) (push k type-names)) pg--serializers)
+    (maphash (lambda (k _v) (push k type-names)) pg--textual-serializers)
+    (maphash (lambda (k _v) (push k type-names)) pg--parser-by-typname)
+    (let* ((qnames (mapcar (lambda (tn) (format "'%s'" tn)) type-names))
+           (sql (format "SELECT typname,oid FROM pg_type WHERE typname IN (%s)"
+                        (string-join qnames ",")))
+           (res (pg-exec con sql)))
+      (dolist (row (pg-result res :tuples))
+        (let* ((typname (cl-first row))
+               (oid (cl-parse-integer (cl-second row)))
+               (parser (gethash typname pg--parser-by-typname)))
+          (puthash typname oid pg--oid-by-typname)
+          (puthash oid typname pg--type-name-by-oid)
+          (when parser
+            (puthash oid parser pg--parser-by-oid)))))))
 
 (defun pg-parse (str oid encoding)
-  (let ((parser (gethash oid pg--parsers-oid)))
+  (let ((parser (gethash oid pg--parser-by-oid)))
     (if parser
         (funcall parser str encoding)
       str)))
@@ -1711,11 +1722,11 @@ PostgreSQL and Emacs. CON should no longer be used."
     (cdr (assoc name pg--encoding-names #'string-equal))))
 
 (defun pg-register-parser (type-name parser)
-  (puthash type-name parser pg--parsers-name))
+  (puthash type-name parser pg--parser-by-typname))
 (put 'pg-register-parser 'lisp-indent-function 'defun)
 
 (defun pg-lookup-parser (type-name)
-  (gethash type-name pg--parsers-name))
+  (gethash type-name pg--parser-by-typname))
 
 (defun pg-bool-parser (str _encoding)
   (cond ((string= "t" str) t)
@@ -1726,7 +1737,7 @@ PostgreSQL and Emacs. CON should no longer be used."
 (pg-register-parser "bool" #'pg-bool-parser)
 
 (defun pg-bit-parser (str _encoding)
-  "Parse PostgreSQL value STR as a bit."
+  "Parse STR as a PostgreSQL bit to an Emacs bool-vector."
   (let* ((len (length str))
          (bv (make-bool-vector len t)))
     (dotimes (i len)
@@ -1807,8 +1818,8 @@ Return nil if the extension could not be loaded."
            (oid (car (pg-result res :tuple 0)))
            (parser (pg-lookup-parser "hstore")))
       (when parser
-        (puthash oid parser pg--parsers-oid))
-      (puthash "hstore" oid pg--type-oid))
+        (puthash oid parser pg--parser-by-oid))
+      (puthash "hstore" oid pg--oid-by-typname))
     (pg-register-textual-serializer "hstore"
       (lambda (ht)
         (cl-assert (hash-table-p ht))
@@ -2050,7 +2061,6 @@ Return nil if the extension could not be loaded."
 
 (pg-register-parser "tsvector" #'pg-tsvector-parser)
 
-
 ;; TODO: also define a parser for the tsquery type
 
 
@@ -2068,7 +2078,7 @@ Return nil if the extension could not be set up."
            (oid (car (pg-result res :tuple 0)))
            (parser (pg-lookup-parser "vector")))
       (when parser
-        (puthash oid parser pg--parsers-oid)))))
+        (puthash oid parser pg--parser-by-oid)))))
 
 ;; pgvector embeddings are sent by the database as strings, in the form "[1,2,3]" or ["0.015220831,
 ;; 0.039211094, 0.02235647]"
@@ -2105,7 +2115,18 @@ Return nil if the extension could not be set up."
 
 (pg-register-serializer "bool" (lambda (v) (if v (string 1) (string 0))))
 
-;; for the bit type, use text serialization
+(defun pg--serialize-boolvec (bv)
+  (cl-assert (bool-vector-p bv))
+  (let* ((len (length bv))
+         (out (make-string len ?0)))
+    (dotimes (i len)
+      (setf (aref out i)
+            (if (aref bv i) ?1 ?0)))
+    out))
+
+(pg-register-textual-serializer "bit" #'pg--serialize-boolvec)
+(pg-register-textual-serializer "varbit" #'pg--serialize-boolvec)
+
 
 (pg-register-serializer "char"
   (lambda (v)
@@ -2169,9 +2190,21 @@ Return nil if the extension could not be set up."
     (cl-assert (integerp v))
     (bindat-pack (bindat-type uint 64 nil) v)))
 
-;; for float4 and float8, we don't know how to access the binary representation from Emacs Lisp. 
-;; here a possible conversion routine
+;; We send floats in text format, because we don't know how to access the binary representation from
+;; Emacs Lisp. Here a possible conversion routine, but there is probably no performance benefit to
+;; using it.
 ;; https://lists.gnu.org/archive/html/help-gnu-emacs/2002-10/msg00724.html
+(defun pg--serialize-float (number)
+  "Serialize floating point NUMBER to PostgreSQL wire-level text format for floats.
+Respects floating-point infinities and NaN."
+  (cond ((= number 1.0e+INF) "Infinity")
+        ((= number -1.0e+INF) "-Infinity")
+        ((isnan number) "NaN")
+        (t
+         (number-to-string number))))
+
+(pg-register-textual-serializer "float4" #'pg--serialize-float)
+(pg-register-textual-serializer "float8" #'pg--serialize-float)
 
 (if (fboundp 'json-serialize)
     (pg-register-textual-serializer "json" #'json-serialize)
@@ -2700,11 +2733,6 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
 ;; support routines ============================================================
 
 ;; Called to handle a RowDescription message
-;;
-;; Attribute information is as follows
-;;    attribute-name (string)
-;;    attribute-type as an oid from table pg_type
-;;    attribute-size (in bytes?)
 (defun pg-read-attributes (con)
   (let* ((_msglen (pg-read-net-int con 4))
          (attribute-count (pg-read-net-int con 2))
@@ -2720,11 +2748,6 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
             (_type-mod  (pg-read-net-int con 4))
             (_format-code (pg-read-net-int con 2)))
         (push (list (pg-text-parser type-name ce) type-oid type-len) attributes)))))
-
-;; a bitmap is a string, which we interpret as a sequence of bytes
-(defun pg-bitmap-ref (bitmap ref)
-  (let ((int (aref bitmap (floor ref 8))))
-    (logand 128 (ash int (mod ref 8)))))
 
 ;; Read data following a DataRow message
 (defun pg-read-tuple (con attributes)
