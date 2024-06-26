@@ -1,6 +1,7 @@
 # Installation
 
-You can install by the MELPA package archive, or manually.
+You can install via the MELPA package archive, or with package-vc-install, or manually.
+
 
 ## Installing via MELPA
 
@@ -15,6 +16,16 @@ including the following in your Emacs initialization file (`.emacs.el` or `init.
 then saying 
 
      M-x package-install RET pg
+
+
+## Installing with package-vc-install
+
+You can install the library from the latest Github revision using:
+
+     (unless (package-installed-p 'pg)
+        (package-vc-install "https://github.com/emarsden/pg-el" nil nil 'pg))
+
+You can later update to the latest version with `M-x package-vc-upgrade RET pg RET`.
 
 
 ## Installing manually

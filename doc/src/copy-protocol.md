@@ -1,7 +1,9 @@
 # The COPY protocol
 
-The COPY protocol can be used to send and receive large amounts of data to/from PostgreSQL. It can
-be used with CSV or TSV data.
+The [COPY protocol](https://www.postgresql.org/docs/current/sql-copy.html) can be used to send and
+receive large amounts of data to/from PostgreSQL. It can be used with CSV or TSV data.
+
+## From Emacs to PostgreSQL
 
 The pg-el library allows you to COPY from an Emacs buffer into PostgreSQL using function
 `pg-copy-from-buffer`, as illustrated below.
@@ -56,6 +58,7 @@ ELISP> (pg-result (pg-exec *pg* "SELECT * FROM copy_csv LIMIT 3") :tuples)
 
 ~~~
 
+## From PostgreSQL to Emacs
 
 You can copy from PostgreSQL into an Emacs buffer using the function `pg-copy-to-buffer`, as
 illustrated below.
@@ -67,4 +70,45 @@ ELISP> (let ((res (pg-copy-to-buffer *pg* "COPY copy_csv TO STDOUT WITH (FORMAT 
           (pg-result res :status))
 "COPY 1000"
 ```
+~~~
+
+
+
+The following more verbose example illustrates fetching CSV data from an online source, importing it
+into PostgreSQL, removing some unneeded columns and querying the data.
+
+~~~admonish example title="Fetching and querying online CSV datasets"
+```lisp
+ELISP> (with-temp-buffer
+         (url-insert-file-contents "https://www.data.gouv.fr/fr/datasets/r/51606633-fb13-4820-b795-9a2a575a72f1")
+         (pg-exec *pg* "CREATE TABLE cities(
+              insee_code TEXT NOT NULL,
+              city_code TEXT,
+              zip_code NUMERIC,
+              label TEXT NOT NULL,
+              latitude FLOAT,
+              longitude FLOAT,
+              department_name TEXT,
+              department_number VARCHAR(3),
+              region_name TEXT,
+              region_geojson_name TEXT)")
+         (pg-result (pg-copy-from-buffer *pg* "COPY cities FROM STDIN WITH (FORMAT CSV, DELIMITER ',', HEADER TRUE)"
+                                 (current-buffer)) :status))
+"COPY 39145"
+ELISP> (pg-result (pg-exec *pg* "ALTER TABLE cities DROP COLUMN region_name") :status)
+"ALTER TABLE"
+ELISP> (pg-result (pg-exec *pg* "ALTER TABLE cities DROP COLUMN region_geojson_name") :status)
+"ALTER TABLE"
+ELISP> (pg-result (pg-exec *pg* "ALTER TABLE cities DROP COLUMN label") :status)
+"ALTER TABLE"
+ELISP> (pg-result (pg-exec *pg* "SELECT * FROM cities WHERE city_code LIKE 'toulouse%'") :tuples)
+(("39533" "toulouse le chateau" 39230 46.821901729 5.583200112 "jura" "39")
+ ("31555" "toulouse" 31100 43.596037953 1.432094901 "haute-garonne" "31")
+ ("31555" "toulouse" 31300 43.596037953 1.432094901 "haute-garonne" "31")
+ ("31555" "toulouse" 31400 43.596037953 1.432094901 "haute-garonne" "31")
+ ("31555" "toulouse" 31500 43.596037953 1.432094901 "haute-garonne" "31")
+ ("31555" "toulouse" 31000 43.596037953 1.432094901 "haute-garonne" "31")
+ ("31555" "toulouse" 31200 43.596037953 1.432094901 "haute-garonne" "31"))
+```
+
 ~~~

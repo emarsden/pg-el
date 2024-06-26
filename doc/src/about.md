@@ -37,10 +37,9 @@ PostgreSQL or a compatible database.
 - Connections over TCP or (on Unix machines) a local Unix socket.
 ~~~
 
-The code has been tested with **PostgreSQL versions** 16.3, 15.4, 13.8, 11.17, and 10.22 on Linux.
-It is also tested via GitHub actions on MacOS and Microsoft Windows, using the PostgreSQL version
-which is pre-installed in the virtual images (currently 14.8). This library also works, to a
-variable extent, against other databases that implement the PostgreSQL wire protocol:
+The code has been tested with **PostgreSQL versions** 17beta1, 16.3, 15.4, 13.8, 11.17, and 10.22 on
+Linux. It is also tested via GitHub actions on MacOS and Microsoft Windows. This library also works,
+to a variable extent, against other databases that implement the PostgreSQL wire protocol:
 
 - [YugabyteDB](https://yugabyte.com/): tested against version 2.21. This database uses a lot of
   code from PostgreSQL 11 and is quite compatible, including with the HSTORE and pgvector
@@ -82,7 +81,7 @@ Tested with **Emacs versions** 29.3, 28.2, 27.2 and 26.3. Emacs versions older t
 against a recent PostgreSQL version (whose default configuration requires SCRAM-SHA-256
 authentication), because they don’t include the GnuTLS support which we use to calculate HMACs. They
 may however work against a database set up to allow unauthenticated local connections. Emacs
-versions before 28.1 will not support the extended query protocol, because the bindat package is
+versions before 28.1 will not support the extended query protocol, because the `bindat` package is
 required. We mostly test with Emacs on Linux, but the library also works fine on Microsoft Windows
 and MacOS.
 

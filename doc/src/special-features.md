@@ -8,7 +8,7 @@ them a special `ParameterStatus` message. These notifications are sent for `GUC_
 which include the `client_encoding`, the `DateStyle`, `TimeZone`, `server_encoding`,
 `in_hot_standby` and `is_superuser`. You can register your interest in these messages by adding a
 handler function to `pg-parameter-change-functions`. Each of these handler functions will be called
-when such as message is received, with three arguments: the connection to PostgreSQL, the parameter
+when such a message is received, with three arguments: the connection to PostgreSQL, the parameter
 name and the parameter value.
 
 These messages are sent asynchronously. 
