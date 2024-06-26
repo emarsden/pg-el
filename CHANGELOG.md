@@ -1,5 +1,13 @@
 # Changelog
 
+
+## [0.37] - Unreleased
+
+- Fix serialization of JSONB parameters in prepared statements.
+
+- Preliminary support for the PostgreSQL POINT type (geometric types).
+
+
 ## [0.36] - 2024-06-23
 
 - New utility function `pg-function-p` which checks whether a function with a specified name is
