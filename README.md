@@ -311,10 +311,7 @@ Variable `pg-handle-notice-functions` is a list of handlers to be called when th
 
 
 Boolean variable `pg-disable-type-coercion` can be set to non-nil (before initiating a connection)
-to disable the library's type coercion facility. Default is `t`.
-
-
-For more information about PostgreSQL see <https://www.PostgreSQL.org/>.
+to disable the library's type coercion facility. Default is `nil`.
 
 
 
@@ -323,7 +320,3 @@ For more information about PostgreSQL see <https://www.PostgreSQL.org/>.
 Thanks to Eric Ludlam for discovering a bug in the date parsing routines, to Hartmut Pilch and
 Yoshio Katayama for adding multibyte support, and to Doug McNaught and Pavel Janik for bug fixes.
 
-
-The **latest version** of this package should be available from
-
-    <https://github.com/emarsden/pg-el/>
