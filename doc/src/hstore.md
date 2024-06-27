@@ -31,6 +31,13 @@ ELISP> (pg-result (pg-exec *pg* "SELECT akeys('biz=>NULL,baz=>42,boz=>66'::hstor
 ~~~admonish example title="Serialization support for HSTORE values"
 ```lisp
 ELISP> (pg-hstore-setup *pg*)
+ELISP> (let ((ht (make-hash-table :test #'equal)))
+        (puthash "biz" "baz" ht)
+        (puthash "foo" "bar" ht)
+        (puthash "more" "than" ht)
+        (let* ((res (pg-exec-prepared con "SELECT $1 ? 'foo'" `((,ht . "hstore"))))
+            (pg-result res :tuple 0))))
+(t)
 ```
 
 ~~~
