@@ -1,6 +1,6 @@
 # Installation
 
-You can install via the MELPA package archive, or with package-vc-install, or manually.
+You can install via the MELPA package archive, or with `package-vc-install`, or with `use-package`.
 
 
 ## Installing via MELPA
@@ -20,7 +20,8 @@ then saying
 
 ## Installing with package-vc-install
 
-You can install the library from the latest Github revision using:
+With Emacs 29, you can install the library from the latest Github revision (this requires git to be
+installed) using:
 
      (unless (package-installed-p 'pg)
         (package-vc-install "https://github.com/emarsden/pg-el" nil nil 'pg))
@@ -28,12 +29,10 @@ You can install the library from the latest Github revision using:
 You can later update to the latest version with `M-x package-vc-upgrade RET pg RET`.
 
 
-## Installing manually
+## Installing with `use-package`
 
-To install manually, place the file `pg.el` in a directory on your `load-path`, byte-compile it
-(using for example `B` in dired) and add the following to your Emacs initialization file:
+If you prefer to use the `use-package` macro, which is built in to Emacs 29, you can use (requires
+git to be installed):
 
-```lisp
-(require 'pg)
-```
+    (use-package pg :vc (:url "https://github.com/emarsden/pg-el"))
 

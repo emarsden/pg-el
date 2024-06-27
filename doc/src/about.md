@@ -21,10 +21,10 @@ PostgreSQL or a compatible database.
 
 - Encrypted (TLS) connections between Emacs and the PostgreSQL backend.
 
-- Support for PostgreSQL's extended query syntax, that allows for parameterized queries to
+- **Prepared statements** using PostgreSQL's extended query message flow, that allows for parameterized queries to
   protect from SQL injection issues.
 
-- Support for the `SQL COPY` protocol to copy preformatted data to PostgreSQL from an Emacs buffer
+- The PostgreSQL **COPY protocol** to copy preformatted data to PostgreSQL from an Emacs buffer.
 
 - Asynchronous handling of LISTEN/NOTIFY notification messages from PostgreSQL, allowing the
   implementation of publish-subscribe type architectures (PostgreSQL as an “event broker” or
