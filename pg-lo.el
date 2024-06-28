@@ -2,8 +2,11 @@
 ;;
 ;; Copyright: (C) 2024  Eric Marsden
 ;; Author: Eric Marsden <eric.marsden@risk-engineering.org>
-;;
-;;
+;; SPDX-License-Identifier: GPL-2.0-or-later
+
+
+;;; Commentary:
+
 ;; Humphrey: Who is Large and to what does he object?
 ;;
 ;; Large objects are the PostgreSQL way of doing what most databases
@@ -18,6 +21,20 @@
 
 
 (require 'cl-lib)
+
+(declare-function pg-read-string "pg" (con maxbytes))
+(declare-function pg-read-char "pg" (con))
+(declare-function pg-read-chars "pg" (con count))
+(declare-function pg-read-net-int "pg" (con bytes))
+(declare-function pg-handle-error-response "pg" (con &optional context))
+(declare-function pg-flush "pg" (con))
+(declare-function pg-send "pg" (con str &optional bytes))
+(declare-function pg-send-uint "pg" (con num bytes))
+(declare-function pg-send-char "pg" (con char))
+(declare-function pg-connection-set-busy "pg" (con busy))
+(declare-function pg-result "pg" (result what &rest arg))
+(declare-function pg-exec "pg" (con &rest args))
+
 
 (defconst pg--INV_ARCHIVE 65536)         ; fe-lobj.c
 (defconst pg--INV_WRITE   131072)
@@ -193,3 +210,5 @@
 
 
 (provide 'pg-lo)
+
+;;; pg-lo.el ends here
