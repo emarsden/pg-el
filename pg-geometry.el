@@ -2,10 +2,21 @@
 ;;
 ;; Copyright: (C) 2024  Eric Marsden
 ;; Author: Eric Marsden <eric.marsden@risk-engineering.org>
-;;
+;; SPDX-License-Identifier: GPL-2.0-or-later
+
+
+;;; Commentary:
+
 ;; Geometric data types, per https://www.postgresql.org/docs/current/datatype-geometric.html
 
+
+;;; Code:
+
 (require 'cl-lib)
+(require 'peg)
+
+(declare-function pg-register-parser "pg" (type-name parser))
+(declare-function pg-register-textual-serializer "pg" (type-name serializer))
 
 
 (defun pg--point-parser (str _encoding)
@@ -54,7 +65,6 @@
 
 ;; An lseg is represented in Emacs Lisp by a two-element vector of points.
 (defun pg--lseg-parser (str _encoding)
-  (message "Parsing lseg %s" str)
   (with-temp-buffer
     (insert str)
     (goto-char (point-min))
@@ -91,3 +101,5 @@
 
 
 (provide 'pg-geometry)
+
+;;; pg-geometry.el ends here
