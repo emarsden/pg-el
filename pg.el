@@ -582,7 +582,7 @@ password, sslmode (partial support) and application_name."
 
 
 (defun pg-parse-url (url)
-  "Adaptation of function url-generic-parse-url that does not downcase
+  "Adaptation of function `url-generic-parse-url' that does not downcase
 the host component of the URL."
   (if (null url)
       (url-parse-make-urlobj)
@@ -956,7 +956,7 @@ of this function whenever possible."
          (pg--escape-identifier-simple identifier))))
 
 (defun pg-escape-literal (str)
-  "Escape a string for use within an SQL command.
+  "Escape the string STR for use within an SQL command.
 Similar to libpq function PQescapeLiteral. You should use
 prepared statements (`pg-exec-prepared') instead of this function
 whenever possible."
@@ -977,14 +977,16 @@ whenever possible."
 ;; connection establishment when we populated the cache, or in a parallel connection to PostgreSQL.
 (defun pg--lookup-oid (con type-name)
   "Return the PostgreSQL OID associated with TYPE-NAME.
-This may force a refresh of the OID-typename cache if TYPE-NAME is not known."
+This may force a refresh of the OID-typename cache if TYPE-NAME is not known.
+Uses PostgreSQL connection CON."
   (or (gethash type-name pg--oid-by-typname)
       (progn
         (pg-initialize-parsers con)
         (gethash type-name pg--oid-by-typname))))
 
 (defun pg--lookup-type-name (con oid)
-  "Return the PostgreSQL type name associated with OID."
+  "Return the PostgreSQL type name associated with OID.
+Uses PostgreSQL connection CON."
   (or (gethash oid pg--type-name-by-oid)
       (progn
         (pg-initialize-parsers con)
@@ -1769,7 +1771,7 @@ PostgreSQL and Emacs. CON should no longer be used."
 (pg-register-parser "bpchar" #'pg-char-parser)
 
 (defun pg-text-parser (str encoding)
-  "Parse PostgreSQL value STR as text."
+  "Parse PostgreSQL value STR as text using ENCODING."
   (if encoding
       (decode-coding-string str encoding)
     str))
@@ -1936,7 +1938,7 @@ Return nil if the extension could not be loaded."
 (pg-register-parser "_bool" #'pg-boolarray-parser)
 
 (defun pg-chararray-parser (str encoding)
-  "Parse PostgreSQL value STR as an array of characters."
+  "Parse PostgreSQL value STR as an array of characters using ENCODING."
   (let ((len (length str)))
     (unless (and (eql (aref str 0) ?{)
                  (eql (aref str (1- len)) ?}))
