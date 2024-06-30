@@ -66,7 +66,7 @@ also works against other databases that implement the PostgreSQL wire protocol:
 It does not work with the ClickHouse database, whose PostgreSQL support is too limited (no
 implementation of the `pg_types` system table, no support for basic SQL commands such as `SET`).
 
-Tested **Emacs versions**: Tested with versions 30-prerelease, 29.3, 28.2, 27.2 and 26.3. Emacs
+Tested **Emacs versions**: Tested with versions 30-prerelease, 29.4, 28.2, 27.2 and 26.3. Emacs
 versions older than 26.1 will not work against a recent PostgreSQL version (whose default
 configuration requires SCRAM-SHA-256 authentication), because they don’t include the GnuTLS support
 which we use to calculate HMACs. They may however work against a database set up to allow
@@ -91,7 +91,7 @@ then saying
 
      M-x package-install RET pg
 
-Alternatively, you can install the library from the latest Github revision using:
+Alternatively, you can install the library from the latest GitHub revision using:
 
      (unless (package-installed-p 'pg)
         (package-vc-install "https://github.com/emarsden/pg-el" nil nil 'pg))

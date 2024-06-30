@@ -5,7 +5,7 @@
 
 - Fix serialization of JSONB parameters in prepared statements.
 
-- Preliminary support for the PostgreSQL POINT, LINE and LSEG types (geometric types).
+- Preliminary support for the PostgreSQL POINT, LINE, LSEG, BOX and PATH types (geometric types).
 
 
 ## [0.36] - 2024-06-23

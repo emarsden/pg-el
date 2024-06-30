@@ -90,14 +90,74 @@
           (car (aref lseg 1))
           (cdr (aref lseg 1))))
 
-(eval-after-load 'pg
-  (progn
-    (pg-register-parser "point" #'pg--point-parser)
-    (pg-register-textual-serializer "point" #'pg--serialize-point)
-    (pg-register-parser "line" #'pg--line-parser)
-    (pg-register-textual-serializer "line" #'pg--serialize-line)
-    (pg-register-parser "lseg" #'pg--lseg-parser)
-    (pg-register-textual-serializer "lseg" #'pg--serialize-lseg)))
+;; ( x1 , y1 ) , ( x2 , y2 )
+(defun pg--box-parser (str _encoding)
+  (with-temp-buffer
+    (insert str)
+    (goto-char (point-min))
+    (with-peg-rules
+        ((box (* [space]) point "," (* [space]) point (* [space]) (eol)
+               `(p1 p2 -- (vector p1 p2)))
+         (point "(" x-comma-y ")")
+         (x-comma-y (* [space]) float (* [space]) ","
+                    (* [space]) float (* [space])
+                    `(x y -- (cons x y)))
+         (float (substring sign (+ [digit]) (* "." (+ [digit])) (* "e" sign (+ [digit])))
+                `(str -- (string-to-number str)))
+         (sign (or "+" "-" "")))
+      (car (peg-run (peg box))))))
+
+(defun pg--serialize-box (box)
+  (format "(%f,%f),(%f,%f)"
+          (car (aref box 0))
+          (cdr (aref box 0))
+          (car (aref box 1))
+          (cdr (aref box 1))))
+
+
+;; type is one of :open, :closed
+(cl-defstruct pg-geometry-path type points)
+
+(defun pg--path-parser (str _encoding)
+  (with-temp-buffer
+    (insert str)
+    (goto-char (point-min))
+    (with-peg-rules
+     ((path (* [space]) (or open-path closed-path) (* [space]) (eol))
+      (open-path "[" (* [space]) (list point-list) (* [space]) "]"
+                 `(points -- (make-pg-geometry-path :type :open :points points)))
+      (closed-path "(" (* [space]) (list point-list) (* [space]) ")"
+                   `(points -- (make-pg-geometry-path :type :closed :points points)))
+      (point-list point (* "," (* [space]) point-list))
+      (point "(" x-comma-y ")")
+      (x-comma-y (* [space]) float (* [space]) ","
+                 (* [space]) float (* [space])
+                 `(x y -- (cons x y)))
+      (float (substring sign (+ [digit]) (* "." (+ [digit])) (* "e" sign (+ [digit])))
+             `(str -- (string-to-number str)))
+      (sign (or "+" "-" "")))
+     (car (peg-run (peg path))))))
+
+(defun pg--serialize-path (path)
+  (cl-assert (pg-geometry-path-p path))
+  (let ((type (pg-geometry-path-type path))
+        (points (pg-geometry-path-points path)))
+    (format "%s%s%s"
+            (if (eq :open type) "[" "(")
+            (string-join (mapcar #'pg--serialize-point points) ",")
+            (if (eq :open type) "]" ")"))))
+
+
+(pg-register-parser "point" #'pg--point-parser)
+(pg-register-textual-serializer "point" #'pg--serialize-point)
+(pg-register-parser "line" #'pg--line-parser)
+(pg-register-textual-serializer "line" #'pg--serialize-line)
+(pg-register-parser "lseg" #'pg--lseg-parser)
+(pg-register-textual-serializer "lseg" #'pg--serialize-lseg)
+(pg-register-parser "box" #'pg--box-parser)
+(pg-register-textual-serializer "box" #'pg--serialize-box)
+(pg-register-parser "path" #'pg--path-parser)
+(pg-register-textual-serializer "path" #'pg--serialize-path)
 
 
 (provide 'pg-geometry)

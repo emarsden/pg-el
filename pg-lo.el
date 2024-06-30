@@ -40,6 +40,8 @@
 (defconst pg--INV_WRITE   131072)
 (defconst pg--INV_READ    262144)
 (defconst pg--LO_BUFIZE   1024)
+(defconst pg--MAX_MESSAGE_LEN    8192)   ; libpq-fe.h
+
 
 (defvar pg-lo-initialized nil)
 (defvar pg-lo-functions '())
