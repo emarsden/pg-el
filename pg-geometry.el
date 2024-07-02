@@ -147,6 +147,32 @@
             (string-join (mapcar #'pg--serialize-point points) ",")
             (if (eq :open type) "]" ")"))))
 
+(cl-defstruct pg-geometry-polygon points)
+
+;; ( ( x1 , y1 ) , ... , ( xn , yn ) )
+(defun pg--polygon-parser (str _encoding)
+  (with-temp-buffer
+    (insert str)
+    (goto-char (point-min))
+    (with-peg-rules
+     ((polygon (* [space]) "(" (* [space]) (list point-list) (* [space]) ")" (* [space]) (eol)
+               `(points -- (make-pg-geometry-polygon :points points)))
+      (point-list point (* "," (* [space]) point-list))
+      (point "(" x-comma-y ")")
+      (x-comma-y (* [space]) float (* [space]) ","
+                 (* [space]) float (* [space])
+                 `(x y -- (cons x y)))
+      (float (substring sign (+ [digit]) (* "." (+ [digit])) (* "e" sign (+ [digit])))
+             `(str -- (string-to-number str)))
+      (sign (or "+" "-" "")))
+     (car (peg-run (peg polygon))))))
+
+(defun pg--serialize-polygon (polygon)
+  (cl-assert (pg-geometry-polygon-p polygon))
+  (let* ((points (pg-geometry-polygon-points polygon))
+         (spoints (mapcar #'pg--serialize-point points)))
+    (format "(%s)" (string-join spoints ","))))
+
 
 (pg-register-parser "point" #'pg--point-parser)
 (pg-register-textual-serializer "point" #'pg--serialize-point)
@@ -158,7 +184,8 @@
 (pg-register-textual-serializer "box" #'pg--serialize-box)
 (pg-register-parser "path" #'pg--path-parser)
 (pg-register-textual-serializer "path" #'pg--serialize-path)
-
+(pg-register-parser "polygon" #'pg--polygon-parser)
+(pg-register-textual-serializer "polygon" #'pg--serialize-polygon)
 
 (provide 'pg-geometry)
 
