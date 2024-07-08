@@ -370,19 +370,21 @@ bar$$"))))
 (defun pg-test-date (con)
   (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0))))
     (pg-exec con "DROP TABLE IF EXISTS date_test")
-    (pg-exec con "CREATE TABLE date_test(a timestamp, b time, c date)")
+    (pg-exec con "CREATE TABLE date_test(a timestamp, b time, c timetz, d date)")
     (unwind-protect
         (progn
           (pg-exec con "INSERT INTO date_test VALUES "
-                   "(current_timestamp, 'now', current_date)")
+                   "(current_timestamp, 'now', 'now', current_date)")
           (let* ((res (pg-exec con "SELECT * FROM date_test"))
                  (row (pg-result res :tuple 0)))
             (message "timestamp = %s" (cl-first row))
             (message "time = %s" (cl-second row))
-            (message "date = %s" (cl-third row)))
-          (pg-exec-prepared con "INSERT INTO date_test VALUES($1, $2, $3)"
+            (message "timetz = %s" (cl-third row))
+            (message "date = %s" (cl-fourth row)))
+          (pg-exec-prepared con "INSERT INTO date_test VALUES($1, $2, $3, $4)"
                             `((,(pg-isodate-parser "2024-04-27T11:34:42" nil) . "timestamp")
                               ("11:34" . "time")
+                              ("16:55.33456+11" . "timetz")
                               (,(pg-date-parser "2024-04-27" nil) . "date")))
           (should (eql 2 (scalar "SELECT COUNT(*) FROM date_test"))))
       (pg-exec con "DROP TABLE date_test"))
@@ -399,6 +401,7 @@ bar$$"))))
     (should (equal (scalar "SELECT 'PT42S'::interval") "00:00:42"))
     (should (equal (scalar "SELECT 'PT3H4M42S'::interval") "03:04:42"))
     (should (equal (scalar "select '05:00'::time") "05:00:00"))
+    (should (equal (scalar "SELECT '04:15:31.445+05'::timetz") "04:15:31.445+05"))
     (should (equal (scalar "SELECT '2001-02-03 04:05:06'::timestamp")
                    (encode-time 6 5 4 3 2 2001 nil t)))))
 

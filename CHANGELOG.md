@@ -6,7 +6,14 @@
 - Fix serialization of JSONB parameters in prepared statements.
 
 - Preliminary serialization and deserialization support for the PostgreSQL `POINT`, `LINE`, `LSEG`,
-  `BOX`, `PATH` and `POLYGON` types (geometric types).
+  `BOX`, `PATH` and `POLYGON` geometric types.
+
+- Parsing support for the PostgreSQL `timetz` type (simply parsed as text).
+
+- New function `pg-serialize` converts an Emacs Lisp object to its serialized text format, playing
+  the inverse role to `pg-parse`.
+
+- Source code split into multiple source files to improve maintainability.
 
 
 ## [0.36] - 2024-06-23

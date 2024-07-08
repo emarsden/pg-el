@@ -38,15 +38,16 @@
 ;;
 ;;  - Encrypted (TLS) connections between Emacs and the PostgreSQL backend.
 ;;
-;;  - Support for the SQL COPY protocol to copy preformatted data to PostgreSQL from an Emacs
-;;  - buffer.
+;;  - Parameterized queries using PostgreSQL's extended query syntax, to protect from SQL
+;;    injection issues.
+;;
+;;  - The PostgreSQL COPY protocol to copy preformatted data to PostgreSQL from an Emacs
+;;    buffer.
 ;;
 ;;  - Asynchronous handling of LISTEN/NOTIFY notification messages from PostgreSQL, allowing the
 ;;    implementation of publish-subscribe type architectures (PostgreSQL as an "event broker" or
 ;;    "message bus" and Emacs as event publisher and consumer).
 ;;
-;;  - Support for PostgreSQL's extended query syntax, that allows for parameterized queries to
-;;    protect from SQL injection issues.
 ;;
 ;; This is a low level API, and won't be useful to end users. If you're looking for a
 ;; browsing/editing interface to PostgreSQL, see the PGmacs module from
@@ -70,10 +71,6 @@
 ;;
 ;; * Implement the SASLPREP algorithm for usernames and passwords that contain
 ;;   unprintable characters (used for SCRAM-SHA-256 authentication).
-;;
-;; * Add a mechanism for parsing user-defined types. The user should be able to define a parse
-;;   function and a type-name; we query pg_type to get the type's OID and add the information to
-;;   pg--parsers.
 
 
 ;;; Code:
@@ -1693,10 +1690,21 @@ PostgreSQL and Emacs. CON should no longer be used."
             (puthash oid parser pg--parser-by-oid)))))))
 
 (defun pg-parse (str oid encoding)
+  "Deserialize textual representation STR to an Emacs Lisp object.
+The textual representation represents the type OID using ENCODING."
   (let ((parser (gethash oid pg--parser-by-oid)))
     (if parser
         (funcall parser str encoding)
       str)))
+
+(defun pg-serialize (object type-name encoding)
+  (let ((serializer (gethash type-name pg--serializers)))
+    (if serializer
+        (let ((serialized (funcall serializer object)))
+          (if encoding (encode-coding-string serialized encoding t)
+            serialized))
+      object)))
+
 
 ;; Map between PostgreSQL names for encodings and their Emacs name.
 ;; For Emacs, see coding-system-alist.
@@ -2026,6 +2034,7 @@ Return nil if the extension could not be loaded."
 (pg-register-parser "datetime" #'pg-isodate-parser)
 
 (pg-register-parser "time" #'pg-text-parser)     ; preparsed "15:32:45"
+(pg-register-parser "timetz" #'pg-text-parser)
 (pg-register-parser "reltime" #'pg-text-parser)     ; don't know how to parse these
 (pg-register-parser "timespan" #'pg-text-parser)
 (pg-register-parser "tinterval" #'pg-text-parser)
