@@ -1,7 +1,7 @@
 # Changelog
 
 
-## [0.37] - Unreleased
+## [0.37] - 2024-07-08
 
 - Fix serialization of JSONB parameters in prepared statements.
 
