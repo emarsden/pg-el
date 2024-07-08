@@ -77,13 +77,13 @@ to a variable extent, against other databases that implement the PostgreSQL wire
   aspects.
 
 
-Tested with **Emacs versions** 29.3, 28.2, 27.2 and 26.3. Emacs versions older than 26.1 will not work
-against a recent PostgreSQL version (whose default configuration requires SCRAM-SHA-256
-authentication), because they don’t include the GnuTLS support which we use to calculate HMACs. They
-may however work against a database set up to allow unauthenticated local connections. Emacs
-versions before 28.1 will not support the extended query protocol, because the `bindat` package is
-required. We mostly test with Emacs on Linux, but the library also works fine on Microsoft Windows
-and MacOS.
+Tested with **Emacs versions** 30-pre-release, 29.4, 28.2, 27.2 and 26.3. Emacs versions older than
+26.1 will not work against a recent PostgreSQL version (whose default configuration requires
+SCRAM-SHA-256 authentication), because they don’t include the GnuTLS support which we use to
+calculate HMACs. They may however work against a database set up to allow unauthenticated local
+connections. Emacs versions before 28.1 will not support the extended query protocol, because the
+`bindat` package is required. We mostly test with Emacs on Linux, but the library also works fine on
+Microsoft Windows and MacOS.
 
 You may be interested in an alternative library [emacs-libpq](https://github.com/anse1/emacs-libpq)
 that enables access to PostgreSQL from Emacs by binding to the libpq library.
