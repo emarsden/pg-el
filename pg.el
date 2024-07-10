@@ -981,6 +981,7 @@ Uses PostgreSQL connection CON."
         (pg-initialize-parsers con)
         (gethash type-name pg--oid-by-typname))))
 
+;; This version that errors on unknown OID is deprecated.
 (defun pg--lookup-type-name (con oid)
   "Return the PostgreSQL type name associated with OID.
 Uses PostgreSQL connection CON."
@@ -989,6 +990,14 @@ Uses PostgreSQL connection CON."
         (pg-initialize-parsers con)
         (or (gethash oid pg--type-name-by-oid)
             (signal 'pg-error (list (format "Unknown PostgreSQL oid %d" oid)))))))
+
+(defun pg-lookup-type-name (con oid)
+  "Return the PostgreSQL type name associated with OID.
+Uses PostgreSQL connection CON."
+  (or (gethash oid pg--type-name-by-oid)
+      (progn
+        (pg-initialize-parsers con)
+        (gethash oid pg--type-name-by-oid))))
 
 
 (cl-defun pg-prepare (con query argument-types &key (name ""))
@@ -2860,10 +2869,6 @@ presented to the user."
                 (when p
                   (kill-process p)))
            (kill-buffer buffer)))
-
-(require 'pg-geometry)
-(require 'pg-lo)
-
 
 (provide 'pg)
 
