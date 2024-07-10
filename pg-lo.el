@@ -20,6 +20,8 @@
 ;; circles. There is also an inheritance mechanism in PostgreSQL.
 
 
+;;; Code:
+
 (require 'cl-lib)
 
 (declare-function pg-read-string "pg" (con maxbytes))
