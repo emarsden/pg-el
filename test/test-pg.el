@@ -105,6 +105,7 @@
   (pg-test-vector con)
   (pg-test-tsvector con)
   (pg-test-geometric con)
+  ;; (pg-test-gis con)
   (message "Testing COPY...")
   (pg-test-copy con)
   (pg-test-copy-large con)
@@ -890,6 +891,7 @@ bar$$"))))
       (should (cl-find (make-pg-ts :lexeme "Rats") tsvec :test #'equal)))))
 
 (defun pg-test-geometric (con)
+  (require 'pg-geometry)
   (cl-labels ((row (query args) (pg-result (pg-exec-prepared con query args) :tuple 0))
               (scalar (query args) (car (row query args)))
               (approx= (x y) (< (/ (abs (- x y)) (max (abs x) (abs y))) 1e-5)))
@@ -1028,6 +1030,16 @@ bar$$"))))
       (should (eql 3 (cdr (cl-first points))))
       (should (approx= 7.77 (cdr (car (last points))))))
     (pg-exec con "DROP TABLE with_polygon")))
+
+;; PostGIS parsing tests
+(defun pg-test-gis (con)
+  (require 'pg-gis)
+  (cl-labels ((row (query args) (pg-result (pg-exec-prepared con query args) :tuple 0))
+              (scalar (query args) (car (row query args)))
+              (approx= (x y) (< (/ (abs (- x y)) (max (abs x) (abs y))) 1e-5)))
+    (let* ((res (pg-exec con "SELECT 'SRID=4;POINT(0 0)'::geometry"))
+           (tuple (pg-result res :tuple 0)))
+      (message "GIS> %s" tuple))))
 
 
 ;; https://www.postgresql.org/docs/current/sql-copy.html
