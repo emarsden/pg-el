@@ -1,6 +1,13 @@
 # Changelog
 
 
+## [0.38] - Unreleased
+
+- The network connection timeout functionality is disabled on Microsoft Windows platforms, where it
+  does not function correctly. This is implemented by setting the variable `pg-connect-timeout`
+  to 0. This setting can also be used to disable the connection timeout on other platforms.
+
+
 ## [0.37] - 2024-07-08
 
 - Fix serialization of JSONB parameters in prepared statements.

@@ -88,8 +88,14 @@ This information appears in queries to the `pg_stat_activity' table
 and (depending on server configuration) in the connection log.")
 
 
-(defvar pg-connect-timeout 30
-  "Timeout in seconds for establishing the network connection to PostgreSQL.")
+(defvar pg-connect-timeout
+  (cl-case system-type
+    (windows-nt 0)
+    (ms-dos 0)
+    (t 30))
+  "Timeout in seconds for establishing the network connection to PostgreSQL.
+If set to zero (the default on Microsoft Windows platforms), do not create
+a timer to signal a connection timeout.")
 
 (defvar pg-read-timeout 10
   "Timeout in seconds when reading data from PostgreSQL.")
@@ -475,12 +481,13 @@ attempt to establish an encrypted connection to PostgreSQL."
          (process (open-network-stream "postgres" buf host port :coding nil
                                        :nowait t :nogreeting t))
          (con (make-pgcon :dbname dbname :process process)))
-    (run-at-time pg-connect-timeout nil
-                 (lambda ()
-                   (unless (memq (process-status process) '(open listen))
-                     (delete-process process)
-                     (kill-buffer buf)
-                     (signal 'pg-connect-timeout (list "PostgreSQL connection timed out")))))
+    (unless (zerop pg-connect-timeout)
+      (run-at-time pg-connect-timeout nil
+                   (lambda ()
+                     (unless (memq (process-status process) '(open listen))
+                       (delete-process process)
+                       (kill-buffer buf)
+                       (signal 'pg-connect-timeout (list "PostgreSQL connection timed out"))))))
     (with-current-buffer buf
       (set-process-coding-system process 'binary 'binary)
       (set-buffer-multibyte nil)
