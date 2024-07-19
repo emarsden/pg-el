@@ -169,6 +169,10 @@ test-neon: test-pg.el
 	PGEL_PASSWORD=foobles PGEL_HOSTNAME=foobles.eu-central-1.aws.neon.tech PGEL_USER=username PGEL_DATABASE=main $(MAKE) test-tls
 
 
+# app.xata.io are running PostgreSQL 15.5 on aarch64/Linux as of 2024-07
+test-xata: test-pg.el
+	PGURI="postgresql://user:password@eu-central-1.sql.xata.sh/pgeltestdb:main?sslmode=force" $(MAKE) test-tls
+
 
 # https://docs.timescale.com/self-hosted/latest/install/installation-docker/
 test-timescale: test-pg.el
