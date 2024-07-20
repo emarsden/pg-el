@@ -2031,8 +2031,9 @@ Return nil if the extension could not be loaded."
 ;; which we convert to the internal Emacs date/time representation
 ;; (there may be a fractional seconds quantity as well, which the regex
 ;; handles)
-(defun pg-isodate-parser (str _encoding)
+(defun pg-isodate-with-timezone-parser (str _encoding)
   "Parse PostgreSQL value STR as an ISO-formatted date."
+  (message "Parsing date %s with tz" str)
   (if (string-match pg--ISODATE_REGEX str)  ; is non-null
       (let ((year    (string-to-number (match-string 1 str)))
             (month   (string-to-number (match-string 2 str)))
@@ -2040,14 +2041,32 @@ Return nil if the extension could not be loaded."
             (hours   (string-to-number (match-string 4 str)))
             (minutes (string-to-number (match-string 5 str)))
             (seconds (round (string-to-number (match-string 6 str))))
-            (tz      (string-to-number (or (match-string 7 str) "0"))))
-        (encode-time seconds minutes hours day month year (* 3600 tz)))
+            ;; If the timezone is not explicitly specified, use the local one
+            (tz      (or (match-string 7 str) nil)))
+        (encode-time (list seconds minutes hours day month year nil nil tz)))
     (let ((msg (format "Badly formed ISO timestamp from backend: %s" str)))
       (signal 'pg-protocol-error (list msg)))))
 
-(pg-register-parser "timestamp"  #'pg-isodate-parser)
-(pg-register-parser "timestamptz" #'pg-isodate-parser)
-(pg-register-parser "datetime" #'pg-isodate-parser)
+(defun pg-isodate-without-timezone-parser (str _encoding)
+  "Parse PostgreSQL value STR as an ISO-formatted date."
+  (message "Parsing date %s without tz" str)
+  (if (string-match pg--ISODATE_REGEX str)  ; is non-null
+      (let ((year    (string-to-number (match-string 1 str)))
+            (month   (string-to-number (match-string 2 str)))
+            (day     (string-to-number (match-string 3 str)))
+            (hours   (string-to-number (match-string 4 str)))
+            (minutes (string-to-number (match-string 5 str)))
+            (seconds (round (string-to-number (match-string 6 str))))
+            ;; The timezone must be ignored even if it is specified
+            (tz      nil))
+        (encode-time (list seconds minutes hours day month year nil nil tz)))
+    (let ((msg (format "Badly formed ISO timestamp from backend: %s" str)))
+      (signal 'pg-protocol-error (list msg)))))
+
+
+(pg-register-parser "timestamp"  #'pg-isodate-without-timezone-parser)
+(pg-register-parser "timestamptz" #'pg-isodate-with-timezone-parser)
+(pg-register-parser "datetime" #'pg-isodate-with-timezone-parser)
 
 (pg-register-parser "time" #'pg-text-parser)     ; preparsed "15:32:45"
 (pg-register-parser "timetz" #'pg-text-parser)

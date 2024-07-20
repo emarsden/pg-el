@@ -7,6 +7,9 @@
   does not function correctly. This is implemented by setting the variable `pg-connect-timeout`
   to 0. This setting can also be used to disable the connection timeout on other platforms.
 
+- Fix the deserialization of `TIMESTAMP WITH TIMEZONE` and `TIMESTAMP WITHOUT TIMEZONE` values when
+  the timezone is not explicitly specified.
+
 
 ## [0.37] - 2024-07-08
 
