@@ -1984,6 +1984,18 @@ Return nil if the extension could not be loaded."
 
 (pg-register-parser "_text" #'pg-textarray-parser)
 
+;; Anonymouse records in PostgreSQL (oid = 2249) are little used in practice, and difficult to parse
+;; because we receive no information concerning the types of the different record "columns".
+;;
+;;   SELECT (1,2) --> "(1,2)"
+;;   SELECT (null,1,2) --> "(,1,2)"
+;;   SELECT ('foo,ble',null) --> "(\"foo,ble\",)"
+;;   SELECT (1, (2, 3)) --> "(1,\"(2,3)\")"     -- nested records are allowed
+;;   SELECT (1, '(2,3)') --> "(1,\"(2,3)\")"    -- note the ambiguity!
+;;
+;; We simply return these as an unparsed string.
+(pg-register-parser "record" #'pg-text-parser)
+
 ;; Something like "[10.4,20)". TODO: handle multirange types (from PostgreSQL v14)
 (defun pg-numrange-parser (str _encoding)
   "Parse PostgreSQL value STR as a numerical range."
