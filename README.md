@@ -41,7 +41,7 @@ This library has support for:
 - Connections over TCP or (on Unix machines) a local Unix socket.
 
 
-Tested **PostgreSQL versions**: The code has been tested with versions 17beta1, 16.3, 15.4, 13.8,
+Tested **PostgreSQL versions**: The code has been tested with versions 17beta2, 16.3, 15.4, 13.8,
 11.17, and 10.22 on Linux. It is also tested via GitHub actions on MacOS and Windows. This library
 also works against other databases that implement the PostgreSQL wire protocol:
 
