@@ -2045,7 +2045,6 @@ Return nil if the extension could not be loaded."
 ;; handles)
 (defun pg-isodate-with-timezone-parser (str _encoding)
   "Parse PostgreSQL value STR as an ISO-formatted date."
-  (message "Parsing date %s with tz" str)
   (if (string-match pg--ISODATE_REGEX str)  ; is non-null
       (let ((year    (string-to-number (match-string 1 str)))
             (month   (string-to-number (match-string 2 str)))
@@ -2061,7 +2060,6 @@ Return nil if the extension could not be loaded."
 
 (defun pg-isodate-without-timezone-parser (str _encoding)
   "Parse PostgreSQL value STR as an ISO-formatted date."
-  (message "Parsing date %s without tz" str)
   (if (string-match pg--ISODATE_REGEX str)  ; is non-null
       (let ((year    (string-to-number (match-string 1 str)))
             (month   (string-to-number (match-string 2 str)))

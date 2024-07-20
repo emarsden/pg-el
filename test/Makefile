@@ -13,7 +13,8 @@ install-deps:
 	${EMACS} -Q --batch ../pg.el -l test/install-deps.el
 
 test: test-pg.el install-deps
-	${EMACS} -Q --batch -L .. -L . -l load-deps.el ../pg.el -l test-pg.el -f pg-test
+	${EMACS} -Q --batch -L .. -L . -l load-deps.el ../pg.el \
+	   -l pg.el -l pg-geometry.el -l pg-gis.el -l test-pg.el -f pg-test
 
 # Run tests over an encrypted connection to PostgreSQL. Encryption is not available for all versions
 # and installations (the PostgreSQL backend needs to be set up with TLS certificates), so this is a
@@ -86,7 +87,7 @@ test-postgresql17b: test-pg.el
 	   -e POSTGRES_USER=pgeltestuser \
 	   -e POSTGRES_PASSWORD=pgeltest \
 	   -e PGPORT=5439 \
-	   -d docker.io/library/postgres:17beta1-alpine3.20
+	   -d docker.io/library/postgres:17beta2-alpine3.20
 	sleep 5
 	PGEL_PORT=5439 $(MAKE) test
 	podman stop pgsql

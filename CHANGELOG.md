@@ -10,6 +10,12 @@
 - Fix the deserialization of `TIMESTAMP WITH TIMEZONE` and `TIMESTAMP WITHOUT TIMEZONE` values when
   the timezone is not explicitly specified.
 
+- Preliminary serialization and deserialization support for the types used by the PostGIS extension
+  (types `GEOMETRY`, `GEOGRAPHY`, `SPHEROID`, `BOX2D`, `BOX3D`). Some of these types are
+  deserialized from the native hex encoding of EWKB returned by PostGIS to text format using the
+  `geosop` commandline utility, if the variable `pg-gis-use-geosop` is non-nil (which is the
+  default).
+
 
 ## [0.37] - 2024-07-08
 
