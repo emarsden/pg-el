@@ -6,6 +6,7 @@
 - [Using pg-el](./usage.md)
 - [JSON and JSONB support](./json.md)
 - [HSTORE support](./hstore.md)
+- [PostGIS support](./postgis.md)
 - [Collation support](./collation.md)
 - [The COPY protocol](./copy-protocol.md)
 - [Using schema-qualified names](./schemas.md)
