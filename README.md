@@ -36,7 +36,7 @@ This library has support for:
 
 - Parsing various PostgreSQL types including integers, floats, array types, numerical ranges, JSON
   and JSONB objects into their native Emacs Lisp equivalents. The parsing support is
-  user-extensible. Support for the HSTORE and pgvector extensions.
+  user-extensible. Support for the HSTORE, pgvector and PostGIS extensions.
 
 - Connections over TCP or (on Unix machines) a local Unix socket.
 

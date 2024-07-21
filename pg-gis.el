@@ -33,7 +33,7 @@ Return nil if the extension could not be loaded."
 
 
 ;; PostGIS sends values over the wire in HEXEWKB format (Extended Well-Known Binary encoded in
-;; hexidemical), such as "01010000200400000000000000000000000000000000000000".
+;; hexademical), such as "01010000200400000000000000000000000000000000000000".
 ;;
 ;;   https://en.wikipedia.org/wiki/Well-known_text_representation_of_geometry#Well-known_binary
 ;;

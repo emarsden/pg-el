@@ -1,7 +1,7 @@
 # Changelog
 
 
-## [0.38] - Unreleased
+## [0.38] - 2024-07-21
 
 - The network connection timeout functionality is disabled on Microsoft Windows platforms, where it
   does not function correctly. This is implemented by setting the variable `pg-connect-timeout`
