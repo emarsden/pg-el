@@ -117,7 +117,8 @@
                (?N
                 (let ((notice (pg-read-string con pg--MAX_MESSAGE_LEN)))
                   (message "NOTICE: %s" notice))
-                (unix-sync))
+                (when (fboundp 'unix-sync)
+                  (unix-sync)))
 
                ;; ReadyForQuery message
                (?Z
