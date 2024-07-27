@@ -1254,7 +1254,8 @@ are available, they can later be retrieved with `pg-fetch'."
     (pg-fetch con result :max-rows max-rows)))
 
 (cl-defun pg-close-portal (con portal)
-  "Close the portal named PORTAL that was opened by pg-exec-prepared."
+  "Close the portal named PORTAL that was opened by `pg-exec-prepared'.
+Uses PostgreSQL connection CON."
   (let ((len (+ 4 1 (1+ (length portal)))))
     ;; send a Close message
     (pg-send-char con ?C)
@@ -2203,6 +2204,11 @@ Return nil if the extension could not be set up."
   (lambda (v)
     (cl-assert (<= 0 v 255) t "Value out of range for CHAR type")
     (string v)))
+
+(pg-register-serializer "bpchar"
+                        (lambda (v)
+                          (cl-assert (<= 0 v 255) t "Value out of range for BPCHAR type")
+                          (string v)))
 
 ;; see https://www.postgresql.org/docs/current/datatype-numeric.html
 (pg-register-serializer "int2"
