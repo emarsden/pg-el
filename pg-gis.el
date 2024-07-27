@@ -16,10 +16,11 @@
 
 (declare-function pg-register-parser "pg" (type-name parser))
 (declare-function pg-register-textual-serializer "pg" (type-name serializer))
+(declare-function pg-exec "pg" (con &rest args))
 
 
 (defvar pg-gis-use-geosop t
-  "If non-nil, parse PostGIS EWKB format to text using the geosop commandline application.")
+  "If non-nil, parse PostGIS EWKB to text using the geosop utility.")
 
 
 ;; This function must be called before using the PostGIS extension. It loads the extension if
