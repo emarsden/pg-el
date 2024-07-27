@@ -1,6 +1,11 @@
 # Changelog
 
 
+## [0.39] - Unreleased
+
+- Fix serialization for the PostgreSQL BPCHAR type.
+
+
 ## [0.38] - 2024-07-21
 
 - The network connection timeout functionality is disabled on Microsoft Windows platforms, where it
@@ -48,7 +53,7 @@
 
 - Parse the PostgreSQL XML type as text.
 
-- Fix serialization for the PostgreSQL BPCHAR type.
+- Fix deserialization for the PostgreSQL BPCHAR type.
 
 - Fix serialization and deserialization for the PostgreSQL VECTOR type used by the `pgvector`
   extension. Vector embeddings can be floating point numbers, not just integers.
