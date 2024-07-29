@@ -17,20 +17,11 @@
 (declare-function pg-register-parser "pg" (type-name parser))
 (declare-function pg-register-textual-serializer "pg" (type-name serializer))
 (declare-function pg-exec "pg" (con &rest args))
+(declare-function pg-initialize-parsers "pg" (con))
 
 
 (defvar pg-gis-use-geosop t
   "If non-nil, parse PostGIS EWKB to text using the geosop utility.")
-
-
-;; This function must be called before using the PostGIS extension. It loads the extension if
-;; necessary, and sets up the parsing support for the relevant datatypes.
-(defun pg-setup-postgis (con)
-  "Prepare for use of PostGIS types on PostgreSQL connection CON.
-Return nil if the extension could not be loaded."
-  (condition-case nil
-      (pg-exec con "CREATE EXTENSION IF NOT EXISTS postgis")
-    (pg-error nil)))
 
 
 ;; PostGIS sends values over the wire in HEXEWKB format (Extended Well-Known Binary encoded in
@@ -84,17 +75,33 @@ Return nil if the extension could not be loaded."
 ;;  valid_detail
 ;;  geography_columns
 
+(defun pg--gis-register-serializers ()
+  "Register the (de)serialization functions for PostGIS types."
+  (pg-register-parser "geometry" #'pg-gis--parse-ewkb)
+  (pg-register-textual-serializer "geometry" #'identity)
+  (pg-register-parser "geography" #'pg-gis--parse-ewkb)
+  (pg-register-textual-serializer "geography" #'identity)
+  (pg-register-parser "spheroid" #'pg-gis--parse-spheroid)
+  (pg-register-textual-serializer "spheroid" #'identity)
+  (pg-register-parser "box2d" #'pg-gis--parse-box2d)
+  (pg-register-textual-serializer "box2d" #'identity)
+  (pg-register-parser "box3d" #'pg-gis--parse-box3d)
+  (pg-register-textual-serializer "box3d" #'identity))
 
-(pg-register-parser "geometry" #'pg-gis--parse-ewkb)
-(pg-register-textual-serializer "geometry" #'identity)
-(pg-register-parser "geography" #'pg-gis--parse-ewkb)
-(pg-register-textual-serializer "geography" #'identity)
-(pg-register-parser "spheroid" #'pg-gis--parse-spheroid)
-(pg-register-textual-serializer "spheroid" #'identity)
-(pg-register-parser "box2d" #'pg-gis--parse-box2d)
-(pg-register-textual-serializer "box2d" #'identity)
-(pg-register-parser "box3d" #'pg-gis--parse-box3d)
-(pg-register-textual-serializer "box3d" #'identity)
+(cl-eval-when (load)
+  (pg--gis-register-serializers))
+
+;; This function must be called before using the PostGIS extension. It loads the extension if
+;; necessary, and sets up the parsing support for the relevant datatypes.
+(defun pg-setup-postgis (con)
+  "Prepare for use of PostGIS types on PostgreSQL connection CON.
+Return nil if the extension could not be loaded."
+  (pg--gis-register-serializers)
+  (condition-case nil
+      (progn
+        (pg-exec con "CREATE EXTENSION IF NOT EXISTS postgis")
+        (pg-initialize-parsers con))
+    (pg-error nil)))
 
 
 (provide 'pg-gis)
