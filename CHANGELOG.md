@@ -1,7 +1,7 @@
 # Changelog
 
 
-## [0.39] - Unreleased
+## [0.39] - 2024-07-29
 
 - Fix serialization for the PostgreSQL `BPCHAR` type.
 
