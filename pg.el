@@ -535,7 +535,7 @@ opaque type). PASSWORD defaults to an empty string."
          (process (make-network-process :name "postgres" :buffer buf :family 'local :service path :coding nil))
          (connection (make-pgcon :dbname dbname :process process)))
     ;; Save connection info in the pgcon object, for possible later use by pg-cancel
-    (setf (pgcon-connect-info connection) (list :local path dbname user password))
+    (setf (pgcon-connect-info connection) (list :local path nil dbname user password))
     (with-current-buffer buf
       (set-process-coding-system process 'binary 'binary)
       (set-buffer-multibyte nil)
@@ -690,7 +690,7 @@ sslmode (partial support) and application_name."
          (scheme (url-type parsed)))
     (unless (or (string= "postgres" scheme)
                 (string= "postgresql" scheme))
-      (signal 'pg-error '("Invalid protocol in connection URI")))
+      (signal 'pg-error (list (format "Invalid protocol %s in connection URI" scheme))))
     ;; FIXME unfortunately the url-host is being downcased by url-generic-parse-url, which is
     ;; incorrect when the hostname is specifying a local path.
     (let* ((host (url-unhex-string (url-host parsed)))
@@ -1791,6 +1791,9 @@ The textual representation represents the type OID using ENCODING."
       (cdr (assoc name pg--encoding-names #'string-equal-ignore-case))
     (cdr (assoc name pg--encoding-names #'string-equal))))
 
+;; Note that if you register a parser for a new type-name after a PostgreSQL connection has been
+;; established, you must call (pg-initialize-parsers *connection*) to hook the parser into the
+;; deserialization machinery (this will look up the OID for the new type).
 (defun pg-register-parser (type-name parser)
   (puthash type-name parser pg--parser-by-typname))
 (put 'pg-register-parser 'lisp-indent-function 'defun)
