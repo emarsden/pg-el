@@ -1,7 +1,7 @@
 # pg-el
 
-[![License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](https://www.gnu.org/licenses/old-licenses/gpl-2.0)
-[![MELPA](https://melpa.org/packages/pg-badge.svg)](https://melpa.org/#/pg)
+[![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0.html) 
+![MELPA](https://melpa.org/packages/pg-badge.svg)](https://melpa.org/#/pg) 
 [![test-pgv16](https://github.com/emarsden/pg-el/workflows/test-pgv16/badge.svg)](https://github.com/emarsden/pg-el/workflows/test-pgv16/badge.svg)
 
 This Emacs Lisp library lets you access the [PostgreSQL](https://www.postgresql.org/) 🐘
@@ -92,4 +92,4 @@ that enables access to PostgreSQL from Emacs by binding to the libpq library.
 
 ## Licence
 
-pg-el is free software distributed under the terms of the GNU GPL v2 or later.
+pg-el is free software distributed under the terms of the GNU GPL v3 or later.

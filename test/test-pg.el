@@ -2,6 +2,7 @@
 ;;;
 ;;; Author: Eric Marsden <eric.marsden@risk-engineering.org>
 ;;; Copyright: (C) 2022-2024  Eric Marsden
+;; SPDX-License-Identifier: GPL-3.0-or-later
 
 
 (require 'cl-lib)

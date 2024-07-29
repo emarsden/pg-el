@@ -20,6 +20,8 @@
     - specified as `BIGINT GENERATED ALWAYS AS IDENTITY`
     - specified as `GENERATED ALWAYS AS expr STORED` (calculated from other columns)
 
+- Move to GPL v3 or later licence (from GPL-2.0-or-later).
+
 
 ## [0.38] - 2024-07-21
 

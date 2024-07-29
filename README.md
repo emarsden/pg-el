@@ -1,6 +1,6 @@
 # pg.el -- Emacs Lisp socket-level interface to the PostgreSQL RDBMS
 
-[![License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](https://www.gnu.org/licenses/old-licenses/gpl-2.0)
+[![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0.html)
 [![MELPA](https://melpa.org/packages/pg-badge.svg)](https://melpa.org/#/pg)
 [![test-pgv16](https://github.com/emarsden/pg-el/workflows/test-pgv16/badge.svg)](https://github.com/emarsden/pg-el/workflows/test-pgv16/badge.svg)
 
