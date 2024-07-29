@@ -59,6 +59,26 @@
         ,@body)))
 (put 'with-pg-connection-local 'lisp-indent-function 'defun)
 
+;; Some utility functions to allow us to skip some tests that we know fail on some PostgreSQL
+;; versions or hosters or semi-compatible implementations
+(defun pg-test-is-cratedb (con)
+  (cl-search "CrateDB" (pg-backend-version con)))
+
+;; Nothing is present in the server-version string. But it has some unusual behaviour; for example
+;; not respecting the table_owner setting (the value returned by pg-table-owner is not the same as
+;; the username we use to connect).
+(defun pg-test-is-xata (con)
+  ;; See function pg-test-note-param-change below; this is an ugly hack!
+  (gethash "is-xata-p" (pgcon-prepared-statement-cache con) nil))
+
+
+(defun pg-test-is-cockroachdb (con)
+  (cl-search "CockroachDB" (pg-backend-version con)))
+
+(defun pg-test-is-yugabyte (con)
+  (cl-search "-YB-" (pg-backend-version con)))
+
+
 (defun pg-connection-tests ()
   (dolist (v (list "host=localhost port=5432 dbname=pgeltestdb user=pgeltestuser password=pgeltest"
                    "port=5432 dbname=pgeltestdb user=pgeltestuser password=pgeltest"
@@ -82,7 +102,7 @@
   (pg-test-basic con)
   (message "Testing insertions...")
   (pg-test-insert con)
-  (unless (cl-search "CrateDB" (pg-backend-version con))
+  (unless (pg-test-is-cratedb con)
     (message "Testing date routines...")
     (pg-test-date con))
   (message "Testing numeric routines...")
@@ -129,33 +149,35 @@
   (message "Tests passed"))
 
 
+(defun pg-test-note-param-change (con name value)
+  (message "PG> backend parameter %s=%s" name value)
+  (when (and (string= "session_authorization" name)
+             (string= "xata" value))
+    ;; This is a rather rude and ugly way of hiding some private information in the PostgreSQL
+    ;; connection struct.
+    (puthash "is-xata-p" t (pgcon-prepared-statement-cache con))))
+
 (defun pg-test ()
-  (cl-flet ((log-param-change (_con name value)
-               (message "PG> backend parameter %s=%s" name value)))
-    (let ((pg-parameter-change-functions (cons #'log-param-change pg-parameter-change-functions)))
-      (with-pgtest-connection con
-         (message "Running pg.el tests in %s against backend %s"
-                  (version) (pg-backend-version con))
-         (pg-run-tests con)))))
+  (let ((pg-parameter-change-functions (cons #'pg-test-note-param-change pg-parameter-change-functions)))
+    (with-pgtest-connection con
+       (message "Running pg.el tests in %s against backend %s"
+                (version) (pg-backend-version con))
+       (pg-run-tests con))))
 
 (defun pg-test-tls ()
-  (cl-flet ((log-param-change (_con name value)
-                              (message "PG> backend parameter %s=%s" name value)))
-    (let ((pg-parameter-change-functions (cons #'log-param-change pg-parameter-change-functions)))
-      (with-pgtest-connection-tls con
-         (message "Running pg.el tests in %s against backend %s"
-                  (version) (pg-backend-version con))
-         (pg-run-tests con)))))
+  (let ((pg-parameter-change-functions (cons #'pg-test-note-param-change pg-parameter-change-functions)))
+    (with-pgtest-connection-tls con
+       (message "Running pg.el tests in %s against backend %s"
+                (version) (pg-backend-version con))
+       (pg-run-tests con))))
 
 ;; Run tests over local Unix socket connection to backend
 (defun pg-test-local ()
-  (cl-flet ((log-param-change (_con name value)
-               (message "PG> backend parameter %s=%s" name value)))
-    (let ((pg-parameter-change-functions (cons #'log-param-change pg-parameter-change-functions)))
-      (with-pgtest-connection-local conn
-         (message "Running pg.el tests in %s against backend %s"
-                  (version) (pg-backend-version conn))
-         (pg-run-tests conn)))))
+  (let ((pg-parameter-change-functions (cons #'pg-test-note-param-change pg-parameter-change-functions)))
+    (with-pgtest-connection-local conn
+       (message "Running pg.el tests in %s against backend %s"
+                (version) (pg-backend-version conn))
+       (pg-run-tests conn))))
 
 
 (defun pg-test-prepared (con)
@@ -300,7 +322,7 @@
     (should (equal (list "hey" "Jude") (row "SELECT 'hey', 'Jude'")))
     (should (equal (list nil) (row "SELECT NULL")))
     (should (equal nil (row "")))
-    (unless (cl-search "CrateDB" (pg-backend-version con))
+    (unless (pg-test-is-cratedb con)
       (should (equal nil (row "-- comment"))))
     (should (equal (list 1 nil "all") (row "SELECT 1,NULL,'all'")))
     ;; QuestDB doesn't clearly identify itself in its version string, and doesn't implement CHR()
@@ -319,11 +341,15 @@ bar$$"))))
     (should (string= (md5 "foobles") (car (row "SELECT md5('foobles')"))))
     ;; This setting defined in PostgreSQL v8.2. A value of 120007 means major version 12, minor
     ;; version 7. The value in pgcon-server-version-major is obtained by parsing the server_version
-    ;; string sent by the backend on startup.
+    ;; string sent by the backend on startup. Not all servers return a value for this (for example
+    ;; xata.sh servers return an empty string).
     (let* ((version-str (car (row "SELECT current_setting('server_version_num')")))
-           (version-num (cl-parse-integer version-str)))
-      (should (eql (pgcon-server-version-major con)
-                   (/ version-num 10000))))))
+           (version-num (and version-str (cl-parse-integer version-str))))
+      (if version-str
+          (should (eql (pgcon-server-version-major con)
+                       (/ version-num 10000)))
+        (message "This PostgreSQL server doesn't support current_setting('server_version_num')")))))
+
 
 (defun pg-test-insert (con)
   (cl-flet ((scalar (sql) (cl-first (pg-result (pg-exec con sql) :tuple 0))))
@@ -333,7 +359,8 @@ bar$$"))))
       (pg-exec con "CREATE TABLE count_test(key int, val int)")
       (should (member "count_test" (pg-tables con)))
       (should (member "val" (pg-columns con "count_test")))
-      (unless (cl-search "CrateDB" (pg-backend-version con))
+      (unless (or (pg-test-is-cratedb con)
+                  (pg-test-is-xata con))
         (let ((user (or (nth 4 (pgcon-connect-info con))
                         "pgeltestuser")))
           (should (string= user (pg-table-owner con "count_test")))
@@ -436,7 +463,7 @@ bar$$"))))
     (should (eql -1 (scalar "SELECT -1::int8")))
     (should (eql 42 (scalar "SELECT '42'::smallint")))
     ;; CrateDB doesn't support casting integers to bits.
-    (unless (cl-search "CrateDB" (pg-backend-version con))
+    (unless (pg-test-is-cratedb con)
       (should (equal (make-bool-vector 1 nil) (scalar "SELECT 0::bit")))
       (should (equal (make-bool-vector 1 t) (scalar "SELECT 1::bit")))
       (should (equal (make-bool-vector 8 t) (scalar "SELECT CAST(255 as bit(8))"))))
@@ -452,7 +479,7 @@ bar$$"))))
     (should (eql (scalar "SELECT floor(42.3)") 42))
     (should (eql (scalar "SELECT trunc(43.3)") 43))
     (should (eql (scalar "SELECT trunc(-42.3)") -42))
-    (unless (cl-search "CockroachDB" (pg-backend-version con))
+    (unless (pg-test-is-cockroachdb con)
       (should (eql (scalar "SELECT log(100)") 2))
       ;; bignums only supported from Emacs 27.2 onwards
       (when (fboundp 'bignump)
@@ -512,8 +539,8 @@ bar$$"))))
 ;; XML support, so check for that first.
 (defun pg-test-xml (con)
   (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0))))
-    (unless (or (cl-search "CockroachDB" (pg-backend-version con))
-                (cl-search "-YB-" (pg-backend-version con)))
+    (unless (or (pg-test-is-cockroachdb con)
+                (pg-test-is-yugabyte con))
       (unless (zerop (scalar "SELECT COUNT(*) FROM pg_type WHERE typname='xml'"))
         (should (string= "<foo attr=\"45\">bar</foo>"
                          (scalar "SELECT XMLPARSE (CONTENT '<foo attr=\"45\">bar</foo>')")))
