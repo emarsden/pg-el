@@ -3,12 +3,11 @@
 
 ## [0.39] - 2024-07-29
 
-- Fix serialization for the PostgreSQL `BPCHAR` type.
-
 - New function `pg-fetch-prepared` to bind arguments to a prepared statement and fetch results.
   Preparing a statement once then reusing it multiple times with different argument values allows
-  you avoid the overhead of sending and parsing the SQL query and calculating the query plan. This
-  is a simple convenience wrapper around functions `pg-bind`, `pg-describe-portal` and `pg-fetch`.
+  you to avoid the overhead of sending and parsing the SQL query and calculating the query plan.
+  This is a simple convenience wrapper around functions `pg-bind`, `pg-describe-portal` and
+  `pg-fetch`.
 
 - New function `pg-ensure-prepared-statement` that either returns the previously prepared statement
   saved in the prepared statement cache of our PostgreSQL connection, or prepares the statement and
@@ -19,6 +18,8 @@
     - with a specified `DEFAULT` (including `SERIAL` columns)
     - specified as `BIGINT GENERATED ALWAYS AS IDENTITY`
     - specified as `GENERATED ALWAYS AS expr STORED` (calculated from other columns)
+
+- Fix serialization for the PostgreSQL `BPCHAR` type.
 
 - Move to GPL v3 or later licence (from GPL-2.0-or-later).
 
