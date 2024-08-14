@@ -89,6 +89,8 @@
 (defun pg-test-is-questdb (con)
   (cl-search "Visual C++ build 1914" (pg-backend-version con)))
 
+(defun pg-test-is-ydb (con)
+  (gethash "is-ydb-p"  (pgcon-prepared-statement-cache con) nil))
 
 (defun pg-connection-tests ()
   (dolist (v (list "host=localhost port=5432 dbname=pgeltestdb user=pgeltestuser password=pgeltest"
@@ -172,7 +174,12 @@
   ;; Google Spanner (or at least the emulator) using PGAdapter for PostgreSQL wire protocol support
   (when (and (string= "session_authorization" name)
              (string= "PGAdapter" value))
-    (puthash "is-spanner-p" t (pgcon-prepared-statement-cache con))))
+    (puthash "is-spanner-p" t (pgcon-prepared-statement-cache con)))
+  (when (and (string= "server_version" name)
+             (cl-search "ydb stable" value))
+    (setf (pgcon-timeout con) 50)
+    (puthash "is-ydb-p" t (pgcon-prepared-statement-cache con))))
+
 
 (defun pg-test ()
   (let ((pg-parameter-change-functions (cons #'pg-test-note-param-change pg-parameter-change-functions)))
@@ -204,7 +211,8 @@
     (should (equal 42 (scalar "SELECT 42" (list))))
     (should (approx= 42.0 (scalar "SELECT 42.00" (list))))
     (should (equal nil (scalar "SELECT NULL" (list))))
-    (should (equal nil (scalar "" (list))))
+    (unless (pg-test-is-ydb con)
+      (should (equal nil (scalar "" (list)))))
     (let ((bv1 (make-bool-vector 1 nil))
           (bv2 (make-bool-vector 1 t)))
       (should (equal bv1 (scalar "SELECT $1::bit" `((,bv1 . "bit")))))
@@ -339,7 +347,9 @@
     (should (equal (list nil) (row "SELECT '0'::boolean")))
     (should (equal (list "hey" "Jude") (row "SELECT 'hey', 'Jude'")))
     (should (equal (list nil) (row "SELECT NULL")))
-    (should (equal nil (row "")))
+    ;; This leads to a timeout with YDB
+    (unless (pg-test-is-ydb con)
+      (should (equal nil (row ""))))
     (unless (pg-test-is-cratedb con)
       (should (equal nil (row "-- comment"))))
     (should (equal (list 1 nil "all") (row "SELECT 1,NULL,'all'")))
@@ -350,7 +360,8 @@
     (unless (pg-test-is-spanner con)
       (should (eql nil (row " SELECT 3 WHERE 1=0"))))
     (unless (or (pg-test-is-cratedb con)
-                (pg-test-is-spanner con))
+                (pg-test-is-spanner con)
+                (pg-test-is-ydb con))
       ;; these are row expressions, not standard SQL
       (should (string= (car (row "SELECT (1,2)")) "(1,2)"))
       (should (string= (car (row "SELECT (null,1,2)")) "(,1,2)")))
@@ -376,12 +387,13 @@ bar$$"))))
     ;; version 7. The value in pgcon-server-version-major is obtained by parsing the server_version
     ;; string sent by the backend on startup. Not all servers return a value for this (for example
     ;; xata.sh servers return an empty string).
-    (let* ((version-str (car (row "SELECT current_setting('server_version_num')")))
-           (version-num (and version-str (cl-parse-integer version-str))))
-      (if version-str
-          (should (eql (pgcon-server-version-major con)
-                       (/ version-num 10000)))
-        (message "This PostgreSQL server doesn't support current_setting('server_version_num')")))))
+    (unless (pg-test-is-ydb con)
+      (let* ((version-str (car (row "SELECT current_setting('server_version_num')")))
+             (version-num (and version-str (cl-parse-integer version-str))))
+        (if version-str
+            (should (eql (pgcon-server-version-major con)
+                         (/ version-num 10000)))
+          (message "This PostgreSQL server doesn't support current_setting('server_version_num')"))))))
 
 
 (defun pg-test-insert (con)

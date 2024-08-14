@@ -43,7 +43,22 @@ This library has support for:
 
 Tested **PostgreSQL versions**: The code has been tested with versions 17beta3, 16.4, 15.4, 13.8,
 11.17, and 10.22 on Linux. It is also tested via GitHub actions on MacOS and Windows. This library
-also works against other databases that implement the PostgreSQL wire protocol:
+also works, more or less, against other “PostgreSQL-compatible” databases. There are four main points
+where this compatibility may be problematic: 
+
+- Compatibility with the PostgreSQL wire protocol. This is the most basic form of compatibility.
+
+- Compatibility with the PostgreSQL flavour of SQL, such as row expressions, non-standard functions
+  such as `CHR`, data types such as `BIT` and `VARBIT`, user-defined ENUMS and so on.
+
+- Implementation of the system tables that are used by certain pg-el functions, to retrieve the list
+  of tables in a database, the list of types, and so on.
+
+- Establishing encrypted TLS connection to hosted services. Most PostgreSQL client libraries (in
+  particular the official client library libpq) use OpenSSL for TLS support, whereas Emacs uses
+  GnuTLS, and you may encounter incompatibilities.
+
+The following PostgreSQL-compatible databases have been tested:
 
 - [YugabyteDB](https://yugabyte.com/): tested against version 2.21, mostly working though the
   `pg_sequences` table is not implemented so certain tests fail. YugabyteDB does not have full
@@ -65,14 +80,18 @@ also works against other databases that implement the PostgreSQL wire protocol:
 
 - [Google Spanner](https://cloud.google.com/spanner): tested with the Spanner emulator (that reports
   itself as `PostgreSQL 14.1`) and the PGAdapter library that enables support for the PostgreSQL
-  wire protocol. Spanner is only partly PostgreSQL compatible, for example refusing to create tables
-  that do not have a primary key. It also does not for example support the `CHR` and `MD5`
+  wire protocol. Spanner has only limited PostgreSQL compatibility, for example refusing to create
+  tables that do not have a primary key. It also does not for example support the `CHR` and `MD5`
   functions, row expressions, and WHERE clauses without a FROM clause.
 
+- [YDB by Yandex](https://ydb.tech/docs/en/postgresql/docker-connect) version 23-4 has very limited
+  PostgreSQL compatibility. For example, an empty query string leads to a hung connection, and the
+  system tables that we query to obtain the list of tables in the current database are not
+  implemented.
+
 - Untested but likely to work: Amazon RDS, Google Cloud SQL, Azure Database for PostgreSQL, Amazon
-  Auroa, Google AlloyDB, CitusData. You may however encounter difficulties with TLS connections,
-  because most PostgreSQL client libraries (in particular the official client library libpq) use
-  OpenSSL for TLS support, whereas Emacs uses GnuTLS.
+  Auroa, Google AlloyDB, Materialize, CitusData. You may however encounter difficulties with TLS
+  connections, as noted above.
 
 It does not work with the ClickHouse database, whose PostgreSQL support is too limited (no
 implementation of the `pg_types` system table, no support for basic SQL commands such as `SET`).

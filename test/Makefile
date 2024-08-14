@@ -318,6 +318,21 @@ test-spanner: test-pg.el
 	PGEL_PORT=5499 PGEL_DATABASE=pgeltestdb $(MAKE) test
 
 
+# YDB by Yandex
+# https://ydb.tech/docs/en/postgresql/docker-connect
+test-ydb: test-pg.el
+	podman run --rm --name ydb \
+	  --publish 5411:5432 --publish 8765:8765 \
+	  -e POSTGRES_USER=pgeltestuser \
+	  -e POSTGRES_PASSWORD=pgeltest \
+	  -e YDB_EXPERIMENTAL_PG=1 \
+	  -e YDB_USE_IN_MEMORY_PDISKS=true \
+	  -d ghcr.io/ydb-platform/local-ydb:nightly
+	sleep 10
+	PGEL_PORT=5411 $(MAKE) test
+	podman stop ydb
+
+
 # Tested 2024-06 with v24.5. Very limited PostgreSQL support: there is no pg_type table so
 # we can't retrieve information regarding the OID of builtin types.
 test-clickhouse: test-pg.el
