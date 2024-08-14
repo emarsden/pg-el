@@ -4,6 +4,7 @@
 - [Installation](./installation.md)
 - [Quickstart](./quickstart.md)
 - [Using pg-el](./usage.md)
+- [Using prepared statements](./prepared-statements.md)
 - [JSON and JSONB support](./json.md)
 - [HSTORE support](./hstore.md)
 - [PostGIS support](./postgis.md)
