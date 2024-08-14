@@ -57,3 +57,30 @@ ELISP> (let ((ht (make-hash-table)))
 "good stuff"
 ```
 ~~~
+
+
+
+## Support for the JSON path language (jsonpath type)
+
+pg-el serializes and deserializes [JSONPATH
+expressions](https://www.postgresql.org/docs/current/functions-json.html#FUNCTIONS-SQLJSON-PATH) as
+strings, as illustrated below. You can use them as arguments to prepared statements.
+
+
+~~~admonish example title="Serializing and deserializing JSON path expressions"
+```lisp
+ELISP> (pg-result (pg-exec *pg* "SELECT 'true'::jsonpath") :tuple 0)
+(list "true")
+ELISP> (pg-result (pg-exec *pg* "SELECT '$[*] ? (@ < 1 || @ > 5)'::jsonpath") :tuple 0)
+(list "$[*]?(@ < 1 || @ > 5)")
+ELISP> (let* ((sql "SELECT jsonb_path_query($1, $2)")
+              (dict (make-hash-table :test #'equal))
+              (_ (puthash "h" 5.6 dict))
+              (params `((,dict . "jsonb") ("$.h.floor()" . "jsonpath")))
+              (res (pg-exec-prepared con sql params))
+              (row (pg-result res :tuple 0)))
+          (cl-first row))
+5
+```
+~~~
+
