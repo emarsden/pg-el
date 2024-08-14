@@ -78,6 +78,17 @@
 (defun pg-test-is-yugabyte (con)
   (cl-search "-YB-" (pg-backend-version con)))
 
+;; Google Spanner (or at least, the emulator which is what we have tested) pretends to be
+;; "PostgreSQL 14.1", but doesn't implement some quite basic PostgreSQL functionality, such as the
+;; CHR() function.
+(defun pg-test-is-spanner (con)
+  ;; See function pg-test-note-param-change below; this is an ugly hack!
+  (gethash "is-spanner-p" (pgcon-prepared-statement-cache con) nil))
+
+   ;; QuestDB doesn't clearly identify itself in its version string, and doesn't implement CHR()
+(defun pg-test-is-questdb (con)
+  (cl-search "Visual C++ build 1914" (pg-backend-version con)))
+
 
 (defun pg-connection-tests ()
   (dolist (v (list "host=localhost port=5432 dbname=pgeltestdb user=pgeltestuser password=pgeltest"
@@ -157,7 +168,11 @@
              (string= "xata" value))
     ;; This is a rather rude and ugly way of hiding some private information in the PostgreSQL
     ;; connection struct.
-    (puthash "is-xata-p" t (pgcon-prepared-statement-cache con))))
+    (puthash "is-xata-p" t (pgcon-prepared-statement-cache con)))
+  ;; Google Spanner (or at least the emulator) using PGAdapter for PostgreSQL wire protocol support
+  (when (and (string= "session_authorization" name)
+             (string= "PGAdapter" value))
+    (puthash "is-spanner-p" t (pgcon-prepared-statement-cache con))))
 
 (defun pg-test ()
   (let ((pg-parameter-change-functions (cons #'pg-test-note-param-change pg-parameter-change-functions)))
@@ -328,12 +343,15 @@
     (unless (pg-test-is-cratedb con)
       (should (equal nil (row "-- comment"))))
     (should (equal (list 1 nil "all") (row "SELECT 1,NULL,'all'")))
-    ;; QuestDB doesn't clearly identify itself in its version string, and doesn't implement CHR()
-    (unless (cl-search "Visual C++ build 1914" (pg-backend-version con))
+    (unless (or (pg-test-is-questdb con)
+                (pg-test-is-spanner con))
       (should (string= "Z" (car (row "SELECT chr(90)")))))
     (should (equal (list 12) (row "select length('(╯°□°)╯︵ ┻━┻')")))
-    (should (eql nil (row " SELECT 3 where 1=0")))
-    (unless (pg-test-is-cratedb con)
+    (unless (pg-test-is-spanner con)
+      (should (eql nil (row " SELECT 3 WHERE 1=0"))))
+    (unless (or (pg-test-is-cratedb con)
+                (pg-test-is-spanner con))
+      ;; these are row expressions, not standard SQL
       (should (string= (car (row "SELECT (1,2)")) "(1,2)"))
       (should (string= (car (row "SELECT (null,1,2)")) "(,1,2)")))
     (should (string= "foo\nbar" (car (row "SELECT $$foo
@@ -342,7 +360,8 @@ bar$$"))))
     (should (string= "abcdef" (car (row "SELECT 'abc' || 'def'"))))
     (should (string= "howdy" (car (row "SELECT 'howdy'::text"))))
     (should (string= "gday" (car (row "SELECT 'gday'::varchar(20)"))))
-    (should (string= (md5 "foobles") (car (row "SELECT md5('foobles')"))))
+    (unless (pg-test-is-spanner con)
+      (should (string= (md5 "foobles") (car (row "SELECT md5('foobles')")))))
     (let* ((res (pg-exec con "SELECT 11 as bizzle, 15 as bazzle"))
            (attr (pg-result res :attributes))
            (col1 (cl-first attr))

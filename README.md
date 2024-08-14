@@ -41,7 +41,7 @@ This library has support for:
 - Connections over TCP or (on Unix machines) a local Unix socket.
 
 
-Tested **PostgreSQL versions**: The code has been tested with versions 17beta3, 16.3, 15.4, 13.8,
+Tested **PostgreSQL versions**: The code has been tested with versions 17beta3, 16.4, 15.4, 13.8,
 11.17, and 10.22 on Linux. It is also tested via GitHub actions on MacOS and Windows. This library
 also works against other databases that implement the PostgreSQL wire protocol:
 
@@ -63,10 +63,16 @@ also works against other databases that implement the PostgreSQL wire protocol:
 
 - [ParadeDB](https://www.paradedb.com/): tested with version 0.6.1
 
+- [Google Spanner](https://cloud.google.com/spanner): tested with the Spanner emulator (that reports
+  itself as `PostgreSQL 14.1`) and the PGAdapter library that enables support for the PostgreSQL
+  wire protocol. Spanner is only partly PostgreSQL compatible, for example refusing to create tables
+  that do not have a primary key. It also does not for example support the `CHR` and `MD5`
+  functions, row expressions, and WHERE clauses without a FROM clause.
+
 - Untested but likely to work: Amazon RDS, Google Cloud SQL, Azure Database for PostgreSQL, Amazon
-  Auroa, Google AlloyDB, CitusData, Google Spanner. You may however encounter difficulties with TLS
-  connections, because most PostgreSQL client libraries (in particular the official client library
-  libpq) use OpenSSL for TLS support, whereas Emacs uses GnuTLS.
+  Auroa, Google AlloyDB, CitusData. You may however encounter difficulties with TLS connections,
+  because most PostgreSQL client libraries (in particular the official client library libpq) use
+  OpenSSL for TLS support, whereas Emacs uses GnuTLS.
 
 It does not work with the ClickHouse database, whose PostgreSQL support is too limited (no
 implementation of the `pg_types` system table, no support for basic SQL commands such as `SET`).

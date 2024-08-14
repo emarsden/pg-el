@@ -16,6 +16,9 @@ test: test-pg.el install-deps
 	${EMACS} -Q --batch -L .. -L . -l load-deps.el ../pg.el \
 	   -l pg.el -l pg-geometry.el -l pg-gis.el -l test-pg.el -f pg-test
 
+supa: install-deps
+	${EMACS} -Q --batch -L .. -L . -l load-deps.el -l ../pg.el -l supabase.el -f test
+
 # Run tests over an encrypted connection to PostgreSQL. Encryption is not available for all versions
 # and installations (the PostgreSQL backend needs to be set up with TLS certificates), so this is a
 # separate test target.
@@ -87,7 +90,7 @@ test-postgresql17b: test-pg.el
 	   -e POSTGRES_USER=pgeltestuser \
 	   -e POSTGRES_PASSWORD=pgeltest \
 	   -e PGPORT=5439 \
-	   -d docker.io/library/postgres:17beta2-alpine3.20
+	   -d docker.io/library/postgres:17beta3-alpine3.20
 	sleep 5
 	PGEL_PORT=5439 $(MAKE) test
 	podman stop pgsql
@@ -302,6 +305,17 @@ test-paradedb: test-pg.el
 	sleep 5
 	PGEL_PORT=5441 $(MAKE) test
 	podman stop paradedb
+
+
+# Google Spanner emulator
+# See https://github.com/GoogleCloudPlatform/pgadapter/blob/postgresql-dialect/docs/emulator.md
+# https://cloud.google.com/spanner/docs/pgadapter-start#docker
+test-spanner: test-pg.el
+	podman run --rm --name spanner \
+	  --publish 5499:5432 \
+	 -d gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator -d pgeltestdb
+	sleep 2
+	PGEL_PORT=5499 PGEL_DATABASE=pgeltestdb $(MAKE) test
 
 
 # Tested 2024-06 with v24.5. Very limited PostgreSQL support: there is no pg_type table so
