@@ -1,6 +1,13 @@
 # Changelog
 
 
+## [0.40] - Unreleased
+
+- Serialization and deserialization support for [JSONPATH
+  expressions](https://www.postgresql.org/docs/current/functions-json.html#FUNCTIONS-SQLJSON-PATH).
+  These expressions are represented in Emacs Lisp as strings.
+
+
 ## [0.39] - 2024-07-29
 
 - New function `pg-fetch-prepared` to bind arguments to a prepared statement and fetch results.

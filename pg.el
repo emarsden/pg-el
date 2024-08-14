@@ -471,16 +471,19 @@ Uses database DBNAME, user USER and password PASSWORD."
                              (password "")
                              (host "localhost")
                              (port 5432)
-                             (tls nil))
+                             (tls-options nil))
   "Initiate a connection with the PostgreSQL backend over TCP.
 Connect to the database DBNAME with the username USER, on PORT of
 HOST, providing PASSWORD if necessary. Return a connection to the
 database (as an opaque type). PORT defaults to 5432, HOST to
-\"localhost\", and PASSWORD to an empty string. If TLS is non-NIL,
-attempt to establish an encrypted connection to PostgreSQL."
+\"localhost\", and PASSWORD to an empty string. If TLS-OPTIONS is
+non-NIL, attempt to establish an encrypted connection to PostgreSQL
+passing TLS-OPTIONS to `gnutls-negotiate'."
   (let* ((buf (generate-new-buffer " *PostgreSQL*"))
-         (process (open-network-stream "postgres" buf host port :coding nil
-                                       :nowait t :nogreeting t))
+         (process (open-network-stream "postgres" buf host port
+                                       :coding nil
+                                       :nowait t
+                                       :nogreeting t))
          (con (make-pgcon :dbname dbname :process process)))
     (unless (zerop pg-connect-timeout)
       (run-at-time pg-connect-timeout nil
@@ -503,7 +506,7 @@ attempt to establish an encrypted connection to PostgreSQL."
     ;; establish an encrypted connection. The backend responds with ?S to indicate that it is able
     ;; to support an encrypted connection. The frontend then runs TLS negociation to upgrade the
     ;; connection to an encrypted one.
-    (when tls
+    (when tls-options
       (require 'gnutls)
       (require 'network-stream)
       (unless (gnutls-available-p)
@@ -512,14 +515,18 @@ attempt to establish an encrypted connection to PostgreSQL."
       (pg-send-uint con 8 4)
       (pg-send-uint con 80877103 4)
       (pg-flush con)
-      (unless (eql ?S (pg-read-char con))
-        (signal 'pg-protocol-error (list "Couldn't establish TLS connection to PostgreSQL")))
-      (let ((cert (network-stream-certificate host port nil)))
+      (let ((ch (pg-read-char con)))
+        (unless (eql ?S ch)
+          (let ((msg (format "Couldn't establish TLS connection to PostgreSQL: read char %s" ch)))
+            (signal 'pg-protocol-error (list msg)))))
+      (let* ((cert (network-stream-certificate host port nil))
+             (opts (append (list :process process)
+                           (list :hostname host)
+                           (when cert (list :keylist cert))
+                           (when (listp tls-options) tls-options))))
         (condition-case err
             ;; now do STARTTLS-like connection upgrade
-            (gnutls-negotiate :process process
-                              :hostname host
-                              :keylist (and cert (list cert)))
+            (apply #'gnutls-negotiate opts)
           (gnutls-error
            (let ((msg (format "TLS error connecting to PostgreSQL: %s" (error-message-string err))))
              (signal 'pg-protocol-error (list msg)))))))
@@ -1876,6 +1883,8 @@ The textual representation represents the type OID using ENCODING."
 (pg-register-parser "json" #'pg-json-parser)
 (pg-register-parser "jsonb" #'pg-json-parser)
 
+(pg-register-parser "jsonpath" #'pg-text-parser)
+
 ;; This function must be called before using the HSTORE extension. It loads the extension if
 ;; necessary, and sets up the parsing support for HSTORE datatypes. This is necessary because
 ;; the hstore type is not defined on startup in the pg_type table.
@@ -2215,6 +2224,7 @@ Return nil if the extension could not be set up."
 
 (pg-register-serializer "bytea" #'identity)
 (pg-register-serializer "jsonb" #'identity)
+(pg-register-textual-serializer "jsonpath" #'identity)
 
 (pg-register-serializer "bool" (lambda (v) (if v (string 1) (string 0))))
 
