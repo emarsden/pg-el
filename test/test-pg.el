@@ -49,14 +49,42 @@
                ,@body)))))
 (put 'with-pgtest-connection-tls 'lisp-indent-function 'defun)
 
+;; Connect to the database presenting a client certificate as authentication
+(defmacro with-pgtest-connection-client-cert (con &rest body)
+  (cond ((getenv "PGURI")
+         `(let ((,con (pg-connect/uri ,(getenv "PGURI"))))
+            (unwind-protect
+                (progn ,@body)
+              (when ,con (pg-disconnect ,con)))))
+        (t
+         (let ((db (or (getenv "PGEL_DATABASE") "pgeltestdb"))
+               (user (or (getenv "PGEL_USER") "pgeltestuser"))
+               (password (or (getenv "PGEL_PASSWORD") "pgeltest"))
+               (host (or (getenv "PGEL_HOSTNAME") "localhost"))
+               (port (let ((p (getenv "PGEL_PORT"))) (if p (string-to-number p) 5432)))
+               (cert (or (getenv "PGEL_CLIENT_CERT")
+                         (error "PGEL_CLIENT_CERT not set")))
+               (key (or (getenv "PGEL_CLIENT_CERT_KEY")
+                        (error "PGEL_CLIENT_CERT_KEY not set"))))
+           `(with-pg-connection ,con (,db ,user ,password ,host ,port '(:keylist ((,key ,cert))))
+              ,@body)))))
+(put 'with-pgtest-connection-client-cert 'lisp-indent-function 'defun)
+
+
 (defmacro with-pgtest-connection-local (con &rest body)
-  (let* ((db (or (getenv "PGEL_DATABASE") "pgeltestdb"))
-         (user (or (getenv "PGEL_USER") "pgeltestuser"))
-         (password (or (getenv "PGEL_PASSWORD") "pgeltest"))
-         (port (let ((p (getenv "PGEL_PORT"))) (if p (string-to-number p) 5432)))
-         (path (or (getenv "PGEL_PATH") (format "/var/run/postgresql/.s.PGSQL.%s" port))))
-    `(with-pg-connection-local ,con (,path ,db ,user ,password)
-        ,@body)))
+  (cond ((getenv "PGURI")
+         `(let ((,con (pg-connect/uri ,(getenv "PGURI"))))
+            (unwind-protect
+                (progn ,@body)
+              (when ,con (pg-disconnect ,con)))))
+        (t
+         (let* ((db (or (getenv "PGEL_DATABASE") "pgeltestdb"))
+                (user (or (getenv "PGEL_USER") "pgeltestuser"))
+                (password (or (getenv "PGEL_PASSWORD") "pgeltest"))
+                (port (let ((p (getenv "PGEL_PORT"))) (if p (string-to-number p) 5432)))
+                (path (or (getenv "PGEL_PATH") (format "/var/run/postgresql/.s.PGSQL.%s" port))))
+           `(with-pg-connection-local ,con (,path ,db ,user ,password)
+               ,@body)))))
 (put 'with-pg-connection-local 'lisp-indent-function 'defun)
 
 ;; Some utility functions to allow us to skip some tests that we know fail on some PostgreSQL
@@ -199,6 +227,13 @@
   (let ((pg-parameter-change-functions (cons #'pg-test-note-param-change pg-parameter-change-functions)))
     (with-pgtest-connection-tls con
        (message "Running pg.el tests in %s against backend %s"
+                (version) (pg-backend-version con))
+       (pg-run-tests con))))
+
+(defun pg-test-client-cert ()
+  (let ((pg-parameter-change-functions (cons #'pg-test-note-param-change pg-parameter-change-functions)))
+    (with-pgtest-connection-client-cert con
+       (message "Running pg.el tests with client cert in %s against backend %s"
                 (version) (pg-backend-version con))
        (pg-run-tests con))))
 
