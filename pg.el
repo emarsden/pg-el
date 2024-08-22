@@ -66,9 +66,6 @@
 
 ;;; TODO
 ;;
-;; * Provide support for client-side certificates to authenticate network
-;;   connections over TLS.
-;;
 ;; * Implement the SASLPREP algorithm for usernames and passwords that contain
 ;;   unprintable characters (used for SCRAM-SHA-256 authentication).
 
@@ -593,15 +590,15 @@ opaque type). PASSWORD defaults to an empty string."
 
 ;; e.g. "host=localhost port=5432 dbname=mydb connect_timeout=10"
 ;; see https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-PARAMKEYWORDS
-(defun pg-connect/string (string)
-  "Connect to PostgreSQL with parameters specified by connection string STRING.
+(defun pg-connect/string (connection-string)
+  "Connect to PostgreSQL with parameters specified by CONNECTION-STRING.
 A connection string is of the form `host=localhost port=5432 dbname=mydb'.
 We do not support all the parameter keywords supported by libpq,
 such as those which specify particular aspects of the TCP
 connection to PostgreSQL (e.g. keepalives_interval). The
 supported keywords are host, hostaddr, port, dbname, user,
 password, sslmode (partial support) and application_name."
-  (let* ((components (split-string string "[ \t]" t))
+  (let* ((components (split-string connection-string "[ \t]" t))
          (params (cl-loop
                   for c in components
                   for param-val = (split-string c "=" t "\s")

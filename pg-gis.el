@@ -38,27 +38,27 @@
 ;;
 ;; % echo 01010000200400000000000000000000000000000000000000 | geosop -a stdin.wkb -f txt
 ;; POINT (0 0)
-(defun pg-gis--parse-ewkb-geosop (str _encoding)
-  "Parse a string in EWKB or HEXEWKB to text using the geosop application."
+(defun pg-gis--parse-ewkb-geosop (string _encoding)
+  "Parse STRING in EWKB or HEXEWKB to text using the geosop application."
   (with-temp-buffer
-    (call-process-region str nil "geosop" nil t nil "-a" "stdin.wkb" "-f" "txt")
+    (call-process-region string nil "geosop" nil t nil "-a" "stdin.wkb" "-f" "txt")
     (string-trim (buffer-string))))
 
-(defun pg-gis--parse-ewkb (str encoding)
-  "Parse a string in EWKB or HEXEWKB following the value of pg-gis-use-geosop."
+(defun pg-gis--parse-ewkb (string encoding)
+  "Parse STRING in EWKB or HEXEWKB following the value of pg-gis-use-geosop."
   (if pg-gis-use-geosop
-      (pg-gis--parse-ewkb-geosop str encoding)
-    str))
+      (pg-gis--parse-ewkb-geosop string encoding)
+    string))
 
-(defun pg-gis--parse-spheroid (str _encoding)
-  str)
+(defun pg-gis--parse-spheroid (string _encoding)
+  string)
 
-(defun pg-gis--parse-box2d (str _encoding)
-  str)
+(defun pg-gis--parse-box2d (string _encoding)
+  string)
 
 
-(defun pg-gis--parse-box3d (str _encoding)
-  str)
+(defun pg-gis--parse-box3d (string _encoding)
+  string)
 
 ;; PostGIS data types that we receive over the wire:
 ;;

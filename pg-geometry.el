@@ -202,7 +202,7 @@ library after a PostgreSQL connection has been established. It
 sets up the deserialization and serialization functionality to
 recognize the newly defined types point, line, lseg and so on.
 The function need not be called if the pg-geometry library was
-loaded prior to establishing your PostgreSQL connection."
+loaded prior to establishing your PostgreSQL connection CON."
   (pg--geometry-register-serializers)
   (pg-initialize-parsers con))
 
