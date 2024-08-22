@@ -7,6 +7,18 @@
   expressions](https://www.postgresql.org/docs/current/functions-json.html#FUNCTIONS-SQLJSON-PATH).
   These expressions are represented in Emacs Lisp as strings.
 
+- Serialization functions now take a second argument `ENCODING` specifying the client-encoding in
+  use, in the same way as for deserialization functions.
+
+- The mappings `pg--parser-by-oid`, `pg--oid-by-typname` and `pg--type-name-by-oid` have been moved
+  into the pgcon object, rather than being local variables. This makes it possible to connect from
+  the same Emacs instance to PostgreSQL-compatible databases that have different OID values for
+  builtin or user-defined types.
+
+- `pgcon` objects are now defined using `defclass` from EIEIO, instead of using `cl-defstruct`. This
+  makes it possible to customize the way they are printed, making use in an interactive REPL more
+  pleasant.
+
 
 ## [0.39] - 2024-07-29
 
