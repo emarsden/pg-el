@@ -1,7 +1,7 @@
 # Changelog
 
 
-## [0.40] - Unreleased
+## [0.40] - 2024-08-22
 
 - Serialization and deserialization support for [JSONPATH
   expressions](https://www.postgresql.org/docs/current/functions-json.html#FUNCTIONS-SQLJSON-PATH).
