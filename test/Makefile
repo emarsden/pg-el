@@ -29,11 +29,6 @@ test-tls: test-pg.el install-deps
 test-local: test-pg.el install-deps
 	${EMACS} -Q --batch -L .. -L . -l load-deps.el -l ../pg.el -l test-pg.el -f pg-test-local
 
-# Authentication via a client certificate, location passed in via env ${PGEL_CLIENT_CERT}
-test-client-cert: test-pg.el install-deps
-	${EMACS} -Q --batch -L .. -L . -l load-deps.el -l ../pg.el -l test-pg.el -f pg-test-client-cert
-
-
 test-connections: test-pg.el install-deps
 	${EMACS} -Q --batch -L .. -L . -l load-deps.el -l ../pg.el -l test-pg.el -f pg-connection-tests
 
@@ -187,6 +182,12 @@ test-enterprisedb: test-pg.el
 #
 #   https://www.postgresql.org/docs/current/ssl-tcp.html
 #
+# We use openssl to generate a new Root certificate authority and key. Use the root CA to create a
+# server certificate and key and a client certificate and key. Start PostgreSQL with the server
+# certificate and the root CA certificate, configured to require clients to present a client
+# certificate signed by our root CA. Connect presenting the client certificate (this uses the GnuTLS
+# support for client certificates in Emacs).
+#
 # Note: mounting the pgcerts volume with the :U modifier maps the file owner for all volume files to
 # that selected by the container ("postgres"), which is required for PostgreSQL to accept that the
 # server certificate key is not readable by other users.
@@ -202,7 +203,7 @@ test-enterprisedb: test-pg.el
 # client certificate is signed by its root CA (configured as /certs/root.crt below) and will also
 # verify that the username specified in the CN field of the certificate corresponds to the
 # PostgreSQL username we are connecting as.
-test-certificates: test-pg.el
+test-certificates: test-pg.el install-deps
 	openssl req -new -nodes -text -out ${WORKDIR}/root.csr -keyout ${WORKDIR}/root.key \
 	   -subj "/CN=localhost"
 	chmod og-rwx ${WORKDIR}/root.key
@@ -240,7 +241,7 @@ test-certificates: test-pg.el
 	   -e POSTGRESQL_PGHBA_REMOVE_FILTERS=local,md5,trust \
 	   -d docker.io/bitnami/postgresql:latest
 	sleep 5
-	PGEL_CLIENT_CERT=${WORKDIR}/client.crt PGEL_CLIENT_CERT_KEY=${WORKDIR}/client.key PGEL_PORT=5488 $(MAKE) test-client-cert
+	PGEL_CLIENT_CERT=${WORKDIR}/client.crt PGEL_CLIENT_CERT_KEY=${WORKDIR}/client.key PGEL_PORT=5488 ${EMACS} -Q --batch -L .. -L . -l load-deps.el -l ../pg.el -l test-pg.el -f pg-test-client-cert
 	podman stop pgsqltls
 	sleep 2
 	podman volume rm pgcerts

@@ -62,12 +62,15 @@
                (password (or (getenv "PGEL_PASSWORD") "pgeltest"))
                (host (or (getenv "PGEL_HOSTNAME") "localhost"))
                (port (let ((p (getenv "PGEL_PORT"))) (if p (string-to-number p) 5432)))
-               (cert (or (getenv "PGEL_CLIENT_CERT")
-                         (error "PGEL_CLIENT_CERT not set")))
-               (key (or (getenv "PGEL_CLIENT_CERT_KEY")
-                        (error "PGEL_CLIENT_CERT_KEY not set"))))
-           `(with-pg-connection ,con (,db ,user ,password ,host ,port '(:keylist ((,key ,cert))))
-              ,@body)))))
+               (cert (getenv "PGEL_CLIENT_CERT"))
+               (key (getenv "PGEL_CLIENT_CERT_KEY")))
+           `(progn
+             (unless ,cert
+               (error "Set $PGEL_CLIENT_CERT to point to file containing client certificate"))
+             (unless ,key
+               (error "Set $PGEL_CLIENT_CERT_KEY to point to file containing client certificate key"))
+             (with-pg-connection ,con (,db ,user ,password ,host ,port '(:keylist ((,key ,cert))))
+                                 ,@body))))))
 (put 'with-pgtest-connection-client-cert 'lisp-indent-function 'defun)
 
 
