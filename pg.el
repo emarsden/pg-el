@@ -76,6 +76,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'eieio)
 (require 'hex-util)
 (require 'bindat)
 (require 'url)
@@ -141,27 +142,65 @@ struct.")
 ;; information is shared between connections).
 (defvar pg--parser-by-typname (make-hash-table :test #'equal))
 
-;; Maps from oid (an integer) to a parsing function.
-(defvar pg--parser-by-oid (make-hash-table :test #'eql))
 
-;; Maps from type-name to PostgreSQL oid, for PostgreSQL builtin types.
-(defvar pg--oid-by-typname (make-hash-table :test #'equal))
+(defclass pgcon ()
+  ((dbname
+    :type string
+    :initarg :dbname
+    :accessor pgcon-dbname)
+   (process
+    :initarg :process
+    :accessor pgcon-process)
+   (pid
+    :type integer
+    :accessor pgcon-pid )
+   (server-version-major
+    :accessor pgcon-server-version-major)
+   (secret
+    :accessor pgcon-secret)
+   (client-encoding
+    :type symbol
+    :initform 'utf-8
+    :accessor pgcon-client-encoding)
+   ;; Maps from oid (an integer) to a parsing function.
+   (parser-by-oid
+    :type hash-table
+    :initform (make-hash-table :test #'eql)
+    :accessor pgcon-parser-by-oid)
+   ;; Maps from type-name to PostgreSQL oid, for PostgreSQL builtin types.
+   (oid-by-typname
+    :type hash-table
+    :initform (make-hash-table :test #'equal)
+    :accessor pgcon-oid-by-typname)
+   ;; Maps from oid to type-name.
+   (typname-by-oid
+    :type hash-table
+    :initform (make-hash-table :test #'eql)
+    :accessor pgcon-typname-by-oid)
+   (timeout
+    ;; This bizarre (progn ...) syntax is required by EIEIO for historical reasons.
+    :initform (progn pg-read-timeout)
+    :accessor pgcon-timeout)
+   (query-log
+    :initform nil
+    :accessor pgcon-query-log)
+   (prepared-statement-cache
+    :type hash-table
+    :initform (make-hash-table :test #'equal)
+    :accessor pgcon-prepared-statement-cache)
+   (connect-info
+    :initform nil
+    :accessor pgcon-connect-info)))
 
-;; Maps from oid to type-name.
-(defvar pg--type-name-by-oid (make-hash-table :test #'eql))
+(defun make-pgcon (&rest args)
+  (apply #'make-instance (cons 'pgcon args)))
 
+(cl-defmethod cl-print-object ((this pgcon) &rest strings)
+  "Printer for pgcon PostgreSQL connection objects."
+  (apply #'cl-call-next-method this
+         (format " db: %s, pid: %s" (pgcon-dbname this) (pgcon-pid this))
+         strings))
 
-(cl-defstruct pgcon
-  dbname
-  process
-  pid
-  server-version-major
-  secret
-  (client-encoding 'utf-8)
-  (timeout pg-read-timeout)
-  query-log
-  (prepared-statement-cache (make-hash-table :test #'equal))
-  connect-info)
 
 ;; Used to save the connection-specific position in our input buffer.
 (defvar-local pgcon--position 1)
@@ -397,7 +436,7 @@ Uses database DBNAME, user USER and password PASSWORD."
         (when (eql ?E status)
           (message "PostgreSQL ReadyForQuery message with error status"))
         (and (not pg-disable-type-coercion)
-             (zerop (hash-table-count pg--parser-by-oid))
+             (zerop (hash-table-count (pgcon-parser-by-oid con)))
              (pg-initialize-parsers con))
         ;; This statement fails on ClickHouse (and the database immediately closes the connection!).
         (pg-exec con "SET datestyle = 'ISO'")
@@ -519,6 +558,7 @@ passing TLS-OPTIONS to `gnutls-negotiate'."
         (unless (eql ?S ch)
           (let ((msg (format "Couldn't establish TLS connection to PostgreSQL: read char %s" ch)))
             (signal 'pg-protocol-error (list msg)))))
+      ;; FIXME could use tls-options as third arg to network-stream-certificate
       (let* ((cert (network-stream-certificate host port nil))
              (opts (append (list :process process)
                            (list :hostname host)
@@ -723,6 +763,7 @@ sslmode (partial support) and application_name."
                        (signal 'pg-error '("verify-full sslmode not implemented")))
                       ((cdr (assoc "requiressl" params)) t)
                       (t nil)))
+           ;; TODO: manage connect_timeout parameter, using pg-connect-timeout
            (pg-application-name (or (cadr (assoc "application_name" params))
                                     pg-application-name)))
       ;; If the host is empty or looks like an absolute pathname, connect over Unix-domain socket.
@@ -812,7 +853,7 @@ Return a result structure which can be decoded using `pg-result'."
 
             ;; ErrorResponse
             (?E
-             (pg-handle-error-response con))
+             (pg-handle-error-response con "in pg-exec"))
 
             ;; EmptyQueryResponse -- response to an empty query string
             (?I
@@ -991,28 +1032,31 @@ whenever possible."
   "Return the PostgreSQL OID associated with TYPE-NAME.
 This may force a refresh of the OID-typename cache if TYPE-NAME is not known.
 Uses PostgreSQL connection CON."
-  (or (gethash type-name pg--oid-by-typname)
-      (progn
-        (pg-initialize-parsers con)
-        (gethash type-name pg--oid-by-typname))))
+  (let ((oid-by-typname (pgcon-oid-by-typname con)))
+    (or (gethash type-name oid-by-typname)
+        (progn
+          (pg-initialize-parsers con)
+          (gethash type-name oid-by-typname)))))
 
 ;; This version that errors on unknown OID is deprecated.
 (defun pg--lookup-type-name (con oid)
   "Return the PostgreSQL type name associated with OID.
 Uses PostgreSQL connection CON."
-  (or (gethash oid pg--type-name-by-oid)
-      (progn
-        (pg-initialize-parsers con)
-        (or (gethash oid pg--type-name-by-oid)
-            (signal 'pg-error (list (format "Unknown PostgreSQL oid %d" oid)))))))
+  (let ((typname-by-oid (pgcon-typname-by-oid con)))
+    (or (gethash oid typname-by-oid)
+        (progn
+          (pg-initialize-parsers con)
+          (or (gethash oid typname-by-oid)
+              (signal 'pg-error (list (format "Unknown PostgreSQL oid %d" oid))))))))
 
 (defun pg-lookup-type-name (con oid)
   "Return the PostgreSQL type name associated with OID.
 Uses PostgreSQL connection CON."
-  (or (gethash oid pg--type-name-by-oid)
-      (progn
-        (pg-initialize-parsers con)
-        (gethash oid pg--type-name-by-oid))))
+  (let ((typname-by-oid (pgcon-typname-by-oid con)))
+    (or (gethash oid typname-by-oid)
+        (progn
+          (pg-initialize-parsers con)
+          (gethash oid typname-by-oid)))))
 
 
 (cl-defun pg-prepare (con query argument-types &key (name ""))
@@ -1061,12 +1105,10 @@ Uses PostgreSQL connection CON."
            for serializer = (gethash typ pg--serializers)
            collect (cond ((gethash typ pg--textual-serializers)
                           ;; this argument will be sent as text
-                          (let* ((serialized (funcall serializer v))
-                                 (encoded (if ce (encode-coding-string serialized ce t) serialized)))
-                            (cons encoded 0)))
+                          (cons (funcall serializer v ce) 0))
                          (serializer
                           ;; this argument will be sent in binary format
-                          (cons (funcall serializer v) 1))
+                          (cons (funcall serializer v ce) 1))
                          (t
                           ;; this argument will be sent in text format, raw
                           (let* ((raw (if (stringp v) v (format "%s" v)))
@@ -1670,7 +1712,11 @@ PostgreSQL and Emacs. CON should no longer be used."
   (delete-process (pgcon-process con))
   (kill-buffer (process-buffer (pgcon-process con)))
   (when (pgcon-query-log con)
-    (kill-buffer (pgcon-query-log con))))
+    (kill-buffer (pgcon-query-log con)))
+  (clrhash (pgcon-parser-by-oid con))
+  (clrhash (pgcon-typname-by-oid con))
+  (clrhash (pgcon-oid-by-typname con)))
+
 
 
 ;; type coercion support ==============================================
@@ -1720,10 +1766,13 @@ PostgreSQL and Emacs. CON should no longer be used."
 
 (defun pg-initialize-parsers (con)
   "Initialize the datatype parsers on PostgreSQL connection CON."
-  (clrhash pg--parser-by-oid)
-  (clrhash pg--type-name-by-oid)
-  (clrhash pg--oid-by-typname)
-  (let ((type-names (list)))
+  (let ((type-names (list))
+        (parser-by-oid (pgcon-parser-by-oid con))
+        (oid-by-typname (pgcon-oid-by-typname con))
+        (typname-by-oid (pgcon-typname-by-oid con)))
+    (clrhash parser-by-oid)
+    (clrhash typname-by-oid)
+    (clrhash oid-by-typname)
     (maphash (lambda (k _v) (push k type-names)) pg--serializers)
     (maphash (lambda (k _v) (push k type-names)) pg--textual-serializers)
     (maphash (lambda (k _v) (push k type-names)) pg--parser-by-typname)
@@ -1736,25 +1785,32 @@ PostgreSQL and Emacs. CON should no longer be used."
         (let* ((typname (cl-first row))
                (oid (cl-parse-integer (cl-second row)))
                (parser (gethash typname pg--parser-by-typname)))
-          (puthash typname oid pg--oid-by-typname)
-          (puthash oid typname pg--type-name-by-oid)
+          (puthash typname oid oid-by-typname)
+          (puthash oid typname typname-by-oid)
           (when parser
-            (puthash oid parser pg--parser-by-oid)))))))
+            (puthash oid parser parser-by-oid)))))))
 
-(defun pg-parse (str oid encoding)
+(defun pg-parse (con str oid)
   "Deserialize textual representation STR to an Emacs Lisp object.
-The textual representation represents the type OID using ENCODING."
-  (let ((parser (gethash oid pg--parser-by-oid)))
+Uses the client-encoding specified in the connection to PostgreSQL CON."
+  (let ((parser (gethash oid (pgcon-parser-by-oid con)))
+        (ce (pgcon-client-encoding con)))
     (if parser
-        (funcall parser str encoding)
+        (funcall parser str ce)
       str)))
 
-(defun pg-serialize (object type-name encoding)
+(defun pg-serialize-buggy (object type-name encoding)
   (let ((serializer (gethash type-name pg--serializers)))
     (if serializer
         (let ((serialized (funcall serializer object)))
           (if encoding (encode-coding-string serialized encoding t)
             serialized))
+      object)))
+
+(defun pg-serialize (object type-name encoding)
+  (let ((serializer (gethash type-name pg--serializers)))
+    (if serializer
+        (funcall serializer object encoding)
       object)))
 
 
@@ -1790,7 +1846,8 @@ The textual representation represents the type OID using ENCODING."
     ("EUC_KR"  . euc-korea)
     ("EUC_JP"  . euc-japan)
     ("EUC_CN"  . euc-china)
-    ("BIG5"    . big5)))
+    ("BIG5"    . big5)
+    ("SQL_ASCII" . ascii)))
 
 (defun pg-normalize-encoding-name (name)
   "Convert PostgreSQL encoding NAME to an Emacs encoding name."
@@ -1898,12 +1955,14 @@ Return nil if the extension could not be loaded."
           (pg-error nil))
     (let* ((res (pg-exec con "SELECT oid FROM pg_type WHERE typname='hstore'"))
            (oid (car (pg-result res :tuple 0)))
-           (parser (pg-lookup-parser "hstore")))
+           (parser (pg-lookup-parser "hstore"))
+           (parser-by-oid (pgcon-parser-by-oid con))
+           (oid-by-typname (pgcon-oid-by-typname con)))
       (when parser
-        (puthash oid parser pg--parser-by-oid))
-      (puthash "hstore" oid pg--oid-by-typname))
+        (puthash oid parser parser-by-oid))
+      (puthash "hstore" oid oid-by-typname))
     (pg-register-textual-serializer "hstore"
-      (lambda (ht)
+      (lambda (ht _encoding)
         (cl-assert (hash-table-p ht))
         (let ((kv (list)))
           ;; FIXME should escape \" characters in k and v
@@ -2190,7 +2249,7 @@ Return nil if the extension could not be set up."
            (oid (car (pg-result res :tuple 0)))
            (parser (pg-lookup-parser "vector")))
       (when parser
-        (puthash oid parser pg--parser-by-oid)))))
+        (puthash oid parser (pgcon-parser-by-oid con))))))
 
 ;; pgvector embeddings are sent by the database as strings, in the form "[1,2,3]" or ["0.015220831,
 ;; 0.039211094, 0.02235647]"
@@ -2217,18 +2276,27 @@ Return nil if the extension could not be set up."
 ;; therefore correctly encoded according to the connection encoding. Likewise for the "uuid" and
 ;; "xml" types.
 ;;
-;; (pg-register-serializer "text" #'identity)
-;; (pg-register-serializer "varchar" #'identity)
-;; (pg-register-serializer "uuid" #'identity)
-;; (pg-register-serializer "xml" #'identity)
 
-(pg-register-serializer "bytea" #'identity)
-(pg-register-serializer "jsonb" #'identity)
-(pg-register-textual-serializer "jsonpath" #'identity)
+(defun pg--serialize-text (object encoding)
+  (if encoding
+      (encode-coding-string object encoding t)
+    object))
 
-(pg-register-serializer "bool" (lambda (v) (if v (string 1) (string 0))))
+(defun pg--serialize-binary (object _encoding)
+  object)
 
-(defun pg--serialize-boolvec (bv)
+(pg-register-serializer "text" #'pg--serialize-text)
+(pg-register-serializer "varchar" #'pg--serialize-text)
+(pg-register-serializer "uuid" #'pg--serialize-text)
+(pg-register-serializer "xml" #'pg--serialize-text)
+
+(pg-register-serializer "bytea" #'pg--serialize-binary)
+(pg-register-serializer "jsonb" #'pg--serialize-binary)
+(pg-register-textual-serializer "jsonpath" #'pg--serialize-text)
+
+(pg-register-serializer "bool" (lambda (v _encoding) (if v (string 1) (string 0))))
+
+(defun pg--serialize-boolvec (bv _encoding)
   (cl-assert (bool-vector-p bv))
   (let* ((len (length bv))
          (out (make-string len ?0)))
@@ -2242,18 +2310,18 @@ Return nil if the extension could not be set up."
 
 
 (pg-register-serializer "char"
-  (lambda (v)
+  (lambda (v _encoding)
     (cl-assert (<= 0 v 255) t "Value out of range for CHAR type")
     (string v)))
 
 (pg-register-serializer "bpchar"
-                        (lambda (v)
-                          (cl-assert (<= 0 v 255) t "Value out of range for BPCHAR type")
-                          (string v)))
+  (lambda (v _encoding)
+    (cl-assert (<= 0 v 255) t "Value out of range for BPCHAR type")
+    (string v)))
 
 ;; see https://www.postgresql.org/docs/current/datatype-numeric.html
 (pg-register-serializer "int2"
-  (lambda (v)
+  (lambda (v _encoding)
     (cl-assert (integerp v))
     (cl-assert (<= (- (expt 2 15)) v (expt 2 15))
                t "Value out of range for INT2 type")
@@ -2261,50 +2329,50 @@ Return nil if the extension could not be set up."
     (bindat-pack (bindat-type sint 16 nil) v)))
 
 (pg-register-serializer "smallint"
-  (lambda (v)
+  (lambda (v _encoding)
     (cl-assert (integerp v))
     (cl-assert (<= (- (expt 2 15)) v (expt 2 15))
                t "Value out of range for SMALLINT type")
     (bindat-pack (bindat-type sint 16 nil) v)))
 
 (pg-register-serializer "int4"
-  (lambda (v)
+  (lambda (v _encoding)
     (cl-assert (integerp v))
     (bindat-pack (bindat-type sint 32 nil) v)))
 
 (pg-register-serializer "integer"
-  (lambda (v)
+  (lambda (v _encoding)
     (cl-assert (integerp v))
     (bindat-pack (bindat-type sint 32 nil) v)))
 
 ;; see https://www.postgresql.org/docs/current/datatype-oid.html
 (pg-register-serializer "oid"
-  (lambda (v)
+  (lambda (v _encoding)
     (cl-assert (integerp v))
     (bindat-pack (bindat-type uint 32 nil) v)))
 
 (pg-register-serializer "int8"
-  (lambda (v)
+  (lambda (v _encoding)
     (cl-assert (integerp v))
     (bindat-pack (bindat-type sint 64 nil) v)))
 
 (pg-register-serializer "bigint"
-  (lambda (v)
+  (lambda (v _encoding)
     (cl-assert (integerp v))
     (bindat-pack (bindat-type sint 64 nil) v)))
 
 (pg-register-serializer "smallserial"
-  (lambda (v)
+  (lambda (v _encoding)
     (cl-assert (integerp v))
     (bindat-pack (bindat-type uint 16 nil) v)))
 
 (pg-register-serializer "serial"
-  (lambda (v)
+  (lambda (v _encoding)
     (cl-assert (integerp v))
     (bindat-pack (bindat-type uint 32 nil) v)))
 
 (pg-register-serializer "bigserial"
-  (lambda (v)
+  (lambda (v _encoding)
     (cl-assert (integerp v))
     (bindat-pack (bindat-type uint 64 nil) v)))
 
@@ -2314,7 +2382,7 @@ Return nil if the extension could not be set up."
 ;;
 ;; https://lists.gnu.org/archive/html/help-gnu-emacs/2002-10/msg00724.html
 ;; https://www.emacswiki.org/emacs/read-float.el
-(defun pg--serialize-float (number)
+(defun pg--serialize-float (number _encoding)
   "Serialize floating point NUMBER to PostgreSQL wire-level text format for floats.
 Respects floating-point infinities and NaN."
   (cond ((= number 1.0e+INF) "Infinity")
@@ -2326,15 +2394,17 @@ Respects floating-point infinities and NaN."
 (pg-register-textual-serializer "float4" #'pg--serialize-float)
 (pg-register-textual-serializer "float8" #'pg--serialize-float)
 
-(if (fboundp 'json-serialize)
-    (progn
-      (pg-register-textual-serializer "json" #'json-serialize)
-      (pg-register-textual-serializer "jsonb" #'json-serialize))
-  (require 'json)
-  (pg-register-textual-serializer "json" #'json-encode)
-  (pg-register-textual-serializer "jsonb" #'json-encode))
+(defun pg--serialize-json (json _encoding)
+  (cl-assert (hash-table-p json))
+  (if (fboundp 'json-serialize)
+      (json-serialize json)
+    (require 'json)
+    (json-encode json)))
 
-(defun pg--serialize-encoded-time-date (encoded-time)
+(pg-register-textual-serializer "json" #'pg--serialize-json)
+(pg-register-textual-serializer "jsonb" #'pg--serialize-json)
+
+(defun pg--serialize-encoded-time-date (encoded-time _encoding)
   (cl-assert (listp encoded-time))
   (cl-assert (integerp (car encoded-time)))
   (cl-assert (integerp (cadr encoded-time)))
@@ -2344,7 +2414,7 @@ Respects floating-point infinities and NaN."
 
 ;; We parse these into an Emacs Lisp "encoded-time", which is represented as a list of two integers.
 ;; Serialize them back to an ISO timestamp.
-(defun pg--serialize-encoded-time (encoded-time)
+(defun pg--serialize-encoded-time (encoded-time _encoding)
   (cl-assert (listp encoded-time))
   (cl-assert (integerp (car encoded-time)))
   (cl-assert (integerp (cadr encoded-time)))
@@ -2356,7 +2426,7 @@ Respects floating-point infinities and NaN."
 
 ;; Serialize an elisp vector of numbers (integers or floats) to a string of the form "[44,55,66]"
 (pg-register-textual-serializer "vector"
-  (lambda (v)
+  (lambda (v _encoding)
     (cl-assert (vectorp v))
     (cl-assert (cl-every #'numberp v))
     (concat "[" (string-join (mapcar #'prin1-to-string v) ",") "]")))
@@ -2720,8 +2790,7 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
 (defun pg-read-tuple (con attributes)
   (let* ((num-attributes (length attributes))
          (col-count (pg-read-net-int con 2))
-         (tuples (list))
-         (ce (pgcon-client-encoding con)))
+         (tuples (list)))
     (unless (eql col-count num-attributes)
       (signal 'pg-protocol-error '("Unexpected value for attribute count sent by backend")))
     (cl-do ((i 0 (+ i 1))
@@ -2737,7 +2806,7 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
            (push "" tuples))
           (t
            (let* ((col-value (pg-read-chars con col-octets))
-                  (parsed (pg-parse col-value (car type-ids) ce)))
+                  (parsed (pg-parse con col-value (car type-ids))))
              (push parsed tuples))))))))
 
 (defun pg-read-char (con)
@@ -2895,7 +2964,7 @@ presented to the user."
       (pg-read-char con))
     (let ((msg (format "%s%s: %s (%s)"
                        (pgerror-severity e)
-                       (or (concat " " context) "")
+                       (if context (concat " " context) "")
                        (pgerror-message e)
                        (string-join extra ", "))))
       (signal 'pg-error (list msg)))))
