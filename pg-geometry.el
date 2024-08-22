@@ -36,7 +36,7 @@
       (sign (or "+" "-" "")))
      (car (peg-run (peg point))))))
 
-(defun pg--serialize-point (point)
+(defun pg--serialize-point (point _encoding)
   (cl-assert (consp point) t)
   (cl-assert (numberp (car point)) t)
   (cl-assert (numberp (cdr point)) t)
@@ -57,7 +57,7 @@
       (sign (or "+" "-" "")))
      (car (peg-run (peg line))))))
 
-(defun pg--serialize-line (line)
+(defun pg--serialize-line (line _encoding)
   (cl-assert (vectorp line))
   (cl-assert (numberp (aref line 0)))
   (cl-assert (numberp (aref line 1)))
@@ -82,7 +82,7 @@
      (car (peg-run (peg lseg))))))
 
 ;; [(x1,y1),(x2,y2)]
-(defun pg--serialize-lseg (lseg)
+(defun pg--serialize-lseg (lseg _encoding)
   (cl-assert (vectorp lseg))
   (cl-assert (eql 2 (length lseg)))
   (format "[(%f,%f),(%f,%f)]"
@@ -108,7 +108,7 @@
          (sign (or "+" "-" "")))
       (car (peg-run (peg box))))))
 
-(defun pg--serialize-box (box)
+(defun pg--serialize-box (box _encoding)
   (format "(%f,%f),(%f,%f)"
           (car (aref box 0))
           (cdr (aref box 0))
@@ -139,13 +139,13 @@
       (sign (or "+" "-" "")))
      (car (peg-run (peg path))))))
 
-(defun pg--serialize-path (path)
+(defun pg--serialize-path (path _encoding)
   (cl-assert (pg-geometry-path-p path))
   (let ((type (pg-geometry-path-type path))
         (points (pg-geometry-path-points path)))
     (format "%s%s%s"
             (if (eq :open type) "[" "(")
-            (string-join (mapcar #'pg--serialize-point points) ",")
+            (string-join (mapcar (lambda (p) (pg--serialize-point p _encoding)) points) ",")
             (if (eq :open type) "]" ")"))))
 
 (cl-defstruct pg-geometry-polygon points)
@@ -168,10 +168,10 @@
       (sign (or "+" "-" "")))
      (car (peg-run (peg polygon))))))
 
-(defun pg--serialize-polygon (polygon)
+(defun pg--serialize-polygon (polygon encoding)
   (cl-assert (pg-geometry-polygon-p polygon))
   (let* ((points (pg-geometry-polygon-points polygon))
-         (spoints (mapcar #'pg--serialize-point points)))
+         (spoints (mapcar (lambda (p) (pg--serialize-point p encoding)) points)))
     (format "(%s)" (string-join spoints ","))))
 
 
