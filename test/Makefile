@@ -38,15 +38,25 @@ test-pgvector: test-pgvector.el install-deps
 
 # Using Docker images for Emacs from https://hub.docker.com/r/silex/emacs/ and the locally installed
 # PostgreSQL.
+test-emacs-dev: test-pg.el
+	cp install-deps.el load-deps.el ../pg.el ../pg-geometry.el ../pg-gis.el test-pg.el ${WORKDIR}
+	podman run --rm -it \
+	   -v ${WORKDIR}:/tmp \
+	   -e DEPS_DIR=/tmp/deps \
+	   -e PGEL_HOSTNAME=10.0.2.2 \
+	   --network slirp4netns:allow_host_loopback=true \
+	   docker.io/silex/emacs:master-alpine-ci \
+	   ${EMACS} -Q --batch /tmp/pg.el -l /tmp/install-deps.el -l /tmp/load-deps.el -l /tmp/pg.el -l ../tmp/pg-geometry.el -l /tmp/pg-gis.el -l /tmp/test-pg.el -f pg-test
+
 test-emacs28: test-pg.el
-	cp install-deps.el load-deps.el ../pg.el test-pg.el ${WORKDIR}
+	cp install-deps.el load-deps.el ../pg.el ../pg-geometry.el ../pg-gis.el test-pg.el ${WORKDIR}
 	podman run --rm -it \
 	   -v ${WORKDIR}:/tmp \
 	   -e DEPS_DIR=/tmp/deps \
 	   -e PGEL_HOSTNAME=10.0.2.2 \
 	   --network slirp4netns:allow_host_loopback=true \
 	   docker.io/silex/emacs:28.1 \
-	   ${EMACS} -Q --batch /tmp/pg.el -l /tmp/install-deps.el -l /tmp/load-deps.el -l /tmp/pg.el -l /tmp/test-pg.el -f pg-test
+	   ${EMACS} -Q --batch /tmp/pg.el -l /tmp/install-deps.el -l /tmp/load-deps.el -l /tmp/pg.el -l /tmp/pg-geometry.el -l /tmp/pg-gis.el -l /tmp/test-pg.el -f pg-test
 
 # The peg.el library doesn't actually compile with Emacs 27 (void-function byte-run--set-speed), so
 # this doesn't work.

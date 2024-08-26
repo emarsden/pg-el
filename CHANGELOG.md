@@ -1,6 +1,14 @@
 # Changelog
 
 
+## [0.41] - Unreleased
+
+- User errors in serialization functions (arguments supplied to `pg-exec-prepared` whose type does
+  not correspond to the SQL-defined type) now signal an error of type `pg-type-error`, which is a
+  subclass of `pg-user-error`, instead of triggering an assertion failure. This means that they can
+  be handled using `condition-case`.
+
+
 ## [0.40] - 2024-08-22
 
 - Serialization and deserialization support for [JSONPATH

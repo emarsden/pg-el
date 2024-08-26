@@ -10,3 +10,4 @@ src = "src"
 [output.html]
 git-repository-url = "https://github.com/emarsden/pg-el"
 git-repository-icon = "fa-github"
+smart-punctuation = true

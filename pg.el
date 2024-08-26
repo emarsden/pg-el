@@ -122,9 +122,18 @@ Each handler is called with one argument, the notice, as a pgerror
 struct.")
 
 (define-error 'pg-error "PostgreSQL error" 'error)
+(define-error 'pg-user-error "pg-el user error" 'pg-error)
 (define-error 'pg-protocol-error "PostgreSQL protocol error" 'pg-error)
 (define-error 'pg-copy-failed "PostgreSQL COPY failed" 'pg-error)
 (define-error 'pg-connect-timeout "PostgreSQL connection attempt timed out" 'pg-error)
+(define-error 'pg-type-error
+              "Incorrect type in binding PostgreSQL prepared statement"
+              'pg-user-error)
+
+(defun pg-signal-type-error (fmt &rest arguments)
+  (let ((msg (apply #'format fmt arguments)))
+    (signal 'pg-type-error (list msg))))
+
 
 ;; Maps from type-name to a function that converts from text representation to wire-level binary
 ;; representation.
@@ -192,12 +201,11 @@ struct.")
 (defun make-pgcon (&rest args)
   (apply #'make-instance (cons 'pgcon args)))
 
-(cl-defmethod cl-print-object ((this pgcon) &rest strings)
+(cl-defmethod cl-print-object ((this pgcon) stream)
   "Printer for pgcon PostgreSQL connection objects."
-  (apply #'cl-call-next-method this
-         (format " db: %s, pid: %s" (pgcon-dbname this) (pgcon-pid this))
-         strings))
-
+  (princ (format "#<PostgreSQL connection to %s, pid %s>"
+                 (pgcon-dbname this) (pgcon-pid this))
+         stream))
 
 ;; Used to save the connection-specific position in our input buffer.
 (defvar-local pgcon--position 1)
@@ -364,6 +372,50 @@ tag called pg-finished."
 (defconst pg--STARTUP_PASSWORD_MSG  14)
 
 (defconst pg--MAX_MESSAGE_LEN    8192)   ; libpq-fe.h
+
+(defun pg-handle-error-response (con &optional context)
+  "Handle an ErrorMessage from the backend we are connected to over CON.
+Additional information CONTEXT can be optionally included in the error message
+presented to the user."
+  (let ((e (pg-read-error-response con))
+        (extra (list)))
+    (when (pgerror-detail e)
+      (push (format "detail: %s" (pgerror-detail e)) extra))
+    (when (pgerror-hint e)
+      (push (format "hint: %s" (pgerror-hint e)) extra))
+    (when (pgerror-table e)
+      (push (format "table: %s" (pgerror-table e)) extra))
+    (when (pgerror-column e)
+      (push (format "column: %s" (pgerror-column e)) extra))
+    (when (pgerror-file e)
+      (push (format "file: %s" (pgerror-file e)) extra))
+    (when (pgerror-line e)
+      (push (format "line: %s" (pgerror-line e)) extra))
+    (when (pgerror-routine e)
+      (push (format "routine: %s" (pgerror-routine e)) extra))
+    (when (pgerror-dtype e)
+      (push (format "dtype: %s" (pgerror-dtype e)) extra))
+    (when (pgerror-where e)
+      (push (format "where: %s" (pgerror-where e)) extra))
+    ;; Now read the ReadyForQuery message. We don't always receive this immediately; for example if
+    ;; an incorrect username is sent during startup, PostgreSQL sends an ErrorMessage then an
+    ;; AuthenticationSASL message. In that case, unread the message type octet so that it can
+    ;; potentially be handled after the error is signaled. Some databases like Clickhouse
+    ;; immediately close their connection on error, so we ignore any errors here.
+    (ignore-errors
+      (let ((c (pg-read-char con)))
+        (unless (eql c ?Z)
+          (message "Unexpected message type after ErrorMsg: %s" c)
+          (pg-unread-char con)))
+      ;; Read message length then status, which we discard.
+      (pg-read-net-int con 4)
+      (pg-read-char con))
+    (let ((msg (format "%s%s: %s (%s)"
+                       (pgerror-severity e)
+                       (if context (concat " " context) "")
+                       (pgerror-message e)
+                       (string-join extra ", "))))
+      (signal 'pg-error (list msg)))))
 
 ;; Run the startup interaction with the PostgreSQL database. Authenticate and read the connection
 ;; parameters. This function allows us to share code common to TCP and Unix socket connections to
@@ -734,7 +786,8 @@ sslmode (partial support) and application_name."
          (scheme (url-type parsed)))
     (unless (or (string= "postgres" scheme)
                 (string= "postgresql" scheme))
-      (signal 'pg-error (list (format "Invalid protocol %s in connection URI" scheme))))
+      (let ((msg (format "Invalid protocol %s in connection URI" scheme)))
+        (signal 'pg-error (list msg))))
     ;; FIXME unfortunately the url-host is being downcased by url-generic-parse-url, which is
     ;; incorrect when the hostname is specifying a local path.
     (let* ((host (url-unhex-string (url-host parsed)))
@@ -1044,7 +1097,8 @@ Uses PostgreSQL connection CON."
         (progn
           (pg-initialize-parsers con)
           (or (gethash oid typname-by-oid)
-              (signal 'pg-error (list (format "Unknown PostgreSQL oid %d" oid))))))))
+              (let ((msg (format "Unknown PostgreSQL oid %d" oid)))
+                (signal 'pg-error (list msg))))))))
 
 (defun pg-lookup-type-name (con oid)
   "Return the PostgreSQL type name associated with OID.
@@ -1069,8 +1123,8 @@ Returns the prepared statement name (a string)."
               ;; format.
               (if (gethash type-name pg--serializers)
                   (or (pg--lookup-oid con type-name)
-                      (signal 'pg-error
-                              (list (format "Don't know the OID for PostgreSQL type %s" type-name))))
+                      (let ((msg (format "Don't know the OID for PostgreSQL type %s" type-name)))
+                        (signal 'pg-error (list msg))))
                 0)))
     (let* ((ce (pgcon-client-encoding con))
            (query/enc (if ce (encode-coding-string query ce t) query))
@@ -1872,6 +1926,7 @@ Uses the client-encoding specified in the connection to PostgreSQL CON."
 
 (defun pg-bit-parser (str _encoding)
   "Parse STR as a PostgreSQL bit to an Emacs bool-vector."
+  (declare (speed 3))
   (let* ((len (length str))
          (bv (make-bool-vector len t)))
     (dotimes (i len)
@@ -1960,7 +2015,8 @@ Return nil if the extension could not be loaded."
       (puthash "hstore" oid oid-by-typname))
     (pg-register-textual-serializer "hstore"
       (lambda (ht _encoding)
-        (cl-assert (hash-table-p ht))
+        (unless (hash-table-p ht)
+          (pg-signal-type-error "Expecting a hash-table, got %s" ht))
         (let ((kv (list)))
           ;; FIXME should escape \" characters in k and v
           (maphash (lambda (k v) (push (format "\"%s\"=>\"%s\"" k v) kv)) ht)
@@ -2269,11 +2325,6 @@ Return nil if the extension could not be set up."
 (put 'pg-register-serializer 'lisp-indent-function 'defun)
 (put 'pg-register-textual-serializer 'lisp-indent-function 'defun)
 
-;; We don't register a serializer for "text" and "varchar", because they are sent in text mode, and
-;; therefore correctly encoded according to the connection encoding. Likewise for the "uuid" and
-;; "xml" types.
-;;
-
 (defun pg--serialize-text (object encoding)
   (if encoding
       (encode-coding-string object encoding t)
@@ -2294,7 +2345,8 @@ Return nil if the extension could not be set up."
 (pg-register-serializer "bool" (lambda (v _encoding) (if v (string 1) (string 0))))
 
 (defun pg--serialize-boolvec (bv _encoding)
-  (cl-assert (bool-vector-p bv))
+  (unless (bool-vector-p bv)
+    (pg-signal-type-error "Expecting a bool-vector, got %s" bv))
   (let* ((len (length bv))
          (out (make-string len ?0)))
     (dotimes (i len)
@@ -2308,69 +2360,81 @@ Return nil if the extension could not be set up."
 
 (pg-register-serializer "char"
   (lambda (v _encoding)
-    (cl-assert (<= 0 v 255) t "Value out of range for CHAR type")
+    (unless (<= 0 v 255)
+      (pg-signal-type-error "Value %s out of range for CHAR type" v))
     (string v)))
 
 (pg-register-serializer "bpchar"
   (lambda (v _encoding)
-    (cl-assert (<= 0 v 255) t "Value out of range for BPCHAR type")
+    (unless (<= 0 v 255)
+      (pg-signal-type-error "Value %s out of range for BPCHAR type" v))
     (string v)))
 
 ;; see https://www.postgresql.org/docs/current/datatype-numeric.html
 (pg-register-serializer "int2"
   (lambda (v _encoding)
-    (cl-assert (integerp v))
-    (cl-assert (<= (- (expt 2 15)) v (expt 2 15))
-               t "Value out of range for INT2 type")
+    (unless (integerp v)
+      (pg-signal-type-error "Expecting an integer, got %s" v))
+    (unless (<= (- (expt 2 15)) v (expt 2 15))
+      (pg-signal-type-error "Value %s out of range for INT2 type" v))
     ;; This use of bindat-type makes us depend on Emacs 28.1, released in April 2022.
     (bindat-pack (bindat-type sint 16 nil) v)))
 
 (pg-register-serializer "smallint"
   (lambda (v _encoding)
-    (cl-assert (integerp v))
-    (cl-assert (<= (- (expt 2 15)) v (expt 2 15))
-               t "Value out of range for SMALLINT type")
+    (unless (integerp v)
+      (pg-signal-type-error "Expecting an integer, got %s" v))
+    (unless (<= (- (expt 2 15)) v (expt 2 15))
+      (pg-signal-type-error "Value %s out of range for SMALLINT type" v))
     (bindat-pack (bindat-type sint 16 nil) v)))
 
 (pg-register-serializer "int4"
   (lambda (v _encoding)
-    (cl-assert (integerp v))
+    (unless (integerp v)
+      (pg-signal-type-error "Expecting an integer, got %s" v))
     (bindat-pack (bindat-type sint 32 nil) v)))
 
 (pg-register-serializer "integer"
   (lambda (v _encoding)
-    (cl-assert (integerp v))
+    (unless (integerp v)
+      (pg-signal-type-error "Expecting an integer, got %s" v))
     (bindat-pack (bindat-type sint 32 nil) v)))
 
 ;; see https://www.postgresql.org/docs/current/datatype-oid.html
 (pg-register-serializer "oid"
   (lambda (v _encoding)
-    (cl-assert (integerp v))
+    (unless (integerp v)
+      (pg-signal-type-error "Expecting an integer, got %s" v))
     (bindat-pack (bindat-type uint 32 nil) v)))
 
 (pg-register-serializer "int8"
   (lambda (v _encoding)
-    (cl-assert (integerp v))
+    (unless (integerp v)
+      (pg-signal-type-error "Expecting an integer, got %s" v))
     (bindat-pack (bindat-type sint 64 nil) v)))
 
 (pg-register-serializer "bigint"
   (lambda (v _encoding)
-    (cl-assert (integerp v))
+    (unless (integerp v)
+      (pg-signal-type-error "Expecting an integer, got %s" v))
     (bindat-pack (bindat-type sint 64 nil) v)))
 
 (pg-register-serializer "smallserial"
   (lambda (v _encoding)
-    (cl-assert (integerp v))
+    (unless (integerp v)
+      (pg-signal-type-error "Expecting an integer, got %s" v))
     (bindat-pack (bindat-type uint 16 nil) v)))
 
 (pg-register-serializer "serial"
   (lambda (v _encoding)
-    (cl-assert (integerp v))
+    (unless (integerp v)
+      (pg-signal-type-error "Expecting an integer, got %s" v))
     (bindat-pack (bindat-type uint 32 nil) v)))
 
 (pg-register-serializer "bigserial"
   (lambda (v _encoding)
-    (cl-assert (integerp v))
+    (unless (integerp v)
+      (pg-signal-type-error "Expecting an integer, got %s" v))
     (bindat-pack (bindat-type uint 64 nil) v)))
 
 ;; We send floats in text format, because we don't know how to access the binary representation from
@@ -2392,7 +2456,8 @@ Respects floating-point infinities and NaN."
 (pg-register-textual-serializer "float8" #'pg--serialize-float)
 
 (defun pg--serialize-json (json _encoding)
-  (cl-assert (hash-table-p json))
+  (unless (hash-table-p json)
+    (pg-signal-type-error "Expecting a hash-table, got %s" json))
   (if (fboundp 'json-serialize)
       (json-serialize json)
     (require 'json)
@@ -2402,9 +2467,10 @@ Respects floating-point infinities and NaN."
 (pg-register-textual-serializer "jsonb" #'pg--serialize-json)
 
 (defun pg--serialize-encoded-time-date (encoded-time _encoding)
-  (cl-assert (listp encoded-time))
-  (cl-assert (integerp (car encoded-time)))
-  (cl-assert (integerp (cadr encoded-time)))
+  (unless (and (listp encoded-time)
+               (integerp (car encoded-time))
+               (integerp (cadr encoded-time)))
+    (pg-signal-type-error "Expecting an encoded time-date (a . b), got %s" encoded-time))
   (format-time-string "%Y-%m-%d" encoded-time))
 
 (pg-register-textual-serializer "date" #'pg--serialize-encoded-time-date)
@@ -2412,9 +2478,10 @@ Respects floating-point infinities and NaN."
 ;; We parse these into an Emacs Lisp "encoded-time", which is represented as a list of two integers.
 ;; Serialize them back to an ISO timestamp.
 (defun pg--serialize-encoded-time (encoded-time _encoding)
-  (cl-assert (listp encoded-time))
-  (cl-assert (integerp (car encoded-time)))
-  (cl-assert (integerp (cadr encoded-time)))
+  (unless (and (listp encoded-time)
+               (integerp (car encoded-time))
+               (integerp (cadr encoded-time)))
+    (pg-signal-type-error "Expecting an encoded time-date (a . b), got %s" encoded-time))
   (format-time-string "%Y-%m-%dT%T" encoded-time))
 
 (pg-register-textual-serializer "timestamp"  #'pg--serialize-encoded-time)
@@ -2424,8 +2491,9 @@ Respects floating-point infinities and NaN."
 ;; Serialize an elisp vector of numbers (integers or floats) to a string of the form "[44,55,66]"
 (pg-register-textual-serializer "vector"
   (lambda (v _encoding)
-    (cl-assert (vectorp v))
-    (cl-assert (cl-every #'numberp v))
+    (unless (and (vectorp v)
+                 (cl-every #'numberp v))
+      (pg-signal-type-error "Expecting a vector of numbers, got %s" v))
     (concat "[" (string-join (mapcar #'prin1-to-string v) ",") "]")))
 
 
@@ -2450,6 +2518,7 @@ Authenticate as USER with PASSWORD."
 
 (defun pg-logxor-string (s1 s2)
   "Elementwise XOR of each character of strings S1 and S2."
+  (declare (speed 3))
   (let ((len (length s1)))
     (cl-assert (eql len (length s2)))
     (let ((out (make-string len 0)))
@@ -2461,6 +2530,7 @@ Authenticate as USER with PASSWORD."
 ;; attempts <https://en.wikipedia.org/wiki/PBKDF2>.
 (defun pg-pbkdf2-hash-sha256 (password salt iterations)
   "Return the PBKDF2 hash of PASSWORD using SALT and ITERATIONS."
+  (declare (speed 3))
   (let* ((hash (gnutls-hash-mac 'SHA256 (cl-copy-seq password) (concat salt (string 0 0 0 1))))
          (result hash))
     (dotimes (_i (1- iterations))
@@ -2807,6 +2877,7 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
              (push parsed tuples))))))))
 
 (defun pg-read-char (con)
+  (declare (speed 3))
   (let ((process (pgcon-process con)))
     ;; (accept-process-output process 0.1)
     (with-current-buffer (process-buffer process)
@@ -2828,12 +2899,14 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
 
 ;; FIXME should be more careful here; the integer could overflow.
 (defun pg-read-net-int (con bytes)
+  (declare (speed 3))
   (cl-do ((i bytes (- i 1))
           (accum 0))
       ((zerop i) accum)
     (setq accum (+ (* 256 accum) (pg-read-char con)))))
 
 (defun pg-read-int (con bytes)
+  (declare (speed 3))
   (cl-do ((i bytes (- i 1))
           (multiplier 1 (* multiplier 256))
           (accum 0))
@@ -2847,6 +2920,7 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
     (aset chars i (pg-read-char con))))
 
 (defun pg-read-chars (con count)
+  (declare (speed 3))
   (let ((process (pgcon-process con)))
     (with-current-buffer (process-buffer process)
       (let* ((start pgcon--position)
@@ -2865,6 +2939,7 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
 
 ;; read a null-terminated string
 (defun pg-read-string (con maxbytes)
+  (declare (speed 3))
   (cl-loop for i below maxbytes
            for ch = (pg-read-char con)
            until (eql ch ?\0)
@@ -2922,50 +2997,6 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
                    (setf (pgerror-dtype err) val))))
     err))
 
-(defun pg-handle-error-response (con &optional context)
-  "Handle an ErrorMessage from the backend we are connected to over CON.
-Additional information CONTEXT can be optionally included in the error message
-presented to the user."
-  (let ((e (pg-read-error-response con))
-        (extra (list)))
-    (when (pgerror-detail e)
-      (push (format "detail: %s" (pgerror-detail e)) extra))
-    (when (pgerror-hint e)
-      (push (format "hint: %s" (pgerror-hint e)) extra))
-    (when (pgerror-table e)
-      (push (format "table: %s" (pgerror-table e)) extra))
-    (when (pgerror-column e)
-      (push (format "column: %s" (pgerror-column e)) extra))
-    (when (pgerror-file e)
-      (push (format "file: %s" (pgerror-file e)) extra))
-    (when (pgerror-line e)
-      (push (format "line: %s" (pgerror-line e)) extra))
-    (when (pgerror-routine e)
-      (push (format "routine: %s" (pgerror-routine e)) extra))
-    (when (pgerror-dtype e)
-      (push (format "dtype: %s" (pgerror-dtype e)) extra))
-    (when (pgerror-where e)
-      (push (format "where: %s" (pgerror-where e)) extra))
-    ;; Now read the ReadyForQuery message. We don't always receive this immediately; for example if
-    ;; an incorrect username is sent during startup, PostgreSQL sends an ErrorMessage then an
-    ;; AuthenticationSASL message. In that case, unread the message type octet so that it can
-    ;; potentially be handled after the error is signaled. Some databases like Clickhouse
-    ;; immediately close their connection on error, so we ignore any errors here.
-    (ignore-errors
-      (let ((c (pg-read-char con)))
-        (unless (eql c ?Z)
-          (message "Unexpected message type after ErrorMsg: %s" c)
-          (pg-unread-char con)))
-      ;; Read message length then status, which we discard.
-      (pg-read-net-int con 4)
-      (pg-read-char con))
-    (let ((msg (format "%s%s: %s (%s)"
-                       (pgerror-severity e)
-                       (if context (concat " " context) "")
-                       (pgerror-message e)
-                       (string-join extra ", "))))
-      (signal 'pg-error (list msg)))))
-
 (defun pg-log-notice (notice)
   "Log a NOTICE to the *Messages* buffer."
   (let ((extra (list)))
@@ -2993,6 +3024,7 @@ presented to the user."
 
 ;; higher order bits first / little endian
 (defun pg-send-uint (con num bytes)
+  (declare (speed 3))
   (let ((process (pgcon-process con))
         (str (make-string bytes 0))
         (i (- bytes 1)))
@@ -3004,6 +3036,7 @@ presented to the user."
 
 ;; big endian
 (defun pg-send-net-uint (con num bytes)
+  (declare (speed 3))
   (let ((process (pgcon-process con))
         (str (make-string bytes 0)))
     (dotimes (i bytes)
@@ -3025,6 +3058,7 @@ presented to the user."
     (process-send-string process octets)))
 
 (defun pg-send (con str &optional bytes)
+  (declare (speed 3))
   (let ((process (pgcon-process con))
         (padding (if (and (numberp bytes) (> bytes (length str)))
                      (make-string (- bytes (length str)) 0)

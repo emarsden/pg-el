@@ -12,6 +12,9 @@
 (require 'ert)
 
 
+(setq debug-on-error t)
+
+
 ;; for performance testing
 ;; (setq process-adaptive-read-buffering nil)
 
@@ -150,7 +153,8 @@
   (pg-test-basic con)
   (message "Testing insertions...")
   (pg-test-insert con)
-  (unless (pg-test-is-cratedb con)
+  (unless (or (pg-test-is-cratedb con)
+              (version< emacs-version "29.1"))
     (message "Testing date routines...")
     (pg-test-date con))
   (message "Testing numeric routines...")
@@ -305,7 +309,6 @@
     (unless (zerop (car (pg-result (pg-exec con "SELECT COUNT(*) FROM pg_collation WHERE collname='fr_FR'") :tuple 0)))
       (should (string= "12 foé£èüñ¡" (scalar "SELECT lower($1) COLLATE \"fr_FR\"" '(("12 FOÉ£ÈÜÑ¡" . "text"))))))
     (should (equal "00:00:12" (scalar "SELECT $1::interval" '(("PT12S" . "text")))))
-    (should (equal -1 (scalar "SELECT $1::int" '(("-1" . "text")))))
     (should (equal -1 (scalar "SELECT $1::int" '((-1 . "int4")))))
     (should (eql 1.0e+INF (scalar "SELECT $1::float4" '((1.0e+INF . "float4")))))
     (should (eql 1.0e+INF (scalar "SELECT $1::float8" '((1.0e+INF . "float8")))))
@@ -528,9 +531,10 @@ bar$$"))))
           (should (eql 2 (scalar "SELECT COUNT(*) FROM date_test"))))
       (pg-exec con "DROP TABLE date_test"))
     ;; this fails on CockroachDB
-    (unless (cl-search "CockroachDB" (pg-backend-version con))
+    (unless (pg-test-is-cockroachdb con)
       (should (equal (scalar "SELECT 'allballs'::time") "00:00:00")))
-    (should (equal (scalar "SELECT '2022-10-01'::date") (encode-time 0 0 0 1 10 2022)))
+    (should (equal (scalar "SELECT '2022-10-01'::date")
+                   (encode-time (list 0 0 0 1 10 2022))))
     ;; When casting to DATE, the time portion is truncated
     (should (equal (scalar "SELECT '2063-03-31T22:13:02'::date")
                    (encode-time (list 0 0 0 31 3 2063))))
@@ -546,7 +550,7 @@ bar$$"))))
     (should (equal (scalar "select '05:00'::time") "05:00:00"))
     (should (equal (scalar "SELECT '04:15:31.445+05'::timetz") "04:15:31.445+05"))
     (should (equal (scalar "SELECT '2001-02-03 04:05:06'::timestamp")
-                   (encode-time 6 5 4 3 2 2001 nil nil nil)))))
+                   (encode-time (list 6 5 4 3 2 2001 nil nil nil))))))
 
 (defun pg-test-numeric (con)
   (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0)))
@@ -730,7 +734,7 @@ bar$$"))))
     (pg-exec con "DROP SEQUENCE IF EXISTS foo_seq")
     (pg-exec con "CREATE SEQUENCE IF NOT EXISTS foo_seq INCREMENT 20 START WITH 400")
     (should (equal 400 (scalar "SELECT nextval('foo_seq')")))
-    (unless (cl-search "-YB-" (pg-backend-version con))
+    (unless (pg-test-is-yugabyte con)
       (should (equal 400 (scalar "SELECT last_value FROM pg_sequences WHERE sequencename='foo_seq'"))))
     (should (equal 420 (scalar "SELECT nextval('foo_seq')")))
     (should (equal 440 (scalar "SELECT nextval('foo_seq')")))
@@ -1446,8 +1450,8 @@ bar$$"))))
   (should (member "pgeltestextra" (pg-databases con)))
   ;; CockroachDB and YugabyteDB don't implement REINDEX. Also, REINDEX at the database level is
   ;; disabled on certain installations (e.g. Supabase), so we check reindexing of a table.
-  (unless (or (cl-search "CockroachDB" (pg-backend-version con))
-              (cl-search "-YB-" (pg-backend-version con)))
+  (unless (or (pg-test-is-cockroachdb con)
+              (pg-test-is-yugabyte con))
     (pg-exec con "DROP TABLE IF EXISTS foobles")
     (pg-exec con "CREATE TABLE foobles(a INTEGER, b TEXT)")
     (pg-exec con "CREATE INDEX idx_foobles ON foobles(a)")

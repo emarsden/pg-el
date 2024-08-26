@@ -139,13 +139,13 @@
       (sign (or "+" "-" "")))
      (car (peg-run (peg path))))))
 
-(defun pg--serialize-path (path _encoding)
+(defun pg--serialize-path (path encoding)
   (cl-assert (pg-geometry-path-p path))
   (let ((type (pg-geometry-path-type path))
         (points (pg-geometry-path-points path)))
     (format "%s%s%s"
             (if (eq :open type) "[" "(")
-            (string-join (mapcar (lambda (p) (pg--serialize-point p _encoding)) points) ",")
+            (string-join (mapcar (lambda (p) (pg--serialize-point p encoding)) points) ",")
             (if (eq :open type) "]" ")"))))
 
 (cl-defstruct pg-geometry-polygon points)
