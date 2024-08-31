@@ -23,13 +23,32 @@ A macro which executes the `BODY` forms wrapped in an SQL transaction. `CON` is 
 database. If an error occurs during the execution of the forms, a ROLLBACK instruction is executed.
 
 
-    (pg-connect dbname user [password host port]) -> con
+    (pg-connect dbname user [password host port tls-options]) -> con
     
 Connect to the database `DBNAME` on `HOST` (defaults to localhost) at `PORT` (defaults to 5432) via
 TCP/IP and authenticate as `USER` with `PASSWORD`. This library currently supports SCRAM-SHA-256
 authentication (the default method from PostgreSQL version 14 onwards), MD5 authentication and
 cleartext password authentication. This function also sets the output date type to `ISO` and
 initializes our type parser tables.
+
+If `tls-options` is non-NIL, attempt to establish an encrypted connection to PostgreSQL by
+passing `tls-options` to Emacs function `gnutls-negotiate`. `tls-options` is a Common-Lisp style
+argument list of the form
+
+```lisp
+(list :priority-string "NORMAL:-MD5" :trustfiles (list "/etc/company/RootCA.crt"))
+```
+
+To use client certificates to authenticate the TLS connection, use a value of `TLS-OPTIONS` of the
+form
+
+```lisp
+`(list :keylist ((,key ,cert)))
+```
+
+where `key` is the filename of the client certificate private key and `cert` is the filename of the
+client certificate. These are passed to GnuTLS.
+
 
 
     (pg-connect-local path dbname user [password]) -> con

@@ -11,6 +11,12 @@
 - Delete all uses of variable `pg--MAX_MESSAGE_LEN`, because PostgreSQL no longer has such low
   limits on message sizes (the only limit being the 4-octet size fields in many message types).
 
+- Support for TLS authentication using client certificates (see the documentation for function
+  `pg-connect`). The `test-certificates` Makefile target in the `test` directory illustrates the
+  creation of a working certificate authority and signed client certificates; depending on the value
+  of connection parameter `clientcert`, PostgreSQL is careful to check that the `CN` field of the
+  client certificate corresponds to the PostgreSQL user you are connecting as.
+
 
 ## [0.40] - 2024-08-22
 

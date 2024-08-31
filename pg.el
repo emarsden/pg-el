@@ -564,7 +564,13 @@ HOST, providing PASSWORD if necessary. Return a connection to the
 database (as an opaque type). PORT defaults to 5432, HOST to
 \"localhost\", and PASSWORD to an empty string. If TLS-OPTIONS is
 non-NIL, attempt to establish an encrypted connection to PostgreSQL
-passing TLS-OPTIONS to `gnutls-negotiate'."
+passing TLS-OPTIONS to `gnutls-negotiate'.
+
+To use client certificates to authenticate the TLS connection,
+use a value of TLS-OPTIONS of the form `(:keylist ((,key
+,cert)))', where `key' is the filename of the client certificate
+private key and `cert' is the filename of the client certificate.
+These are passed to GnuTLS."
   (let* ((buf (generate-new-buffer " *PostgreSQL*"))
          (process (open-network-stream "postgres" buf host port
                                        :coding nil
