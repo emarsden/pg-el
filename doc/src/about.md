@@ -1,14 +1,15 @@
 # pg-el
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0.html) 
-![MELPA](https://melpa.org/packages/pg-badge.svg)](https://melpa.org/#/pg) 
+[![MELPA](https://melpa.org/packages/pg-badge.svg)](https://melpa.org/#/pg) 
 [![test-pgv16](https://github.com/emarsden/pg-el/workflows/test-pgv16/badge.svg)](https://github.com/emarsden/pg-el/workflows/test-pgv16/badge.svg)
 
 This Emacs Lisp library lets you access the [PostgreSQL](https://www.postgresql.org/) 🐘
 object-relational DBMS from Emacs, using its network-level frontend/backend protocol. The library is
-capable of automatic type coercions from a range of SQL types to the equivalent Emacs Lisp type.
+capable of automatic type coercions from a range of SQL types to and from the equivalent Emacs Lisp
+type.
 
-This libary will be useful for developers, rather than end users. If you're looking for an
+This libary will be useful for developers, rather than end users. If you’re looking for an
 Emacs-based browser/editor for PostgreSQL, you may be interested in
 [PGmacs](https://github.com/emarsden/pgmacs/), which uses this library to communicate with
 PostgreSQL or a compatible database.
@@ -19,10 +20,11 @@ PostgreSQL or a compatible database.
 - SCRAM-SHA-256 authentication (the default method since PostgreSQL version 14) as well as MD5 and
   password authentication.
 
-- Encrypted (TLS) connections between Emacs and the PostgreSQL backend.
+- Encrypted (TLS) connections between Emacs and the PostgreSQL backend. This includes support for
+  client certificates.
 
-- **Prepared statements** using PostgreSQL's extended query message flow, that allows for parameterized queries to
-  protect from SQL injection issues.
+- **Prepared statements** using PostgreSQL's extended query message flow, that allows for 
+  parameterized queries to protect from SQL injection issues.
 
 - The PostgreSQL **COPY protocol** to copy preformatted data to PostgreSQL from an Emacs buffer.
 
@@ -30,8 +32,8 @@ PostgreSQL or a compatible database.
   implementation of publish-subscribe type architectures (PostgreSQL as an “event broker” or
   “message bus” and Emacs as event publisher and consumer).
 
-- Parsing various PostgreSQL types including integers, floats, array types, numerical ranges, JSON
-  and JSONB objects into their native Emacs Lisp equivalents. The parsing support is
+- Parsing various PostgreSQL types including integers, floats, array types, numerical ranges, 
+  JSON and JSONB objects into their native Emacs Lisp equivalents. The parsing support is
   user-extensible. Support for the HSTORE, pgvector and PostGIS extensions.
 
 - Connections over TCP or (on Unix machines) a local Unix socket.
@@ -68,7 +70,7 @@ to a variable extent, against other databases that implement the PostgreSQL wire
   integer as a type. It doesn't support `DELETE` statements.
 
 - [ClickHouse](https://clickhouse.com/) doesn't work with pg-el. Their version 24.5 has a very basic
-  implementation of the PostgreSQL wire protocol. It doesn't support the `pg_type` system table
+  implementation of the PostgreSQL wire protocol. It doesn’t support the `pg_type` system table
   which provides information on the OIDs associated with different PostgreSQL types. All values are
   returned in textual format using the pseudo-OID of 0, which means the client must parse the value.
   The database immediately closes the connection on any SQL error. It doesn't support configuration
