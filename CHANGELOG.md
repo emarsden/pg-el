@@ -1,7 +1,7 @@
 # Changelog
 
 
-## [0.41] - Unreleased
+## [0.41] - 2024-08-31
 
 - User errors in serialization functions (arguments supplied to `pg-exec-prepared` whose type does
   not correspond to the SQL-defined type) now signal an error of type `pg-type-error`, which is a
