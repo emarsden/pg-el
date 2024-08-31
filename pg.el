@@ -371,8 +371,6 @@ tag called pg-finished."
 (defconst pg--STARTUP_KRB5_MSG      11)
 (defconst pg--STARTUP_PASSWORD_MSG  14)
 
-(defconst pg--MAX_MESSAGE_LEN    8192)   ; libpq-fe.h
-
 (defun pg-handle-error-response (con &optional context)
   "Handle an ErrorMessage from the backend we are connected to over CON.
 Additional information CONTEXT can be optionally included in the error message
@@ -855,13 +853,13 @@ Return a result structure which can be decoded using `pg-result'."
     (when (pgcon-query-log con)
       (with-current-buffer (pgcon-query-log con)
         (insert sql "\n")))
-    (when (> (length encoded) pg--MAX_MESSAGE_LEN)
-      (let ((msg (format "SQL statement too long: %s" sql)))
-        (signal 'pg-error (list msg))))
-    (pg-send-char con ?Q)
-    (pg-send-uint con (+ 4 (length encoded) 1) 4)
-    (pg-send-string con encoded)
-    (pg-flush con)
+    (let ((len (length encoded)))
+      (when (> len (- (expt 2 32) 5))
+        (signal 'pg-user-error (list "Query is too large")))
+      (pg-send-char con ?Q)
+      (pg-send-uint con (+ 4 len 1) 4)
+      (pg-send-string con encoded)
+      (pg-flush con))
     (cl-loop for c = (pg-read-char con) do
        ;; (message "pg-exec message-type = %c" c)
        (cl-case c
@@ -874,8 +872,8 @@ Return a result structure which can be decoded using `pg-result'."
              (let* ((_msglen (pg-read-net-int con 4))
                     ;; PID of the notifying backend
                     (_pid (pg-read-int con 4))
-                    (channel (pg-read-string con pg--MAX_MESSAGE_LEN))
-                    (payload (pg-read-string con pg--MAX_MESSAGE_LEN))
+                    (channel (pg-read-string con))
+                    (payload (pg-read-string con))
                     (buf (process-buffer (pgcon-process con)))
                     (handlers (with-current-buffer buf pgcon--notification-handlers)))
                (dolist (handler handlers)
@@ -925,7 +923,7 @@ Return a result structure which can be decoded using `pg-result'."
 
             ;; CursorResponse
             (?P
-             (let ((portal (pg-read-string con pg--MAX_MESSAGE_LEN)))
+             (let ((portal (pg-read-string con)))
                (setf (pgresult-portal result) portal)))
 
             ;; ParameterStatus sent in response to a user update over the connection
@@ -1058,8 +1056,8 @@ of this function whenever possible."
         (t
          (pg--escape-identifier-simple identifier))))
 
-(defun pg-escape-literal (str)
-  "Escape the string STR for use within an SQL command.
+(defun pg-escape-literal (string)
+  "Escape STRING for use within an SQL command.
 Similar to libpq function PQescapeLiteral. You should use
 prepared statements (`pg-exec-prepared') instead of this function
 whenever possible."
@@ -1067,7 +1065,7 @@ whenever possible."
     (insert ?E)
     (insert ?\')
     (cl-loop
-     for c across str do
+     for c across string do
      (when (eql c ?\') (insert ?\'))
      (when (eql c ?\\) (insert ?\\))
      (insert c))
@@ -1173,6 +1171,8 @@ Uses PostgreSQL connection CON."
                  2
                  (cl-loop for v in (mapcar #'car serialized-values) sum (+ 4 (length v)))
                  2)))
+    (when (> len (expt 2 32))
+      (signal 'pg-user-error (list "Field is too large")))
     ;; send a Bind message
     (pg-send-char con ?B)
     (pg-send-uint con len 4)
@@ -1188,8 +1188,11 @@ Uses PostgreSQL connection CON."
      do (if (null v)
             ;; for a null value, send -1 followed by zero octets for the value
             (pg-send-uint con -1 4)
-          (pg-send-uint con (length v) 4)
-          (pg-send-octets con v)))
+          (let ((len (length v)))
+            (when (> len (expt 2 32))
+              (signal 'pg-user-error (list "Field is too large")))
+            (pg-send-uint con len 4)
+            (pg-send-octets con v))))
     ;; the number of result-column format codes: we use zero to indicate that result columns can use
     ;; text format
     (pg-send-uint con 0 2)
@@ -1438,9 +1441,12 @@ can be decoded using `pg-result'."
     (signal 'pg-error (list "COPY command must contain 'FROM STDIN'")))
   (pg-connection-set-busy con t)
   (let ((result (make-pgresult :connection con))
-        (ce (pgcon-client-encoding con)))
+        (ce (pgcon-client-encoding con))
+        (len (length query)))
+    (when (> len (expt 2 32))
+      (signal 'pg-user-error (list "Query is too large")))
     (pg-send-char con ?Q)
-    (pg-send-uint con (+ 4 (length query) 1) 4)
+    (pg-send-uint con (+ 4 len 1) 4)
     (pg-send-string con query)
     (pg-flush con)
     (let ((more-pending t))
@@ -1470,8 +1476,8 @@ can be decoded using `pg-result'."
              (let* ((_msglen (pg-read-net-int con 4))
                     ;; PID of the notifying backend
                     (_pid (pg-read-int con 4))
-                    (channel (pg-read-string con pg--MAX_MESSAGE_LEN))
-                    (payload (pg-read-string con pg--MAX_MESSAGE_LEN))
+                    (channel (pg-read-string con))
+                    (payload (pg-read-string con))
                     (buf (process-buffer (pgcon-process con)))
                     (handlers (with-current-buffer buf pgcon--notification-handlers)))
                (dolist (handler handlers)
@@ -1541,8 +1547,8 @@ can be decoded using `pg-result'."
         (let* ((_msglen (pg-read-net-int con 4))
                ;; PID of the notifying backend
                (_pid (pg-read-int con 4))
-               (channel (pg-read-string con pg--MAX_MESSAGE_LEN))
-               (payload (pg-read-string con pg--MAX_MESSAGE_LEN))
+               (channel (pg-read-string con))
+               (payload (pg-read-string con))
                (buf (process-buffer (pgcon-process con)))
                (handlers (with-current-buffer buf pgcon--notification-handlers)))
           (dolist (handler handlers)
@@ -1605,8 +1611,8 @@ can be decoded using `pg-result'."
              (let* ((_msglen (pg-read-net-int con 4))
                     ;; PID of the notifying backend
                     (_pid (pg-read-int con 4))
-                    (channel (pg-read-string con pg--MAX_MESSAGE_LEN))
-                    (payload (pg-read-string con pg--MAX_MESSAGE_LEN))
+                    (channel (pg-read-string con))
+                    (payload (pg-read-string con))
                     (buf (process-buffer (pgcon-process con)))
                     (handlers (with-current-buffer buf pgcon--notification-handlers)))
                (dolist (handler handlers)
@@ -1666,8 +1672,8 @@ can be decoded using `pg-result'."
           (let* ((_msglen (pg-read-net-int con 4))
                  ;; PID of the notifying backend
                  (_pid (pg-read-int con 4))
-                 (channel (pg-read-string con pg--MAX_MESSAGE_LEN))
-                 (payload (pg-read-string con pg--MAX_MESSAGE_LEN))
+                 (channel (pg-read-string con))
+                 (payload (pg-read-string con))
                  (buf (process-buffer (pgcon-process con)))
                  (handlers (with-current-buffer buf pgcon--notification-handlers)))
             (dolist (handler handlers)
@@ -2844,7 +2850,7 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
          (ce (pgcon-client-encoding con)))
     (cl-do ((i attribute-count (- i 1)))
         ((zerop i) (nreverse attributes))
-      (let ((type-name  (pg-read-string con pg--MAX_MESSAGE_LEN))
+      (let ((type-name  (pg-read-string con))
             (_table-oid (pg-read-net-int con 4))
             (_col       (pg-read-net-int con 2))
             (type-oid   (pg-read-net-int con 4))
@@ -2937,10 +2943,12 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
         (prog1 (buffer-substring start end)
           (setq-local pgcon--position end))))))
 
-;; read a null-terminated string
-(defun pg-read-string (con maxbytes)
+(cl-defun pg-read-string (con &optional (max-bytes 1048576))
+  "Read a null-terminated string from PostgreSQL connection CON.
+If MAX-BYTES is specified, it designates the maximal number of octets
+that will be read."
   (declare (speed 3))
-  (cl-loop for i below maxbytes
+  (cl-loop for _ below max-bytes
            for ch = (pg-read-char con)
            until (eql ch ?\0)
            concat (byte-to-string ch)))
@@ -3048,10 +3056,11 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
   (let ((process (pgcon-process con)))
     (process-send-string process (char-to-string char))))
 
-(defun pg-send-string (con str)
+(defun pg-send-string (con string)
   (let ((process (pgcon-process con)))
-    ;; the string with the null-terminator octet
-    (process-send-string process (concat str (string 0)))))
+    (process-send-string process string)
+    ;; the null-terminator octet
+    (process-send-string process (string 0))))
 
 (defun pg-send-octets (con octets)
   (let ((process (pgcon-process con)))

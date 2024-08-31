@@ -8,6 +8,9 @@
   subclass of `pg-user-error`, instead of triggering an assertion failure. This means that they can
   be handled using `condition-case`.
 
+- Delete all uses of variable `pg--MAX_MESSAGE_LEN`, because PostgreSQL no longer has such low
+  limits on message sizes (the only limit being the 4-octet size fields in many message types).
+
 
 ## [0.40] - 2024-08-22
 
