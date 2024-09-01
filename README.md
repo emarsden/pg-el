@@ -68,8 +68,9 @@ The following PostgreSQL-compatible databases have been tested:
 - The [Timescale DB](https://www.timescale.com/) extension for time series data works perfectly
   (tested with version 2.16.1).
 
-- [Xata](https://xata.io/) “serverless PostgreSQL” has some limitations such as lack of support for
-  `CREATE COLLATION`.
+- [Xata](https://xata.io/) “serverless PostgreSQL” has many limitations including lack of support
+  for `CREATE DATABASE`, `CREATE COLLATION`, for XML processing, for temporary tables, for cursors,
+  for `EXPLAIN`, for `CREATE EXTENSION`.
 
 - [YugabyteDB](https://yugabyte.com/): tested against version 2.21, mostly working though the
   `pg_sequences` table is not implemented so certain tests fail. YugabyteDB does not have full
