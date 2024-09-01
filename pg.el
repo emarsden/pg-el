@@ -1948,17 +1948,19 @@ Uses the client-encoding specified in the connection to PostgreSQL CON."
 (pg-register-parser "bit" #'pg-bit-parser)
 (pg-register-parser "varbit" #'pg-bit-parser)
 
-(defun pg-char-parser (str _encoding)
-  (aref str 0))
-
-(pg-register-parser "char" #'pg-char-parser)
-(pg-register-parser "bpchar" #'pg-char-parser)
-
 (defun pg-text-parser (str encoding)
   "Parse PostgreSQL value STR as text using ENCODING."
   (if encoding
       (decode-coding-string str encoding)
     str))
+
+(defun pg-char-parser (str encoding)
+  (if encoding
+      (aref (pg-text-parser str encoding) 0)
+    (aref str 0)))
+
+(pg-register-parser "char" #'pg-char-parser)
+(pg-register-parser "bpchar" #'pg-char-parser)
 
 (pg-register-parser "char2" #'pg-text-parser)
 (pg-register-parser "char4" #'pg-text-parser)
@@ -2377,10 +2379,10 @@ Return nil if the extension could not be set up."
     (string v)))
 
 (pg-register-serializer "bpchar"
-  (lambda (v _encoding)
+  (lambda (v encoding)
     (unless (<= 0 v 255)
       (pg-signal-type-error "Value %s out of range for BPCHAR type" v))
-    (string v)))
+    (pg--serialize-text (string v) encoding)))
 
 ;; see https://www.postgresql.org/docs/current/datatype-numeric.html
 (pg-register-serializer "int2"
@@ -2467,6 +2469,7 @@ Respects floating-point infinities and NaN."
 (pg-register-textual-serializer "float4" #'pg--serialize-float)
 (pg-register-textual-serializer "float8" #'pg--serialize-float)
 
+;; FIXME probably we should be encoding this.
 (defun pg--serialize-json (json _encoding)
   (unless (hash-table-p json)
     (pg-signal-type-error "Expecting a hash-table, got %s" json))
@@ -2954,7 +2957,7 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
 If MAX-BYTES is specified, it designates the maximal number of octets
 that will be read."
   (declare (speed 3))
-  (cl-loop for _ below max-bytes
+  (cl-loop for i below max-bytes
            for ch = (pg-read-char con)
            until (eql ch ?\0)
            concat (byte-to-string ch)))

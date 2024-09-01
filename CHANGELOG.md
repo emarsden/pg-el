@@ -1,6 +1,14 @@
 # Changelog
 
 
+## [0.42] - Unreleased
+
+- Fix serialization and deserialization for `CHARACTER` and `BPCHAR` types for non-ASCII values.
+  PostgreSQL stores these as a single octet, an integer < 256. Characters that are below this limit
+  but not in the ASCII range (such as many accented characters if your Emacs uses a Latin-1 charset)
+  need to be encoded and decoded.
+
+
 ## [0.41] - 2024-08-31
 
 - User errors in serialization functions (arguments supplied to `pg-exec-prepared` whose type does
