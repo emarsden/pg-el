@@ -2,8 +2,8 @@
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0.html)
 [![MELPA](https://melpa.org/packages/pg-badge.svg)](https://melpa.org/#/pg)
-[![test-pgv16](https://github.com/emarsden/pg-el/workflows/test-pgv16/badge.svg)](https://github.com/emarsden/pg-el/workflows/test-pgv16/badge.svg)
-
+[![test-pgv16](https://github.com/emarsden/pg-el/workflows/test-pgv16/badge.svg)](https://github.com/emarsden/pg-el/actions/)
+[![Documentation build](https://img.shields.io/github/actions/workflow/status/emarsden/pg-el/mdbook.yml?label=Documentation)](https://github.com/emarsden/pg-el/actions/)
 
 This library lets you access the PostgreSQL 🐘 object-relational DBMS from Emacs, using its
 network-level frontend/backend “wire” protocol. The module is capable of automatic type coercions from a
@@ -41,7 +41,7 @@ This library has support for:
 - Connections over TCP or (on Unix machines) a local Unix socket.
 
 
-Tested **PostgreSQL versions**: The code has been tested with versions 17beta3, 16.4, 15.4, 13.8,
+Tested **PostgreSQL versions**: The code has been tested with versions 17rc1, 16.4, 15.4, 13.8,
 11.17, and 10.22 on Linux. It is also tested via GitHub actions on MacOS and Windows. This library
 also works, more or less, against other “PostgreSQL-compatible” databases. There are four main points
 where this compatibility may be problematic: 
@@ -70,14 +70,14 @@ The following PostgreSQL-compatible databases have been tested:
 
 - [Xata](https://xata.io/) “serverless PostgreSQL” has many limitations including lack of support
   for `CREATE DATABASE`, `CREATE COLLATION`, for XML processing, for temporary tables, for cursors,
-  for `EXPLAIN`, for `CREATE EXTENSION`.
+  for `EXPLAIN`, for `CREATE EXTENSION`, for functions such as `pg_notify`.
 
 - [YugabyteDB](https://yugabyte.com/): tested against version 2.21, mostly working though the
   `pg_sequences` table is not implemented so certain tests fail. YugabyteDB does not have full
   compatibility with PostgreSQL SQL, and for example `GENERATED ALWAYS AS` columns are not
   supported, and `LISTEN` and `NOTIFY` are not supported.
 
-- [CrateDB](https://crate.io/): tested with version 5.8.1. CrateDB does not support rows (e.g.
+- [CrateDB](https://crate.io/): tested with version 5.8.2. CrateDB does not support rows (e.g.
   `SELECT (1,2)`), does not support the `time` and `varbit` types, does not handle a query which
   only contains an SQL comment, does not handle various PostgreSQL functions such as `factorial`,
   and does not return a correct type OID for text columns in rows returned from a prepared statement.
