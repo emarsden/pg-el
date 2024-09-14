@@ -648,12 +648,13 @@ opaque type). PASSWORD defaults to an empty string."
 ;; see https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-PARAMKEYWORDS
 (defun pg-connect/string (connection-string)
   "Connect to PostgreSQL with parameters specified by CONNECTION-STRING.
-A connection string is of the form `host=localhost port=5432 dbname=mydb'.
-We do not support all the parameter keywords supported by libpq,
-such as those which specify particular aspects of the TCP
-connection to PostgreSQL (e.g. keepalives_interval). The
-supported keywords are host, hostaddr, port, dbname, user,
-password, sslmode (partial support) and application_name."
+A connection string is of the form `host=localhost port=5432
+dbname=mydb'. We do not support all the parameter keywords
+supported by libpq, such as those which specify particular
+aspects of the TCP connection to PostgreSQL (e.g.
+keepalives_interval). The supported keywords are host, hostaddr,
+port, dbname, user, password, sslmode (partial support),
+connect_timeout, client_encoding and application_name."
   (let* ((components (split-string connection-string "[ \t]" t))
          (params (cl-loop
                   for c in components
@@ -681,10 +682,27 @@ password, sslmode (partial support) and application_name."
                      (error "verify-full sslmode not implemented"))
                     ((cdr (assoc "requiressl" params)) t)
                     (t nil)))
+         (connect-timeout-str (cadr (assoc "connect_timeout" params)))
+         (connect-timeout (and connect-timeout-str (cl-parse-integer connect-timeout-str)))
+         (pg-connect-timeout (or connect-timeout pg-connect-timeout))
+         ;; This "read_timeout" is a non-standard extension that we implement
+         (read-timeout-str (cadr (assoc "read_timeout" params)))
+         (read-timeout (and read-timeout-str (cl-parse-integer read-timeout-str)))
+         (pg-read-timeout (or read-timeout pg-read-timeout))
          (pg-application-name (or (cdr (assoc "application_name" params))
-                                  pg-application-name)))
-    (pg-connect dbname user password host port tls)))
-
+                                  pg-application-name))
+         (client-encoding-str (cadr (assoc "client_encoding" params)))
+         (client-encoding (and client-encoding-str
+                               (pg-normalize-encoding-name client-encoding-str))))
+    ;; TODO: should handle sslcert, sslkey variables
+    ;;
+    ;; Some of the parameters are taken from our local variable bindings, but for other parameters we
+    ;; need to set them explicitly in the pgcon object.
+    (let ((con (pg-connect dbname user password host port tls)))
+      (when client-encoding
+        (setf (pgcon-client-encoding con) client-encoding))
+      con)))
+  
 
 (defun pg-parse-url (url)
   "Adaptation of function `url-generic-parse-url' that does not downcase
@@ -817,14 +835,27 @@ sslmode (partial support) and application_name."
                        (signal 'pg-error '("verify-full sslmode not implemented")))
                       ((cdr (assoc "requiressl" params)) t)
                       (t nil)))
-           ;; TODO: manage connect_timeout parameter, using pg-connect-timeout
+           ;; Should be a decimal integer designating a number of seconds
+           (connect-timeout-str (cadr (assoc "connect_timeout" params)))
+           (connect-timeout (and connect-timeout-str (cl-parse-integer connect-timeout-str)))
+           (pg-connect-timeout (or connect-timeout pg-connect-timeout))
+           ;; This "read_timeout" is a non-standard extension that we implement
+           (read-timeout-str (cadr (assoc "read_timeout" params)))
+           (read-timeout (and read-timeout-str (cl-parse-integer read-timeout-str)))
+           (pg-read-timeout (or read-timeout pg-read-timeout))
            (pg-application-name (or (cadr (assoc "application_name" params))
-                                    pg-application-name)))
+                                    pg-application-name))
+           (client-encoding-str (cadr (assoc "client_encoding" params)))
+           (client-encoding (and client-encoding-str
+                                 (pg-normalize-encoding-name client-encoding-str))))
       ;; If the host is empty or looks like an absolute pathname, connect over Unix-domain socket.
-      (if (or (zerop (length host))
-              (eq ?/ (aref host 0)))
-          (pg-connect-local host dbname user password)
-        (pg-connect dbname user password host port tls)))))
+      (let ((con (if (or (zerop (length host))
+                         (eq ?/ (aref host 0)))
+                     (pg-connect-local host dbname user password)
+                   (pg-connect dbname user password host port tls))))
+        (when client-encoding
+          (setf (pgcon-client-encoding con) client-encoding))
+        con))))
 
 
 ;; Called from pg-parameter-change-functions when we receive a ParameterStatus
@@ -1840,7 +1871,7 @@ PostgreSQL and Emacs. CON should no longer be used."
     (maphash (lambda (k _v) (push k type-names)) pg--textual-serializers)
     (maphash (lambda (k _v) (push k type-names)) pg--parser-by-typname)
     (let* ((qnames (mapcar (lambda (tn) (format "'%s'" tn)) type-names))
-           (sql (format "SELECT typname,oid FROM pg_type WHERE typname IN (%s)"
+           (sql (format "SELECT typname,oid FROM pg_catalog.pg_type WHERE typname IN (%s)"
                         (string-join qnames ",")))
            (res (ignore-errors (pg-exec con sql)))
            (rows (and res (pg-result res :tuples))))
@@ -2019,7 +2050,7 @@ Return nil if the extension could not be loaded."
   (when (condition-case nil
             (pg-exec con "CREATE EXTENSION IF NOT EXISTS hstore")
           (pg-error nil))
-    (let* ((res (pg-exec con "SELECT oid FROM pg_type WHERE typname='hstore'"))
+    (let* ((res (pg-exec con "SELECT oid FROM pg_catalog.pg_type WHERE typname='hstore'"))
            (oid (car (pg-result res :tuple 0)))
            (parser (pg-lookup-parser "hstore"))
            (parser-by-oid (pgcon-parser-by-oid con))
@@ -2312,7 +2343,7 @@ Return nil if the extension could not be set up."
   (when (condition-case nil
             (pg-exec con "CREATE EXTENSION IF NOT EXISTS vector")
           (pg-error nil))
-    (let* ((res (pg-exec con "SELECT oid FROM pg_type WHERE typname='vector'"))
+    (let* ((res (pg-exec con "SELECT oid FROM pg_catalog.pg_type WHERE typname='vector'"))
            (oid (car (pg-result res :tuple 0)))
            (parser (pg-lookup-parser "vector")))
       (when parser
@@ -2736,7 +2767,7 @@ TABLE can be a string or a schema-qualified name. Uses database connection CON."
 (defun pg-function-p (con name)
   "Returns non-null when a function with NAME is defined in PostgreSQL.
 Uses database connection CON."
-  (let* ((sql "SELECT * FROM pg_proc WHERE proname = $1")
+  (let* ((sql "SELECT * FROM pg_catalog.pg_proc WHERE proname = $1")
          (res (pg-exec-prepared con sql `((,name . "text")))))
     (pg-result res :tuples)))
 
@@ -2753,7 +2784,7 @@ Uses database connection CON."
 ;; =====================================================================
 (defun pg-databases (con)
   "List of the databases in the PostgreSQL server we are connected to via CON."
-  (let ((res (pg-exec con "SELECT datname FROM pg_database")))
+  (let ((res (pg-exec con "SELECT datname FROM pg_catalog.pg_database")))
     (apply #'append (pg-result res :tuples))))
 
 (defun pg-tables (con)
@@ -2773,7 +2804,7 @@ Only tables to which the current user has access are listed."
                             name
                           (make-pg-qualified-name :schema schema :name name))))))
           (t
-           (let ((res (pg-exec con "SELECT relname FROM pg_class c WHERE "
+           (let ((res (pg-exec con "SELECT relname FROM pg_catalog.pg_class c WHERE "
                                "c.relkind = 'r' AND "
                                "c.relname !~ '^pg_' AND "
                                "c.relname !~ '^sql_' ORDER BY relname")))
@@ -2845,7 +2876,7 @@ COLUMN is in TABLE. Uses connection to PostgreSQL CON."
   "Version and operating environment of PostgreSQL backend.
 Concerns the backend that we are connected to over connection CON.
 PostgreSQL returns the version as a string. CrateDB returns it as an integer."
-  (let ((res (pg-exec con "SELECT version()")))
+  (let ((res (pg-exec con "SELECT pg_catalog.version()")))
     (cl-first (pg-result res :tuple 0))))
 
 
