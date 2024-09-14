@@ -129,6 +129,9 @@
 (defun pg-test-is-immudb (con)
   (cl-search "implemented by immudb" (pg-backend-version con)))
 
+(defun pg-test-is-greptimedb (con)
+  (cl-search "-greptime-" (pg-backend-version con)))
+
 
 (defun pg-connection-tests ()
   (dolist (v (list "host=localhost port=5432 dbname=pgeltestdb user=pgeltestuser password=pgeltest"
@@ -166,9 +169,12 @@
     (message "Testing prepared statements")
     (pg-test-prepared con)
     (pg-test-prepared/multifetch con)
-    (pg-test-insert/prepared con))
+    (pg-test-insert/prepared con)
+    (pg-test-ensure-prepared con))
+  (unless (or (pg-test-is-xata con)
+              (pg-test-is-cratedb con))
+    (pg-test-collation con))
   (unless (pg-test-is-xata con)
-    (pg-test-collation con)
     (pg-test-xml con))
   (pg-test-uuid con)
   (message "Testing field extraction routines...")
@@ -218,7 +224,7 @@
 (defun pg-test-note-param-change (con name value)
   (message "PG> backend parameter %s=%s" name value)
   (when (and (string= "session_authorization" name)
-             (string= "xata" value))
+             (string= "xata" (cl-subseq value 0 4)))
     ;; This is a rather rude and ugly way of hiding some private information in the PostgreSQL
     ;; connection struct.
     (puthash "is-xata-p" t (pgcon-prepared-statement-cache con)))
@@ -315,7 +321,8 @@
     (should (string= "fooblé" (scalar "SELECT $1" '(("fooblé" . "text")))))
     (should (string= "Bîzzlô⚠️" (scalar "SELECT $1" '(("Bîzzlô⚠️" . "varchar")))))
     (should (string= "foobles" (scalar "SELECT $1 || $2" '(("foo" . "text") ("bles" . "text")))))
-    (unless (zerop (car (pg-result (pg-exec con "SELECT COUNT(*) FROM pg_collation WHERE collname='fr_FR'") :tuple 0)))
+    (unless (or (pg-test-is-cratedb con)
+                (zerop (scalar "SELECT COUNT(*) FROM pg_collation WHERE collname='fr_FR'" nil)))
       (should (string= "12 foé£èüñ¡" (scalar "SELECT lower($1) COLLATE \"fr_FR\"" '(("12 FOÉ£ÈÜÑ¡" . "text"))))))
     (should (equal "00:00:12" (scalar "SELECT $1::interval" '(("PT12S" . "text")))))
     (should (equal -1 (scalar "SELECT $1::int" '((-1 . "int4")))))
@@ -401,15 +408,16 @@
 
 
 (defun pg-test-basic (con)
-  (cl-flet ((row (sql) (pg-result (pg-exec con sql) :tuple 0)))
+  (cl-labels ((row (sql) (pg-result (pg-exec con sql) :tuple 0))
+              (scalar (sql) (cl-first (pg-result (pg-exec con sql) :tuple 0))))
     (should (equal (list 42) (row "SELECT 42")))
     (should (equal (list t) (row "SELECT true")))
     (unless (pg-test-is-immudb con)
       (should (equal (list t nil) (row "SELECT true, false"))))
-    (should (equal (list -1) (row "SELECT -1::integer")))
-    (should (equal (list nil) (row "SELECT '0'::boolean")))
+    (should (eql -1 (scalar "SELECT -1::integer")))
+    (should (eql nil (scalar "SELECT '0'::boolean")))
     (should (equal (list "hey" "Jude") (row "SELECT 'hey', 'Jude'")))
-    (should (equal (list nil) (row "SELECT NULL")))
+    (should (eql nil (scalar "SELECT NULL")))
     ;; This leads to a timeout with YDB
     (unless (pg-test-is-ydb con)
       (should (equal nil (row ""))))
@@ -418,25 +426,26 @@
     (should (equal (list 1 nil "all") (row "SELECT 1,NULL,'all'")))
     (unless (or (pg-test-is-questdb con)
                 (pg-test-is-spanner con))
-      (should (string= "Z" (car (row "SELECT chr(90)")))))
-    (should (equal (list 12) (row "SELECT length('(╯°□°)╯︵ ┻━┻')")))
-    (should (string= "éàç⟶∪" (car (row "SELECT 'éàç⟶∪'"))))
+      (should (string= "Z" (scalar "SELECT chr(90)"))))
+    (should (eql 12 (scalar "SELECT length('(╯°□°)╯︵ ┻━┻')")))
+    (should (string= "éàç⟶∪" (scalar "SELECT 'éàç⟶∪'")))
     (unless (pg-test-is-spanner con)
       (should (eql nil (row " SELECT 3 WHERE 1=0"))))
     (unless (or (pg-test-is-cratedb con)
                 (pg-test-is-spanner con)
                 (pg-test-is-ydb con))
       ;; these are row expressions, not standard SQL
-      (should (string= (car (row "SELECT (1,2)")) "(1,2)"))
-      (should (string= (car (row "SELECT (null,1,2)")) "(,1,2)")))
-    (should (string= "foo\nbar" (car (row "SELECT $$foo
-bar$$"))))
-    (should (string= "foo\tbar" (car (row "SELECT 'foo\tbar'"))))
-    (should (string= "abcdef" (car (row "SELECT 'abc' || 'def'"))))
-    (should (string= "howdy" (car (row "SELECT 'howdy'::text"))))
-    (should (string= "gday" (car (row "SELECT 'gday'::varchar(20)"))))
+      (should (string= (scalar "SELECT (1,2)") "(1,2)"))
+      (should (string= (scalar "SELECT (null,1,2)") "(,1,2)")))
+    (should (string= "foo\nbar" (scalar "SELECT $$foo
+bar$$")))
+    (should (string= "foo\tbar" (scalar "SELECT 'foo\tbar'")))
+    (should (string= "abcdef" (scalar "SELECT 'abc' || 'def'")))
+    (should (string= "howdy" (scalar "SELECT 'howdy'::text")))
+    (should (string= "gday" (scalar "SELECT 'gday'::varchar(20)")))
+    (should (eql 32 (length (scalar "SELECT sha256('foobles')"))))
     (unless (pg-test-is-spanner con)
-      (should (string= (md5 "foobles") (car (row "SELECT md5('foobles')")))))
+      (should (string= (md5 "foobles") (scalar "SELECT md5('foobles')"))))
     (let* ((res (pg-exec con "SELECT 11 as bizzle, 15 as bazzle"))
            (attr (pg-result res :attributes))
            (col1 (cl-first attr))
@@ -505,17 +514,50 @@ bar$$"))))
       (dotimes (i count)
         (pg-exec-prepared con "INSERT INTO count_test VALUES($1, $2)"
                           `((,i . "int4") (,(* i i) . "int4"))))
-      (should (eql count (scalar "SELECT count(*) FROM count_test")))
+      (should (eql count (scalar "SELECT COUNT(*) FROM count_test")))
       (should (eql (/ (* (1- count) count) 2) (scalar "SELECT sum(key) FROM count_test")))
       (pg-exec con "DROP TABLE count_test")
       (should (not (member "count_test" (pg-tables con)))))))
 
 ;; Check the mixing of prepared queries, cached prepared statements, normal simple queries, to check
-;; that the cache works as expected and that the backend retains prepared statements.
+;; that the cache works as expected and that the backend retains prepared statements. TODO: should
+;; add here different PostgreSQL connections to the test, to ensure that the caches are not being
+;; mixed up.
 ;;
 ;; We are seeing problems with Tembo in the mixing of prepared statements and normal statements.
 (defun pg-test-ensure-prepared (con)
-  )
+  (cl-flet ((scalar (sql) (cl-first (pg-result (pg-exec con sql) :tuple 0)))
+            (pfp (ps-name args)
+              (let ((res (pg-fetch-prepared con ps-name args)))
+                (cl-first (pg-result res :tuple 0)))))
+    (pg-exec con "DROP TABLE IF EXISTS prep")
+    (pg-exec con "CREATE TABLE prep(a INTEGER, b INTEGER)")
+    (dotimes (i 10)
+      (pg-exec-prepared con "INSERT INTO prep VALUES($1, $2)"
+                        `((,i . "int4") (,(* i i) . "int4"))))
+    (should (eql 10 (scalar "SELECT COUNT(*) FROM prep")))
+    (let* ((ps1 (pg-ensure-prepared-statement
+                 con "PGT-count1" "SELECT COUNT(*) FROM prep" nil))
+           (ps2 (pg-ensure-prepared-statement
+                 con "PGT-count2" "SELECT COUNT(*) FROM prep WHERE a >= $1" '("int4")))
+           (ps3 (pg-ensure-prepared-statement
+                 con "PGT-count3" "SELECT COUNT(*) FROM prep WHERE a + b >= $1" '("int4"))))
+      (should (eql 10 (scalar "SELECT COUNT(*) FROM prep")))
+      (should (eql 10 (pfp ps1 nil)))
+      (should (eql 10 (pfp ps2 `((0 . "int4")))))
+      (should (eql 10 (pfp ps3 `((0 . "int4")))))
+      (should (eql 10 (scalar "SELECT COUNT(*) FROM prep")))
+      (should (eql 10 (pfp ps2 `((0 . "int4")))))
+      (should (eql 10 (scalar "SELECT COUNT(*) FROM prep WHERE b >= 0")))
+      (dotimes (i 1000)
+        (let ((v (pcase (random 4)
+                   (0 (scalar "SELECT COUNT(*) FROM prep"))
+                   (1 (pfp ps1 nil))
+                   (2 (pfp ps2 `((0 . "int4"))))
+                   (3 (pfp ps3 `((0 . "int4")))))))
+          (should (eql v 10)))))
+    (pg-exec con "DROP TABLE prep")))
+
 
 ;; Testing for the date/time handling routines.
 (defun pg-test-date (con)
@@ -787,6 +829,7 @@ bar$$"))))
   (pg-exec con "DROP TABLE coldefault")
   (pg-exec con "DROP TABLE IF EXISTS colgen_id")
   ;; GENERATED ALWAYS AS IDENTITY is now recommended instead of SERIAL
+  ;; https://www.naiyerasif.com/post/2024/09/04/stop-using-serial-in-postgres/
   (pg-exec con "CREATE TABLE colgen_id(id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, comment TEXT)")
   (pg-exec con "INSERT INTO colgen_id(comment) VALUES('bizzles')")
   ;; A generated column does not have a DEFAULT, in the PostgreSQL sense
@@ -1489,11 +1532,27 @@ bar$$"))))
   (pg-exec con "INSERT INTO pgel😏 VALUES('Foobles')")
   (let ((r (pg-exec con "SELECT * FROM pgel😏")))
     (should (eql 1 (length (pg-result r :tuples)))))
+  (pg-exec-prepared con "CREATE SCHEMA IF NOT EXISTS un␂icode" nil)
+  (pg-exec-prepared con "CREATE TABLE IF NOT EXISTS un␂icode.ma🪄c(data TEXT)" nil)
+  (pg-exec-prepared con "INSERT INTO un␂icode.ma🪄c VALUES($1)" '(("hi" . "text")))
+  (let ((r (pg-exec con "SELECT * FROM un␂icode.ma🪄c")))
+    (should (eql 1 (length (pg-result r :tuples)))))
+  (pg-exec con "DROP TABLE un␂icode.ma🪄c")
+  (pg-exec con "DROP SCHEMA un␂icode")
   (pg-exec con "CREATE TEMPORARY TABLE pgeltestunicode(pg→el TEXT)")
   (pg-exec con "INSERT INTO pgeltestunicode(pg→el) VALUES ('Foobles')")
   (pg-exec con "INSERT INTO pgeltestunicode(pg→el) VALUES ('Bizzles')")
   (let ((r (pg-exec con "SELECT pg→el FROM pgeltestunicode")))
-    (should (eql 2 (length (pg-result r :tuples))))))
+    (should (eql 2 (length (pg-result r :tuples)))))
+  ;; Check that Emacs is doing Unicode normalization for us. The first 'á' is LATIN SMALL LETTER A
+  ;; with COMBINING ACUTE ACCENT, the second 'á' is the normalized form LATIN SMALL LETTER A WITH
+  ;; ACUTE. If you run this query in psql the answer will be false, because psql does not do Unicode
+  ;; normalization. With pg-el, the query is encoded to the client-encoding UTF-8 using function
+  ;; encode-coding-string, but this encoding does not involve normalization.
+  (let ((r (pg-exec con "SELECT 'á' = 'á'")))
+    (should (eql nil (cl-first (pg-result r :tuple 0)))))
+  (let ((r (pg-exec-prepared con "SELECT $1 = $2" '(("á" . "text") ("á" . "text")))))
+    (should (eql nil (cl-first (pg-result r :tuple 0))))))
 
 (defun pg-test-returning (con)
   (when (member "pgeltestr" (pg-tables con))
@@ -1568,8 +1627,10 @@ bar$$"))))
     (pg-exec con "NOTIFY yourheart")
     (pg-exec con "SELECT 'ignored'")
     ;; The function pg_notify is an alternative to the LISTEN statement, and more flexible if your
-    ;; channel name is determined by a variable.
-    (pg-exec con "SELECT pg_notify('yourheart', 'leaving')")
+    ;; channel name is determined by a variable. It is not implemented in all
+    ;; PostgreSQL-semi-compatible databases.
+    (unless (pg-test-is-xata con)
+      (pg-exec con "SELECT pg_notify('yourheart', 'leaving')"))
     (pg-exec con "SELECT 'ignored'")
     (pg-exec con "UNLISTEN yourheart")
     (pg-exec con "NOTIFY yourheart, 'Et redit in nihilum quod fuit ante nihil.'")))
