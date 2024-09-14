@@ -8,6 +8,15 @@
   but not in the ASCII range (such as many accented characters if your Emacs uses a Latin-1 charset)
   need to be encoded and decoded.
 
+- Add support for parameters `connect_timeout` and (nonstandard extension) `read_timeout` when
+  parsing PostgreSQL connection URIs and connection strings.
+
+- Add functionality to detect the “flavour” variant of (potentially semi-compatible) PostgreSQL
+  database that we are connected to. The variant is accessible via `pgcon-server-variant` on a
+  connection object. Detected variants are 'cratedb, 'xata, 'cockroachdb, 'yugabyte, 'questdb,
+  'greptimedb, 'immudb, 'ydb. This functionality is used to work around certain bugs or incomplete
+  emulation of PostgreSQL system tables by some of these semi-compatible database implementations.
+
 
 ## [0.41] - 2024-08-31
 

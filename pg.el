@@ -162,6 +162,11 @@ struct.")
     :accessor pgcon-pid )
    (server-version-major
     :accessor pgcon-server-version-major)
+   ;; Holds something like 'postgresql, 'ydb, 'cratedb
+   (server-variant
+    :type symbol
+    :initform 'postgresql
+    :accessor pgcon-server-variant)
    (secret
     :accessor pgcon-secret)
    (client-encoding
@@ -371,6 +376,30 @@ tag called pg-finished."
 (defconst pg--STARTUP_KRB5_MSG      11)
 (defconst pg--STARTUP_PASSWORD_MSG  14)
 
+(defun pg--detect-server-variant (con)
+  "Detect the flavour of (semi-compatible) PostgreSQL that we are connected to.
+Uses connection CON. Also run variant-specific configuration actions. The variant
+`can be accessed by pgcon-server-variant'."
+  ;; This is the default value, meaning we haven't yet identified a variant based on its backend
+  ;; parameter values.
+  (when (eq (pgcon-server-variant con) 'postgresql)
+    (let ((version (pg-backend-version con)))
+      (cond ((cl-search "CrateDB" version)
+             (setf (pgcon-server-variant con) 'cratedb))
+            ((cl-search "CockroachDB" version)
+             (setf (pgcon-server-variant con) 'cockroachdb))
+            ((cl-search "-YB-" version)
+             (setf (pgcon-server-variant con) 'yugabyte))
+            ((cl-search "Visual C++ build 1914" version)
+             (setf (pgcon-server-variant con) 'questdb))
+            ((cl-search "-greptime-" version)
+             (setf (pgcon-server-variant con) 'greptimedb))
+            ((cl-search "implemented by immudb" version)
+             (setf (pgcon-server-variant con) 'immudb)))))
+  (pcase (pgcon-server-variant con)
+    (ydb
+     (pg-exec con "SET search_path = public"))))
+
 (defun pg-handle-error-response (con &optional context)
   "Handle an ErrorMessage from the backend we are connected to over CON.
 Additional information CONTEXT can be optionally included in the error message
@@ -485,6 +514,7 @@ Uses database DBNAME, user USER and password PASSWORD."
         (and (not pg-disable-type-coercion)
              (zerop (hash-table-count (pgcon-parser-by-oid con)))
              (pg-initialize-parsers con))
+        (pg--detect-server-variant con)
         ;; This statement fails on ClickHouse (and the database immediately closes the connection!).
         (pg-exec con "SET datestyle = 'ISO'")
         (pg-enable-async-notification-handlers con)
@@ -527,21 +557,32 @@ Uses database DBNAME, user USER and password PASSWORD."
      (?S
       (let* ((msglen (pg-read-net-int con 4))
              (msg (pg-read-chars con (- msglen 4)))
-             (items (split-string msg (string 0))))
+             (items (split-string msg (string 0)))
+             (key (cl-first items))
+             (val (cl-second items)))
         ;; ParameterStatus items sent by the backend include application_name,
         ;; DateStyle, in_hot_standby, integer_datetimes
-        (when (> (length (cl-first items)) 0)
-          (when (string= "server_version" (cl-first items))
+        (when (> (length key) 0)
+          (when (string= "server_version" key)
             ;; We need to accept a version string of the form "17beta1" as well as "16.1"
-            (let* ((major (cl-first (split-string (cl-second items) "\\.")))
+            (let* ((major (cl-first (split-string val "\\.")))
                    (major-numeric (apply #'string
                                          (cl-loop
                                           for c across major
                                           while (<= ?0 c ?9)
                                           collect c))))
-              (setf (pgcon-server-version-major con) (cl-parse-integer major-numeric))))
+              (setf (pgcon-server-version-major con) (cl-parse-integer major-numeric)))
+            (when (cl-search "ydb stable" val)
+              (setf (pgcon-server-variant con) 'ydb)))
+          ;; Now some somewhat ugly code to detect semi-compatible PostgreSQL variants, to allow us
+          ;; to work around some of their behaviour that is incompatible with real PostgreSQL.
+          (when (string= "session_authorization" key)
+            (when (string= "xata" (cl-subseq val 0 4))
+              (setf (pgcon-server-variant con) 'xata))
+            (when (string= "PGAdapter" val)
+              (setf (pgcon-server-variant con) 'spanner)))
           (dolist (handler pg-parameter-change-functions)
-            (funcall handler con (cl-first items) (cl-second items))))))
+            (funcall handler con key val)))))
 
      (t
       (let ((msg (format "Problem connecting: expected an authentication response, got %s" c)))
@@ -2787,49 +2828,71 @@ Uses database connection CON."
   (let ((res (pg-exec con "SELECT datname FROM pg_catalog.pg_database")))
     (apply #'append (pg-result res :tuples))))
 
+(defun pg--tables-information-schema (con)
+  "List of the tables present in the database we are connected to via CON.
+Queries the information schema."
+  (let ((default-schema (if (eq (pgcon-server-variant con) 'cratedb)
+                            "postgres"
+                          "public")))
+    (let ((res (pg-exec con "SELECT table_schema,table_name FROM information_schema.tables
+                WHERE table_schema NOT IN ('pg_catalog', 'information_schema') AND table_type='BASE TABLE'")))
+      (cl-loop
+       for tuple in (pg-result res :tuples)
+       collect (let ((schema (cl-first tuple))
+                     (name (cl-second tuple)))
+                 (if (string= schema default-schema)
+                     name
+                   (make-pg-qualified-name :schema schema :name name)))))))
+
+;; This method is better supported on very old PostgreSQL versions, or some semi-compatible
+;; PostgreSQL databases that don't fully implement the information schema.
+(defun pg--tables-legacy (con)
+  "List of the tables present in the database we are connected to via CON.
+Queries legacy internal PostgreSQL tables."
+  (let ((res (pg-exec con "SELECT relname FROM pg_catalog.pg_class c WHERE "
+                      "c.relkind = 'r' AND "
+                      "c.relname !~ '^pg_' AND "
+                      "c.relname !~ '^sql_' ORDER BY relname")))
+    (apply #'append (pg-result res :tuples))))
+
 (defun pg-tables (con)
   "List of the tables present in the database we are connected to via CON.
 Only tables to which the current user has access are listed."
-  (let ((default-schema (if (cl-search "CrateDB" (pg-backend-version con))
+    (cond ((eq (pgcon-server-variant con) 'ydb)
+           (pg--tables-legacy con))
+          ((> (pgcon-server-version-major con) 7)
+           (pg--tables-information-schema con))
+          (t
+           (pg--tables-legacy con))))
+
+(defun pg--columns-information-schema (con table)
+  (let ((default-schema (if (eq (pgcon-server-variant con) 'cratedb)
                             "postgres"
                           "public")))
-    (cond ((> (pgcon-server-version-major con) 7)
-           (let ((res (pg-exec con "SELECT table_schema,table_name FROM information_schema.tables
-                WHERE table_schema NOT IN ('pg_catalog', 'information_schema') AND table_type='BASE TABLE'")))
-             (cl-loop
-              for tuple in (pg-result res :tuples)
-              collect (let ((schema (cl-first tuple))
-                            (name (cl-second tuple)))
-                        (if (string= schema default-schema)
-                            name
-                          (make-pg-qualified-name :schema schema :name name))))))
-          (t
-           (let ((res (pg-exec con "SELECT relname FROM pg_catalog.pg_class c WHERE "
-                               "c.relkind = 'r' AND "
-                               "c.relname !~ '^pg_' AND "
-                               "c.relname !~ '^sql_' ORDER BY relname")))
-             (apply #'append (pg-result res :tuples)))))))
+    (let* ((schema (if (pg-qualified-name-p table)
+                       (pg-qualified-name-schema table)
+                     default-schema))
+           (tname (if (pg-qualified-name-p table)
+                      (pg-qualified-name-name table)
+                    table))
+           (sql "SELECT column_name FROM information_schema.columns
+                      WHERE table_schema=$1 AND table_name = $2")
+           (res (pg-exec-prepared con sql `((,schema . "text") (,tname . "text")))))
+      (apply #'append (pg-result res :tuples)))))
+
+(defun pg--columns-legacy (con table)
+  (let* ((sql (format "SELECT * FROM %s WHERE 0 = 1" table))
+         (res (pg-exec con sql)))
+    (mapcar #'car (pg-result res :attributes))))
 
 (defun pg-columns (con table)
   "List of the columns present in TABLE over PostgreSQL connection CON."
-  (let ((default-schema (if (cl-search "CrateDB" (pg-backend-version con))
-                            "postgres"
-                          "public")))
-    (cond ((> (pgcon-server-version-major con) 7)
-           (let* ((schema (if (pg-qualified-name-p table)
-                              (pg-qualified-name-schema table)
-                            default-schema))
-                  (tname (if (pg-qualified-name-p table)
-                             (pg-qualified-name-name table)
-                           table))
-                  (sql "SELECT column_name FROM information_schema.columns
-                      WHERE table_schema=$1 AND table_name = $2")
-                  (res (pg-exec-prepared con sql `((,schema . "text") (,tname . "text")))))
-             (apply #'append (pg-result res :tuples))))
-          (t
-           (let* ((sql (format "SELECT * FROM %s WHERE 0 = 1" table))
-                  (res (pg-exec con sql)))
-             (mapcar #'car (pg-result res :attributes)))))))
+  (cond ((eq (pgcon-server-variant con) 'ydb)
+         (pg--columns-legacy con table))
+        ((> (pgcon-server-version-major con) 7)
+         (pg--columns-information-schema con table))
+        (t
+         (pg--columns-legacy con table))))
 
 (defun pg-column-default (con table column)
   "Return the default value for COLUMN in PostgreSQL TABLE.

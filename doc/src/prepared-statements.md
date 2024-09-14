@@ -57,7 +57,7 @@ and reoptimizing a query plan multiple times.
 ~~~admonish example title="Fetching from a previously prepared statement"
 
 The example function below (which comes from the [PGmacs](https://github.com/emarsden/pgmacs)
-browsing/editing interface for Emacs) illustrates the use of the utility function
+browsing/editing interface for PostgreSQL) illustrates the use of the utility function
 `pg-ensure-prepared-statement`, which either retrieves the cached prepared statement if the function
 has already been called (pg-el maintains a per-connection cache of prepared statements), or prepares
 the statement given the SQL and the argument types if the function has not yet been called in this

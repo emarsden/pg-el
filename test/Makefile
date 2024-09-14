@@ -272,8 +272,8 @@ test-supabase: test-pg.el
 	$(MAKE) test-tls
 
 # Neon (https://neon.tech/) provide hosted "serverless" PostgreSQL instances, which allow convenient
-# automated scalability according to load. They have a free tier. As of 2023-11, they are running
-# PostgreSQL 15.4 on AMD64.
+# automated scalability according to load. They have a free tier. As of 2024-09, they are running
+# PostgreSQL "15.8" on AMD64.
 test-neon: test-pg.el
 	PGEL_PASSWORD=foobles PGEL_HOSTNAME=foobles.eu-central-1.aws.neon.tech PGEL_USER=username PGEL_DATABASE=main $(MAKE) test-tls
 
@@ -298,11 +298,13 @@ test-timescale: test-pg.el
 	podman stop timescale
 
 
-# CrateDB uses a default database name of "doc" that we can't set via Docker. Last tested with
-# cratedb v5.8.2. Doesn't get very far through the tests: CrateDB doesn't accept a query which only
-# contains an SQL comment.
+# Last tested 2024-09 with cratedb v5.8.2. CrateDB uses a default database name of "doc" that we
+# can't set via Docker. Doesn't get very far through the tests: CrateDB doesn't accept a query which
+# only contains an SQL comment, and doesn't implement the BYTEA, JSON, JSONB and HSTORE types,
+# doesn't support COPY.
 #
 # https://hub.docker.com/_/crate/
+# https://cratedb.com/docs/guide/install/container/docker.html
 test-cratedb: test-pg.el
 	podman run --rm --name cratedb \
           --publish 4200:4200 \
@@ -343,10 +345,10 @@ test-questdb: test-pg.el
 	podman stop questdb
 
 
-# Yugabyte 2.21 is based on PostgreSQL 11.2. This works very well, including the HSTORE and pgvector
-# extensions. The sequence test fails (SELECT last_value FROM pg_sequences). Some more recent SQL
-# evolutions suchas "INTEGER GENERATED ALWAYS AS expression STORED" are not supported. LISTEN/NOTIFY
-# is not supported.
+# Tested 2024-09, Yugabyte 2.23 is based on PostgreSQL 11.2. This works very well, including the
+# HSTORE and pgvector extensions. The sequence test fails (SELECT last_value FROM pg_sequences).
+# Some more recent SQL evolutions suchas "INTEGER GENERATED ALWAYS AS expression STORED" are not
+# supported. LISTEN/NOTIFY is not supported.
 test-yugabyte: test-pg.el
 	podman run --rm --name yugabyte \
           --publish 7000:7000 \
@@ -387,6 +389,7 @@ test-immudb: test-pg.el
 
 
 # 20230807 this container fails to run in podman with a permission denied on su
+# (it's trying to read an ssh host key for some strange reason)
 test-greenplum: test-pg.el
 	podman run --rm --name greenplum \
 	  --publish 5433:5433 \
@@ -397,7 +400,7 @@ test-greenplum: test-pg.el
 	podman stop greenplum
 
 
-# An ElasticSearch alternative, built as a PostgreSQL extension.
+# An ElasticSearch alternative, built as a PostgreSQL extension. Works fine with pg.el.
 # https://docs.paradedb.com/introduction#get-started
 #
 # As of 2024-08, the paradedb docker image is built on a Debian PostgreSQL 16.3.
@@ -420,6 +423,8 @@ test-paradedb: test-pg.el
 # Google Spanner emulator
 # See https://github.com/GoogleCloudPlatform/pgadapter/blob/postgresql-dialect/docs/emulator.md
 # https://cloud.google.com/spanner/docs/pgadapter-start#docker
+#
+# Extremely limited PostgreSQL support. Basic types such as int2 are not supported.
 test-spanner: test-pg.el
 	podman run --rm --name spanner \
 	  --publish 5499:5432 \
@@ -428,8 +433,11 @@ test-spanner: test-pg.el
 	PGEL_PORT=5499 PGEL_DATABASE=pgeltestdb $(MAKE) test
 
 
-# YDB by Yandex
+# YDB by Yandex. Last tested 2024-09 version 23.4.
+# 
 # https://ydb.tech/docs/en/postgresql/docker-connect
+#
+# Fairly limited PostgreSQL support currently; for example all tables must have a primary key.
 test-ydb: test-pg.el
 	podman run --rm --name ydb \
 	  --publish 5411:5432 --publish 8765:8765 \
@@ -438,8 +446,8 @@ test-ydb: test-pg.el
 	  -e YDB_EXPERIMENTAL_PG=1 \
 	  -e YDB_USE_IN_MEMORY_PDISKS=true \
 	  -d ghcr.io/ydb-platform/local-ydb:nightly
-	sleep 10
-	PGEL_PORT=5411 $(MAKE) test
+	sleep 5
+	PGEL_PORT=5411 PGEL_DATABASE=local $(MAKE) test
 	podman stop ydb
 
 

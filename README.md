@@ -93,9 +93,10 @@ The following PostgreSQL-compatible databases have been tested:
 
 - [Google Spanner](https://cloud.google.com/spanner): tested with the Spanner emulator (that reports
   itself as `PostgreSQL 14.1`) and the PGAdapter library that enables support for the PostgreSQL
-  wire protocol. Spanner has only limited PostgreSQL compatibility, for example refusing to create
-  tables that do not have a primary key. It also does not for example support the `CHR` and `MD5`
-  functions, row expressions, and WHERE clauses without a FROM clause.
+  wire protocol. Spanner has very limited PostgreSQL compatibility, for example refusing to create
+  tables that do not have a primary key. It does not recognize basic PostgreSQL types such as INT2.
+  It also does not for example support the `CHR` and `MD5` functions, row expressions, and WHERE
+  clauses without a FROM clause.
 
 - [YDB by Yandex](https://ydb.tech/docs/en/postgresql/docker-connect) version 23-4 has very limited
   PostgreSQL compatibility. For example, an empty query string leads to a hung connection, and the
