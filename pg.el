@@ -3,7 +3,7 @@
 ;; Copyright: (C) 1999-2002, 2022-2024  Eric Marsden
 
 ;; Author: Eric Marsden <eric.marsden@risk-engineering.org>
-;; Version: 0.41
+;; Version: 0.42
 ;; Keywords: data comm database postgresql
 ;; URL: https://github.com/emarsden/pg-el
 ;; Package-Requires: ((emacs "28.1") (peg "1.0"))
@@ -28,8 +28,8 @@
 ;; --------
 ;;
 ;; This module lets you access the PostgreSQL object-relational DBMS from Emacs, using its
-;; socket-level frontend/backend protocol. The module is capable of automatic type coercions from a
-;; range of SQL types to the equivalent Emacs Lisp type.
+;; socket-level frontend/backend protocol (the PostgreSQL wire protocol). The module is capable of
+;; automatic type coercions from a range of SQL types to the equivalent Emacs Lisp type.
 ;;
 ;; Supported features:
 ;;
@@ -377,9 +377,9 @@ tag called pg-finished."
 (defconst pg--STARTUP_PASSWORD_MSG  14)
 
 (defun pg--detect-server-variant (con)
-  "Detect the flavour of (semi-compatible) PostgreSQL that we are connected to.
-Uses connection CON. Also run variant-specific configuration actions. The variant
-`can be accessed by pgcon-server-variant'."
+  "Detect the flavour of PostgreSQL that we are connected to.
+Uses connection CON. Also run variant-specific configuration actions.
+The variant can be accessed by pgcon-server-variant'."
   ;; This is the default value, meaning we haven't yet identified a variant based on its backend
   ;; parameter values.
   (when (eq (pgcon-server-variant con) 'postgresql)
@@ -396,9 +396,8 @@ Uses connection CON. Also run variant-specific configuration actions. The varian
              (setf (pgcon-server-variant con) 'greptimedb))
             ((cl-search "implemented by immudb" version)
              (setf (pgcon-server-variant con) 'immudb)))))
-  (pcase (pgcon-server-variant con)
-    (ydb
-     (pg-exec con "SET search_path = public"))))
+  (when (eq 'ydb (pgcon-server-variant con))
+    (pg-exec con "SET search_path = public")))
 
 (defun pg-handle-error-response (con &optional context)
   "Handle an ErrorMessage from the backend we are connected to over CON.

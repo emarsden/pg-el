@@ -1,7 +1,7 @@
 # Changelog
 
 
-## [0.42] - Unreleased
+## [0.42] - 2024-09-21
 
 - Fix serialization and deserialization for `CHARACTER` and `BPCHAR` types for non-ASCII values.
   PostgreSQL stores these as a single octet, an integer < 256. Characters that are below this limit
