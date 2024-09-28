@@ -183,7 +183,9 @@
   (pg-test-result con)
   (unless (pg-test-is-xata con)
     (pg-test-cursors con))
-  (pg-test-bytea con)
+  ;; CrateDB does not support the BYTEA type (!).
+  (unless (pg-test-is-cratedb con)
+    (pg-test-bytea con))
   (pg-test-sequence con)
   (pg-test-array con)
   ;; Yugabyte does not support the "GENERATED ALWAYS AS" type columns
@@ -334,14 +336,16 @@
     (should (eql 1.0e+INF (scalar "SELECT $1::float8" '((1.0e+INF . "float8")))))
     (should (eql 0.0e+NaN (scalar "SELECT $1::float4" '((0.0e+NaN . "float4")))))
     (should (eql 0.0e+NaN (scalar "SELECT $1::float8" '((0.0e+NaN . "float8")))))
-    (should (equal (byte-to-string 0)
-                   (scalar "SELECT $1::bytea" '(("\\000" . "text")))))
-    (should (equal (byte-to-string 0)
-                   (scalar "SELECT $1" `((,(byte-to-string 0) . "bytea")))))
-    (should (equal (decode-hex-string "DEADBEEF")
-                   (scalar "SELECT $1::bytea" '(("\\xDEADBEEF" . "text")))))
-    (should (equal (decode-hex-string "DEADBEEF")
-                   (scalar "SELECT $1" `((,(decode-hex-string "DEADBEEF") . "bytea")))))
+    ;; CrateDB does not support the BYTEA type.
+    (unless (pg-test-is-cratedb con)
+      (should (equal (byte-to-string 0)
+                     (scalar "SELECT $1::bytea" '(("\\000" . "text")))))
+      (should (equal (byte-to-string 0)
+                     (scalar "SELECT $1" `((,(byte-to-string 0) . "bytea")))))
+      (should (equal (decode-hex-string "DEADBEEF")
+                     (scalar "SELECT $1::bytea" '(("\\xDEADBEEF" . "text")))))
+      (should (equal (decode-hex-string "DEADBEEF")
+                     (scalar "SELECT $1" `((,(decode-hex-string "DEADBEEF") . "bytea"))))))
     (let ((json (scalar "SELECT $1::json" '(("[66.7,-42.0,8]" . "text")))))
       (should (approx= 66.7 (aref json 0)))
       (should (approx= -42.0 (aref json 1))))
@@ -441,8 +445,10 @@
     (should (string= "::!!::" (scalar "SELECT '::!!::'::varchar")))
     (should (string= "éàç⟶∪" (scalar "SELECT 'éàç⟶∪'")))
     ;; Note that we need to escape the ?\ character in an elisp string by repeating it.
-    (should (eql 3 (length (scalar "SELECT '\\x123456'::bytea"))))
-    (should (string= (string #x12 #x34 #x56) (scalar "SELECT '\\x123456'::bytea")))
+    ;; CrateDB does not support the BYTEA type.
+    (unless (pg-test-is-cratedb con)
+      (should (eql 3 (length (scalar "SELECT '\\x123456'::bytea"))))
+      (should (string= (string #x12 #x34 #x56) (scalar "SELECT '\\x123456'::bytea"))))
     (unless (pg-test-is-spanner con)
       (should (eql nil (row " SELECT 3 WHERE 1=0"))))
     (unless (or (pg-test-is-cratedb con)
@@ -457,7 +463,12 @@ bar$$")))
     (should (string= "abcdef" (scalar "SELECT 'abc' || 'def'")))
     (should (string= "howdy" (scalar "SELECT 'howdy'::text")))
     (should (string= "gday" (scalar "SELECT 'gday'::varchar(20)")))
-    (should (eql 32 (length (scalar "SELECT sha256('foobles')"))))
+    ;; CockroachDB is returning these byteas in a non-BYTEA format so they are twice as long as
+    ;; expected. CrateDB does not implement the sha256 and sha512 functions.
+    (unless (or (pg-test-is-cockroachdb con)
+                (pg-test-is-cratedb con))
+      (should (eql 32 (length (scalar "SELECT sha256('foobles')"))))
+      (should (eql 64 (length (scalar "SELECT sha512('foobles')")))))
     (unless (pg-test-is-spanner con)
       (should (string= (md5 "foobles") (scalar "SELECT md5('foobles')"))))
     (let* ((res (pg-exec con "SELECT 11 as bizzle, 15 as bazzle"))
@@ -728,7 +739,8 @@ bar$$")))
 
 ;; https://www.postgresql.org/docs/current/datatype-uuid.html
 (defun pg-test-uuid (con)
-  (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0))))
+  (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0)))
+            (scalar/p (sql args) (car (pg-result (pg-exec-prepared con sql args) :tuple 0))))
     (should (string= "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
                      (scalar "SELECT 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'::uuid")))
     (should (string= "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
@@ -742,7 +754,16 @@ bar$$")))
                           "[[:xdigit:]]\\{4\\}-"
                           "[[:xdigit:]]\\{4\\}-"
                           "[[:xdigit:]]\\{12\\}\\>")))
-          (should (string-match re uuid)))))))
+          (should (string-match re uuid)))))
+    (should
+     (string=
+      "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+      (scalar/p "SELECT $1" `(("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11" . "uuid")))))
+    (should
+     (string=
+      ;; PostgreSQL returns the UUId in canonical (lowercase) format.
+      "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+      (scalar/p "SELECT $1" `(("A0EEBC99-9C0B-4EF8-BB6D-6BB9BD380A11" . "uuid")))))))
 
 
 ;; https://www.postgresql.org/docs/current/collation.html
