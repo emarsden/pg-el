@@ -78,6 +78,7 @@
 (require 'bindat)
 (require 'url)
 (require 'peg)
+(require 'rx)
 
 
 (defvar pg-application-name (or (getenv "PGAPPNAME") "pg.el")
@@ -192,6 +193,9 @@ struct.")
     ;; This bizarre (progn ...) syntax is required by EIEIO for historical reasons.
     :initform (progn pg-read-timeout)
     :accessor pgcon-timeout)
+   (connect-timer
+    :initform nil
+    :accessor pgcon-connect-timer)
    (query-log
     :initform nil
     :accessor pgcon-query-log)
@@ -392,7 +396,7 @@ The variant can be accessed by pgcon-server-variant'."
              (setf (pgcon-server-variant con) 'yugabyte))
             ((cl-search "Visual C++ build 1914" version)
              (setf (pgcon-server-variant con) 'questdb))
-            ((cl-search "-greptime-" version)
+            ((cl-search "GreptimeDB" version)
              (setf (pgcon-server-variant con) 'greptimedb))
             ((cl-search "implemented by immudb" version)
              (setf (pgcon-server-variant con) 'immudb)))))
@@ -471,6 +475,8 @@ Uses database DBNAME, user USER and password PASSWORD."
     ;; A zero byte is required as a terminator after the last name/value pair.
     (pg-send-uint con 0 1)
     (pg-flush con))
+  (when (pgcon-connect-timer con)
+    (cancel-timer (pgcon-connect-timer con)))
   (cl-loop
    for c = (pg-read-char con) do
    (cl-case c
@@ -572,7 +578,9 @@ Uses database DBNAME, user USER and password PASSWORD."
                                           collect c))))
               (setf (pgcon-server-version-major con) (cl-parse-integer major-numeric)))
             (when (cl-search "ydb stable" val)
-              (setf (pgcon-server-variant con) 'ydb)))
+              (setf (pgcon-server-variant con) 'ydb))
+            (when (cl-search "-greptimedb-" val)
+              (setf (pgcon-server-variant con) 'greptimedb)))
           ;; Now some somewhat ugly code to detect semi-compatible PostgreSQL variants, to allow us
           ;; to work around some of their behaviour that is incompatible with real PostgreSQL.
           (when (string= "session_authorization" key)
@@ -618,12 +626,14 @@ These are passed to GnuTLS."
                                        :nogreeting t))
          (con (make-pgcon :dbname dbname :process process)))
     (unless (zerop pg-connect-timeout)
-      (run-at-time pg-connect-timeout nil
-                   (lambda ()
-                     (unless (memq (process-status process) '(open listen))
-                       (delete-process process)
-                       (kill-buffer buf)
-                       (signal 'pg-connect-timeout (list "PostgreSQL connection timed out"))))))
+      (setf (pgcon-connect-timer con)
+            (run-at-time pg-connect-timeout nil
+                         (lambda ()
+                           (unless (memq (process-status process) '(open listen))
+                             (delete-process process)
+                             (kill-buffer buf)
+                             (signal 'pg-connect-timeout
+                                     (list "PostgreSQL connection timed out")))))))
     (with-current-buffer buf
       (set-process-coding-system process 'binary 'binary)
       (set-buffer-multibyte nil)
@@ -2420,12 +2430,31 @@ Return nil if the extension could not be set up."
 
 (pg-register-serializer "text" #'pg--serialize-text)
 (pg-register-serializer "varchar" #'pg--serialize-text)
-(pg-register-serializer "uuid" #'pg--serialize-text)
 (pg-register-serializer "xml" #'pg--serialize-text)
 
 (pg-register-serializer "bytea" #'pg--serialize-binary)
 (pg-register-serializer "jsonb" #'pg--serialize-binary)
 (pg-register-textual-serializer "jsonpath" #'pg--serialize-text)
+
+;; Expected format: e313723b-7d52-4c87-bf0f-b7d73d6284fd
+(defun pg--serialize-uuid (uuid _encoding)
+  (let ((uuid-rx (rx string-start
+                     (group (repeat 8 xdigit)) ?-
+                     (group (repeat 4 xdigit)) ?-
+                     (group (repeat 4 xdigit)) ?-
+                     (group (repeat 4 xdigit)) ?-
+                     (group (repeat 12 xdigit))
+                     string-end)))
+    (unless (string-match uuid-rx uuid)
+      (pg-signal-type-error "Expecting a UUID, got %s" uuid)))
+  (let* ((hx (concat (match-string 1 uuid)
+                     (match-string 2 uuid)
+                     (match-string 3 uuid)
+                     (match-string 4 uuid)
+                     (match-string 5 uuid))))
+    (decode-hex-string hx)))
+
+(pg-register-serializer "uuid" #'pg--serialize-uuid)
 
 (pg-register-serializer "bool" (lambda (v _encoding) (if v (string 1) (string 0))))
 
