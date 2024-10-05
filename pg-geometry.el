@@ -18,6 +18,7 @@
 (declare-function pg-register-parser "pg" (type-name parser))
 (declare-function pg-register-textual-serializer "pg" (type-name serializer))
 (declare-function pg-initialize-parsers "pg" (con))
+(declare-function pg-signal-type-error "pg" (fmt &rest arguments))
 
 
 (defun pg--point-parser (str _encoding)
@@ -37,9 +38,12 @@
      (car (peg-run (peg point))))))
 
 (defun pg--serialize-point (point _encoding)
-  (cl-assert (consp point) t)
-  (cl-assert (numberp (car point)) t)
-  (cl-assert (numberp (cdr point)) t)
+  (unless (consp point)
+    (pg-signal-type-error "Expecting a cons, got %s" point))
+  (unless (numberp (car point))
+    (pg-signal-type-error "Expecting a cons of numbers, got %s" point))
+  (unless (numberp (cdr point))
+    (pg-signal-type-error "Expecting a cons of numbers, got %s" point))
   (format "(%s,%s)" (car point) (cdr point)))
 
 ;; A line is represented in Emacs Lisp by a 3-element vector.
@@ -58,10 +62,14 @@
      (car (peg-run (peg line))))))
 
 (defun pg--serialize-line (line _encoding)
-  (cl-assert (vectorp line))
-  (cl-assert (numberp (aref line 0)))
-  (cl-assert (numberp (aref line 1)))
-  (cl-assert (numberp (aref line 2)))
+  (unless (vectorp line)
+    (pg-signal-type-error "Expecting a vector, got %s" line))
+  (unless (numberp (aref line 0))
+    (pg-signal-type-error "Expecting a vector of numbers, got %s" line))
+  (unless (numberp (aref line 1))
+    (pg-signal-type-error "Expecting a vector of numbers, got %s" line))
+  (unless (numberp (aref line 2))
+    (pg-signal-type-error "Expecting a vector of numbers, got %s" line))
   (format "{%f,%f,%f}" (aref line 0) (aref line 1) (aref line 2)))
 
 ;; An lseg is represented in Emacs Lisp by a two-element vector of points.
@@ -83,8 +91,10 @@
 
 ;; [(x1,y1),(x2,y2)]
 (defun pg--serialize-lseg (lseg _encoding)
-  (cl-assert (vectorp lseg))
-  (cl-assert (eql 2 (length lseg)))
+  (unless (vectorp lseg)
+    (pg-signal-type-error "Expecting a vector, got %s" lseg))
+  (unless (eql 2 (length lseg))
+    (pg-signal-type-error "Expecting a vector of length 2, got %s" lseg))
   (format "[(%f,%f),(%f,%f)]"
           (car (aref lseg 0))
           (cdr (aref lseg 0))
@@ -140,7 +150,8 @@
      (car (peg-run (peg path))))))
 
 (defun pg--serialize-path (path encoding)
-  (cl-assert (pg-geometry-path-p path))
+  (unless (pg-geometry-path-p path)
+    (pg-signal-type-error "Expecting a pg-geometry-path object, got %s" path))
   (let ((type (pg-geometry-path-type path))
         (points (pg-geometry-path-points path)))
     (format "%s%s%s"
@@ -169,7 +180,8 @@
      (car (peg-run (peg polygon))))))
 
 (defun pg--serialize-polygon (polygon encoding)
-  (cl-assert (pg-geometry-polygon-p polygon))
+  (unless (pg-geometry-polygon-p polygon)
+    (pg-signal-type-error "Expecting a pg-geometry-polygon object, got %s" polygon))
   (let* ((points (pg-geometry-polygon-points polygon))
          (spoints (mapcar (lambda (p) (pg--serialize-point p encoding)) points)))
     (format "(%s)" (string-join spoints ","))))
