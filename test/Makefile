@@ -1,4 +1,5 @@
 EMACS ?= emacs
+DOCKER ?= podman
 WORKDIR := $(shell mktemp -d)
 
 # export DEPS_DIR = $(shell realpath .deps)
@@ -57,7 +58,7 @@ test-pgvector: test-pgvector.el install-deps
 # PostgreSQL.
 test-emacs-dev: test-pg.el
 	cp install-deps.el load-deps.el ../pg.el ../pg-geometry.el ../pg-gis.el test-pg.el ${WORKDIR}
-	podman run --rm -it \
+	${DOCKER} run --rm -it \
 	   -v ${WORKDIR}:/tmp \
 	   -e DEPS_DIR=/tmp/deps \
 	   -e PGEL_HOSTNAME=10.0.2.2 \
@@ -67,7 +68,7 @@ test-emacs-dev: test-pg.el
 
 test-emacs28: test-pg.el
 	cp install-deps.el load-deps.el ../pg.el ../pg-geometry.el ../pg-gis.el test-pg.el ${WORKDIR}
-	podman run --rm -it \
+	${DOCKER} run --rm -it \
 	   -v ${WORKDIR}:/tmp \
 	   -e DEPS_DIR=/tmp/deps \
 	   -e PGEL_HOSTNAME=10.0.2.2 \
@@ -79,7 +80,7 @@ test-emacs28: test-pg.el
 # this doesn't work.
 test-emacs27: test-pg.el
 	cp install-deps.el load-deps.el ../pg.el test-pg.el ${WORKDIR}
-	podman run --rm -it \
+	${DOCKER} run --rm -it \
 	   -v ${WORKDIR}:/tmp \
 	   -e DEPS_DIR=/tmp/deps \
 	   -e PGEL_HOSTNAME=10.0.2.2 \
@@ -92,7 +93,7 @@ test-emacs27: test-pg.el
 # protocol (the pg-exec function) should work fine.
 test-emacs26: test-pg.el
 	cp install-deps.el load-deps.el ../pg.el test-pg.el ${WORKDIR}
-	podman run --rm -it \
+	${DOCKER} run --rm -it \
 	   -v ${WORKDIR}:/tmp \
 	   -e DEPS_DIR=/tmp/deps \
 	   -e PGEL_HOSTNAME=10.0.2.2 \
@@ -106,7 +107,7 @@ test-emacs26: test-pg.el
 # authentication for local connections.
 test-emacs25: test-pg.el
 	cp ../pg.el test-pg.el ${WORKDIR}
-	podman run --rm -it \
+	${DOCKER} run --rm -it \
 	   -v ${WORKDIR}:/tmp \
 	   -e DEPS_DIR=/tmp/deps \
 	   -e PGEL_HOSTNAME=10.0.2.2 \
@@ -115,7 +116,7 @@ test-emacs25: test-pg.el
 	   ${EMACS} -Q --batch /tmp/pg.el -l /tmp/install-deps.el -l /tmp/load-deps.el -l /tmp/pg.el -l /tmp/test-pg.el -f pg-test
 
 test-postgresql17: test-pg.el
-	podman run --rm --name pgsql \
+	${DOCKER} run --rm --name pgsql \
 	   --publish 5426:5426 \
 	   -e POSTGRES_DB=pgeltestdb \
 	   -e POSTGRES_USER=pgeltestuser \
@@ -124,10 +125,10 @@ test-postgresql17: test-pg.el
 	   -d docker.io/library/postgres:17-alpine
 	sleep 5
 	PGEL_PORT=5426 $(MAKE) test
-	podman stop pgsql
+	${DOCKER} stop pgsql
 
 test-postgresql16: test-pg.el
-	podman run --rm --name pgsql \
+	${DOCKER} run --rm --name pgsql \
 	   --publish 5416:5416 \
 	   -e POSTGRES_DB=pgeltestdb \
 	   -e POSTGRES_USER=pgeltestuser \
@@ -136,10 +137,10 @@ test-postgresql16: test-pg.el
 	   -d docker.io/library/postgres:16.3-bullseye
 	sleep 5
 	PGEL_PORT=5416 $(MAKE) test
-	podman stop pgsql
+	${DOCKER} stop pgsql
 
 test-postgresql14: test-pg.el
-	podman run --rm --name pgsql \
+	${DOCKER} run --rm --name pgsql \
 	   --publish 5439:5439 \
 	   -e POSTGRES_DB=pgeltestdb \
 	   -e POSTGRES_USER=pgeltestuser \
@@ -148,10 +149,10 @@ test-postgresql14: test-pg.el
 	   -d docker.io/library/postgres:14
 	sleep 5
 	PGEL_PORT=5439 $(MAKE) test
-	podman stop pgsql
+	${DOCKER} stop pgsql
 
 test-postgresql13: test-pg.el
-	podman run --rm --name pgsql \
+	${DOCKER} run --rm --name pgsql \
 	   --publish 5439:5439 \
 	   -e POSTGRES_DB=pgeltestdb \
 	   -e POSTGRES_USER=pgeltestuser \
@@ -160,10 +161,10 @@ test-postgresql13: test-pg.el
 	   -d docker.io/library/postgres:13-alpine
 	sleep 5
 	PGEL_PORT=5439 $(MAKE) test
-	podman stop pgsql
+	${DOCKER} stop pgsql
 
 test-postgresql12: test-pg.el
-	podman run --rm --name pgsql \
+	${DOCKER} run --rm --name pgsql \
 	   --publish 5439:5439 \
 	   -e POSTGRES_DB=pgeltestdb \
 	   -e POSTGRES_USER=pgeltestuser \
@@ -172,10 +173,10 @@ test-postgresql12: test-pg.el
 	   -d docker.io/library/postgres:12-alpine
 	sleep 5
 	PGEL_PORT=5439 $(MAKE) test
-	podman stop pgsql
+	${DOCKER} stop pgsql
 
 test-postgresql11: test-pg.el
-	podman run --rm --name pgsql \
+	${DOCKER} run --rm --name pgsql \
 	   --publish 5437:5437 \
 	   -e POSTGRES_DB=pgeltestdb \
 	   -e POSTGRES_USER=pgeltestuser \
@@ -184,7 +185,7 @@ test-postgresql11: test-pg.el
 	   -d docker.io/library/postgres:11-alpine
 	sleep 5
 	PGEL_PORT=5437 $(MAKE) test
-	podman stop pgsql
+	${DOCKER} stop pgsql
 
 
 # EDB with a Red Hat Universal Base Image. This defaults to an SQL_ASCII client-encoding unless we
@@ -192,7 +193,7 @@ test-postgresql11: test-pg.el
 #
 # https://github.com/EnterpriseDB/docker-postgresql
 test-enterprisedb: test-pg.el
-	podman run --rm --name edb \
+	${DOCKER} run --rm --name edb \
 	   --publish 5366:5366 \
 	   -e LANG=en_US.UTF8 \
 	   -e LC_CTYPE=en_US.UTF8 \
@@ -202,7 +203,7 @@ test-enterprisedb: test-pg.el
 	   -e PGPORT=5366 \
 	   -d ghcr.io/enterprisedb/postgresql:16
 	PGEL_PORT=5366 $(MAKE) test
-	podman stop edb
+	${DOCKER} stop edb
 
 
 # Tests with a PostgreSQL server configured to only accept clients that present a CA-signed certificate.
@@ -251,10 +252,10 @@ test-certificates: test-pg.el install-deps
 	   -CAcreateserial -out ${WORKDIR}/client.crt
 	chmod 600 ${WORKDIR}/server.key
 	ls -l ${WORKDIR}
-	podman volume create pgcerts
+	${DOCKER} volume create pgcerts
 	tar cf ${WORKDIR}/certs.tar --directory=${WORKDIR} server.crt server.key root.crt
-	podman volume import pgcerts ${WORKDIR}/certs.tar
-	podman run --rm --name pgsqltls \
+	${DOCKER} volume import pgcerts ${WORKDIR}/certs.tar
+	${DOCKER} run --rm --name pgsqltls \
 	   -v pgcerts:/certs:U \
 	   --publish 5488:5488 \
 	   -e POSTGRESQL_PORT_NUMBER=5488 \
@@ -269,14 +270,16 @@ test-certificates: test-pg.el install-deps
 	   -d docker.io/bitnami/postgresql:latest
 	sleep 5
 	PGEL_CLIENT_CERT=${WORKDIR}/client.crt PGEL_CLIENT_CERT_KEY=${WORKDIR}/client.key PGEL_PORT=5488 ${EMACS} -Q --batch -L .. -L . -l load-deps.el -l ../pg.el -l test-pg.el -f pg-test-client-cert
-	podman stop pgsqltls
+	${DOCKER} stop pgsqltls
 	sleep 2
-	podman volume rm pgcerts
+	${DOCKER} volume rm pgcerts
 
 
 # Supabase (https://supabase.com) provide hosted PostgreSQL instances with convenient web
 # dashboards, management APIs and integrations with authentication libraries. They have a free tier.
-# As of 2023-08, they are running PostgreSQL 15.1 on Aarch64. 
+# As of 2023-08, they are running PostgreSQL 15.1 on Aarch64. As of 2024-09, their TLS setup is not
+# compatible with the GnuTLS settings used by the Emacs TLS support, and Emacs is not able to
+# connect.
 test-supabase: test-pg.el
 	$(MAKE) test-tls
 
@@ -294,7 +297,7 @@ test-xata: test-pg.el
 
 # https://docs.timescale.com/self-hosted/latest/install/installation-docker/
 test-timescale: test-pg.el
-	podman run --rm --name timescale \
+	${DOCKER} run --rm --name timescale \
 	   --publish 5981:5981 \
 	   -e POSTGRES_DB=pgeltestdb \
 	   -e POSTGRES_USER=pgeltestuser \
@@ -304,13 +307,13 @@ test-timescale: test-pg.el
 	sleep 5
 	PGEL_PORT=5981 $(MAKE) test
 	PGEL_PORT=5981 $(MAKE) test-pgvector
-	podman stop timescale
+	${DOCKER} stop timescale
 
 
 # https://docs.ivorysql.org/en/ivorysql-doc/v3.4/v3.4/6#Docker-installation
 # An Oracle-compatible flavour of PostgreSQL.
 test-ivorydb: test-pg.el
-	podman run --rm --name ivorydb \
+	${DOCKER} run --rm --name ivorydb \
 	  --publish 5437:5432 \
 	  -e LANG=C.UTF8 \
 	  -e LC_CTYPE=C.UTF8 \
@@ -320,7 +323,26 @@ test-ivorydb: test-pg.el
 	  -d docker.io/ivorysql/ivorysql:3.4-ubi8
 	sleep 5
 	PGEL_PORT=5437 $(MAKE) test
-	podman stop ivorydb
+	${DOCKER} stop ivorydb
+
+
+# Test pgbouncer proxying to our local PostgreSQL (in session pooling mode, so that functionality
+# such as LISTEN works).
+#
+# https://github.com/edoburu/docker-pgbouncer
+test-pgbouncer: test-pg.el
+	${DOCKER} run --rm --name pgbouncer \
+	  --net host \
+	  -e PGBOUNCER_PORT=6432 \
+	  -e PGBOUNCER_DATABASE=pgeltestdb \
+	  -e POSTGRESQL_USERNAME=pgeltestuser \
+	  -e POSTGRESQL_PASSWORD=pgeltest \
+	  -e POSTGRESQL_HOST=localhost \
+	  -e POSTGRESQL_PORT=5432 \
+	  -d docker.io/bitnami/pgbouncer:latest
+	sleep 5
+	PGEL_PORT=6432 $(MAKE) test
+	${DOCKER} stop pgbouncer
 
 
 # Last tested 2024-09 with cratedb v5.8.3. CrateDB uses a default database name of "doc" that we
@@ -331,14 +353,14 @@ test-ivorydb: test-pg.el
 # https://hub.docker.com/_/crate/
 # https://cratedb.com/docs/guide/install/container/docker.html
 test-cratedb: test-pg.el
-	podman run --rm --name cratedb \
+	${DOCKER} run --rm --name cratedb \
           --publish 4200:4200 \
           --publish 5789:5789 \
           -e CRATE_HEAP_SIZE=1g \
           -d docker.io/crate -Cdiscovery.type=single-node -Cpsql.port=5789
 	sleep 5
 	PGEL_USER=crate PGEL_DATABASE=postgres PGEL_PORT=5789 $(MAKE) test
-	podman stop cratedb
+	${DOCKER} stop cratedb
 
 # In 2024-09 version 24.2 of CockroachDB doesn't get very far through the tests, with an internal
 # error generated by our query for pg-table-owner, and failing on the boolean vector syntax
@@ -347,13 +369,13 @@ test-cratedb: test-pg.el
 # Still affected as of 2024-09 by the panic bug https://github.com/cockroachdb/cockroach/issues/104009
 # which was reported in May 2023!
 test-cockroachdb: test-pg.el
-	podman run --rm --name cockroachdb \
+	${DOCKER} run --rm --name cockroachdb \
 	   -v /dev/log:/dev/log \
 	   --publish 26257:26257 \
 	   -d docker.io/cockroachdb/cockroach start-single-node --insecure
 	sleep 5
 	PGEL_DATABASE=postgres PGEL_USER=root PGEL_PASSWORD="" PGEL_PORT=26257 $(MAKE) test
-	podman stop cockroachdb
+	${DOCKER} stop cockroachdb
 
 
 # The current version of QuestDB (based on PostgreSQL 12.3) doesn't get very far through the tests;
@@ -362,7 +384,7 @@ test-cockroachdb: test-pg.el
 #
 # https://questdb.io/docs/configuration/
 test-questdb: test-pg.el
-	podman run --rm --name questdb \
+	${DOCKER} run --rm --name questdb \
           --publish 8812:8812 \
           --publish 9000:9000 \
           -e QDB_PG_USER=pgeltestuser \
@@ -370,7 +392,7 @@ test-questdb: test-pg.el
 	  -d docker.io/questdb/questdb
 	sleep 5
 	PGEL_HOSTNAME=127.0.0.1 PGEL_DATABASE=postgres PGEL_USER=pgeltestuser PGEL_PASSWORD=pgeltest PGEL_PORT=8812 $(MAKE) test
-	podman stop questdb
+	${DOCKER} stop questdb
 
 
 # Tested 2024-09, Yugabyte 2.23 is based on PostgreSQL 11.2. This works very well, including the
@@ -378,7 +400,7 @@ test-questdb: test-pg.el
 # Some more recent SQL evolutions suchas "INTEGER GENERATED ALWAYS AS expression STORED" are not
 # supported. LISTEN/NOTIFY is not supported.
 test-yugabyte: test-pg.el
-	podman run --rm --name yugabyte \
+	${DOCKER} run --rm --name yugabyte \
           --publish 7000:7000 \
           --publish 9000:9000 \
           --publish 15433:15433 \
@@ -390,7 +412,7 @@ test-yugabyte: test-pg.el
 	  --background=false
 	sleep 10
 	PGEL_DATABASE=yugabyte PGEL_USER=yugabyte PGEL_PASSWORD="" PGEL_PORT=5433 $(MAKE) test
-	podman stop yugabyte
+	${DOCKER} stop yugabyte
 
 
 # https://docs.immudb.io/master/running/download.html
@@ -403,29 +425,29 @@ test-yugabyte: test-pg.el
 #   psql "sslmode=disable host=localhost port=5667 dbname=pgeltestdb user=pgeltestuser password=pgeltest"
 # though few SQL commands work.
 test-immudb: test-pg.el
-	podman run --rm --name immudb \
+	${DOCKER} run --rm --name immudb \
 	  --net host \
           -d docker.io/codenotary/immudb:latest \
             --pgsql-server --pgsql-server-port 5667 \
 	    --admin-password pgeltest --force-admin-password
 	sleep 2
-	echo pgeltest|podman exec -ti immudb immuadmin login immudb
-	podman exec -ti immudb immuadmin database create pgeltestdb
-	expect -c 'spawn podman exec -ti immudb immuadmin user create pgeltestuser readwrite pgeltestdb;sleep 0.1;expect "Choose a password for";sleep 0.1;send "pgeltest\r";expect "continue with your password instead.*Y/n";sleep 0.1;send "Y\r";expect "Confirm password";sleep 0.1;send "pgeltest\r";sleep 0.1;exit'
+	echo pgeltest|${DOCKER} exec -ti immudb immuadmin login immudb
+	${DOCKER} exec -ti immudb immuadmin database create pgeltestdb
+	expect -c 'spawn ${DOCKER} exec -ti immudb immuadmin user create pgeltestuser readwrite pgeltestdb;sleep 0.1;expect "Choose a password for";sleep 0.1;send "pgeltest\r";expect "continue with your password instead.*Y/n";sleep 0.1;send "Y\r";expect "Confirm password";sleep 0.1;send "pgeltest\r";sleep 0.1;exit'
 	PGEL_DATABASE=pgeltestdb PGEL_USER=pgeltestuser PGEL_PASSWORD=pgeltest PGEL_PORT=5667 $(MAKE) test
-	podman stop immudb
+	${DOCKER} stop immudb
 
 
 # 20230807 this container fails to run in podman with a permission denied on su
 # (it's trying to read an ssh host key for some strange reason)
 test-greenplum: test-pg.el
-	podman run --rm --name greenplum \
+	${DOCKER} run --rm --name greenplum \
 	  --publish 5433:5433 \
 	  -e PGPORT=5433 \
 	  -d docker.io/projectairws/greenplum:latest
 	sleep 5
 	PGEL_DATABASE=postgres PGEL_USER=gpadmin PGEL_PASSWORD="greenplum" PGEL_PORT=5433 $(MAKE) test
-	podman stop greenplum
+	${DOCKER} stop greenplum
 
 
 # An ElasticSearch alternative, built as a PostgreSQL extension. Works fine with pg.el.
@@ -433,7 +455,7 @@ test-greenplum: test-pg.el
 #
 # As of 2024-10, the paradedb docker image is built on a Debian PostgreSQL 16.4.
 test-paradedb: test-pg.el
-	podman run --rm --name paradedb \
+	${DOCKER} run --rm --name paradedb \
 	  --publish 5441:5441 \
           -e POSTGRES_DB=pgeltestdb \
           -e POSTGRESQL_PORT_NUMBER=5441 \
@@ -445,7 +467,7 @@ test-paradedb: test-pg.el
           -d docker.io/paradedb/paradedb:latest
 	sleep 5
 	PGEL_PORT=5441 $(MAKE) test
-	podman stop paradedb
+	${DOCKER} stop paradedb
 
 
 # Google Spanner emulator
@@ -454,11 +476,12 @@ test-paradedb: test-pg.el
 #
 # Extremely limited PostgreSQL support. Basic types such as int2 are not supported.
 test-spanner: test-pg.el
-	podman run --rm --name spanner \
+	${DOCKER} run --rm --name spanner \
 	  --publish 5499:5432 \
 	 -d gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator -d pgeltestdb
 	sleep 2
 	PGEL_PORT=5499 PGEL_DATABASE=pgeltestdb $(MAKE) test
+	${DOCKER} stop spanner
 
 
 # YDB by Yandex. Last tested 2024-09 version 23.4.
@@ -467,7 +490,7 @@ test-spanner: test-pg.el
 #
 # Fairly limited PostgreSQL support currently; for example all tables must have a primary key.
 test-ydb: test-pg.el
-	podman run --rm --name ydb \
+	${DOCKER} run --rm --name ydb \
 	  --publish 5411:5432 --publish 8765:8765 \
 	  -e POSTGRES_USER=pgeltestuser \
 	  -e POSTGRES_PASSWORD=pgeltest \
@@ -476,7 +499,7 @@ test-ydb: test-pg.el
 	  -d ghcr.io/ydb-platform/local-ydb:nightly
 	sleep 5
 	PGEL_PORT=5411 PGEL_DATABASE=local $(MAKE) test
-	podman stop ydb
+	${DOCKER} stop ydb
 
 
 # Tested 2024-09 with version 24.8. Very limited PostgreSQL support: there is no pg_type table so we
@@ -485,7 +508,7 @@ test-ydb: test-pg.el
 # reset (!).
 test-clickhouse: test-pg.el
 	echo '<clickhouse><postgresql_port>5491</postgresql_port><core_dump><size_limit>0</size_limit></core_dump></clickhouse>' > /tmp/pgel-config.xml
-	podman run --rm --name clickhouse \
+	${DOCKER} run --rm --name clickhouse \
 	   --ulimit nofile=62144:62144 --ulimit core=234567:234567 \
 	   -v /tmp/pgel-config.xml:/etc/clickhouse-server/config.d/pgel-config.xml \
 	   --publish 5491:5491 \
@@ -496,7 +519,7 @@ test-clickhouse: test-pg.el
 	   -d docker.io/clickhouse/clickhouse-server
 	sleep 5
 	PGEL_PORT=5491 $(MAKE) test
-	podman stop clickhouse
+	${DOCKER} stop clickhouse
 
 
 # https://docs.greptime.com/getting-started/installation/greptimedb-standalone
@@ -505,7 +528,7 @@ test-clickhouse: test-pg.el
 # protocol, but the names it uses for types in the pg_catalog.pg_types table are not the sames as
 # PostgreSQL, so our parsing machinery does not work (we see 42 returned as "42").
 test-greptimedb: test-pg.el
-	podman run --rm --name greptimedb \
+	${DOCKER} run --rm --name greptimedb \
 	  --publish 127.0.0.1:4003:4003 \
 	  -d docker.io/greptime/greptimedb:latest standalone start \
 	  --http-addr 0.0.0.0:4000 \
@@ -514,7 +537,7 @@ test-greptimedb: test-pg.el
 	  --postgres-addr 0.0.0.0:4003
 	sleep 5
 	PGEL_PORT=4003 PGEL_DATABASE=public $(MAKE) test
-	podman stop greptimedb
+	${DOCKER} stop greptimedb
 
 
 # Create and populate a new database with information concerning works by Shakespeare.
