@@ -1,6 +1,20 @@
 # Changelog
 
 
+## [0.43] - Unreleased
+
+- Fix serialization for `UUID` types in prepared statements.
+
+- The serialization of key/value pairs in an `HSTORE` object now respects the client encoding, so
+  will work correctly with non-ASCII characters.
+
+- Improved error reporting in the pg-geometry library (signalling a subclass of pg-error instead of
+  triggering an assertion).
+
+- Additional checks on connection startup to identify the PostgreSQL variant IvorySQL (currently a
+  very compatible variant with additional Oracle compatibility functions).
+
+
 ## [0.42] - 2024-09-21
 
 - Fix serialization and deserialization for `CHARACTER` and `BPCHAR` types for non-ASCII values.

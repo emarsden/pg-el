@@ -588,6 +588,8 @@ Uses database DBNAME, user USER and password PASSWORD."
               (setf (pgcon-server-variant con) 'xata))
             (when (string= "PGAdapter" val)
               (setf (pgcon-server-variant con) 'spanner)))
+          (when (eql 0 (cl-search "ivorysql." key))
+            (setf (pgcon-server-variant con) 'ivorydb))
           (dolist (handler pg-parameter-change-functions)
             (funcall handler con key val)))))
 
@@ -1118,13 +1120,6 @@ and the keyword WHAT should be one of
     (insert ?\")
     (buffer-string)))
 
-(defun pg--escape-identifier-unquoted (str)
-  (with-temp-buffer
-    (cl-loop for c across str
-             do (when (eql c ?\") (insert ?\"))
-             (insert c))
-    (buffer-string)))
-
 ;; Similar to libpq function PQescapeIdentifier.
 ;; See https://www.postgresql.org/docs/current/libpq-exec.html#LIBPQ-EXEC-ESCAPE-STRING
 ;;
@@ -1133,15 +1128,6 @@ and the keyword WHAT should be one of
 ;; query, using the prepare/bind/execute extended query message flow in PostgreSQL). You might need
 ;; this for example when specifying the name of a column in a SELECT statement. See function
 ;; `pg-exec-prepared' which should be used when possible instead of relying on this function.
-;;
-;; This function is suitable for escaping and quoting identifiers that are to be inserted into SQL
-;; DDL statements, where it's not possible to use a prepared statement (for example "SELECT %s FROM
-;; tablename" or "SELECT * FROM %s", where a $1 parameter cannot be used). This function escapes ?\"
-;; characters inside the identifier, and also surrounds it with \?" quote characters.
-;;
-;; This function is not suitable for identifiers sent as parameters in a prepared statement: use
-;; pg--escape-identifier-unquoted instead. (PostgreSQL does currently tolerate the unnecessary
-;; surrounding quote characters, but they really should not be present.)
 (defun pg-escape-identifier (identifier)
   "Escape and quote an SQL identifier, such as a table, column, or function name.
 IDENTIFIER can be a string or a pg-qualified-name (including a
@@ -1158,26 +1144,6 @@ of this function whenever possible."
              (pg--escape-identifier-simple name))))
         (t
          (pg--escape-identifier-simple identifier))))
-
-;; This escapes ?\" characters inside the string, but unlike pg--escape-identifier-simple does not
-;; include the leading and trailing ?\" characters. For this reason, it is suitable for use on a
-;; non-schema-qualified identifier that is to be sent as a text parameter in a prepared statement.
-(defun pg-escape-identifier-unquoted (identifier)
-  "Escape an SQL identifier, such as a table, column, or function name.
-IDENTIFIER can be a string or a pg-qualified-name (including a
-schema specifier). Similar to libpq function PQescapeIdentifier.
-You should use prepared statements (`pg-exec-prepared') instead
-of this function whenever possible."
-  (cond ((pg-qualified-name-p identifier)
-         (let ((schema (pg-qualified-name-schema identifier))
-               (name (pg-qualified-name-name identifier)))
-           (if schema
-               (format "%s.%s"
-                       (pg--escape-identifier-simple schema)
-                       (pg--escape-identifier-simple name))
-             (pg--escape-identifier-unquoted name))))
-        (t
-         (pg--escape-identifier-unquoted identifier))))
 
 (defun pg-escape-literal (string)
   "Escape STRING for use within an SQL command.
