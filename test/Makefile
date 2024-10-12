@@ -20,8 +20,8 @@ test-interactive: test-pg.el install-deps
 	${EMACS} -Q -L .. -L . -l load-deps.el ../pg.el \
 	   -l pg.el -l pg-geometry.el -l pg-gis.el -l test-pg.el -f pg-test
 
-supa: install-deps
-	${EMACS} -Q --batch -L .. -L . -l load-deps.el -l ../pg.el -l supabase.el -f test
+supabase: install-deps
+	${EMACS} -Q --batch -L .. -L . -l load-deps.el -l ../pg.el -l supabase.el -f test-supabase
 
 # We are currently seeing read timeous with xata.io
 xata: install-deps
@@ -34,9 +34,17 @@ xata: install-deps
 test-tls: test-pg.el install-deps
 	${EMACS} -Q --batch -L .. -L . -l load-deps.el -l ../pg.el -l test-pg.el -f pg-test-tls
 
+test-tls-direct: test-pg.el install-deps
+	${EMACS} -Q --batch -L .. -L . -l load-deps.el -l ../pg.el -l test-pg.el -f pg-test-tls-direct
+
+
 # Run tests over a local Unix socket connection to PostgreSQL.
 test-local: test-pg.el install-deps
 	${EMACS} -Q --batch -L .. -L . -l load-deps.el -l ../pg.el -l test-pg.el -f pg-test-local
+
+test-ebiacuk: test-pg.el install-deps
+	${EMACS} -Q --batch -L .. -L . -l load-deps.el -l ../pg.el -l test-pg.el -f pg-test-ebiacuk
+
 
 test-connections: test-pg.el install-deps
 	${EMACS} -Q --batch -L .. -L . -l load-deps.el -l ../pg.el -l test-pg.el -f pg-connection-tests
@@ -299,6 +307,22 @@ test-timescale: test-pg.el
 	podman stop timescale
 
 
+# https://docs.ivorysql.org/en/ivorysql-doc/v3.4/v3.4/6#Docker-installation
+# An Oracle-compatible flavour of PostgreSQL.
+test-ivorydb: test-pg.el
+	podman run --rm --name ivorydb \
+	  --publish 5437:5432 \
+	  -e LANG=C.UTF8 \
+	  -e LC_CTYPE=C.UTF8 \
+	  -e IVORYSQL_DB=pgeltestdb \
+	  -e IVORYSQL_USER=pgeltestuser \
+	  -e IVORYSQL_PASSWORD=pgeltest \
+	  -d docker.io/ivorysql/ivorysql:3.4-ubi8
+	sleep 5
+	PGEL_PORT=5437 $(MAKE) test
+	podman stop ivorydb
+
+
 # Last tested 2024-09 with cratedb v5.8.3. CrateDB uses a default database name of "doc" that we
 # can't set via Docker. Doesn't get very far through the tests: CrateDB doesn't accept a query which
 # only contains an SQL comment, and doesn't implement the BYTEA, JSON, JSONB and HSTORE types,
@@ -407,7 +431,7 @@ test-greenplum: test-pg.el
 # An ElasticSearch alternative, built as a PostgreSQL extension. Works fine with pg.el.
 # https://docs.paradedb.com/introduction#get-started
 #
-# As of 2024-08, the paradedb docker image is built on a Debian PostgreSQL 16.3.
+# As of 2024-10, the paradedb docker image is built on a Debian PostgreSQL 16.4.
 test-paradedb: test-pg.el
 	podman run --rm --name paradedb \
 	  --publish 5441:5441 \
@@ -479,7 +503,7 @@ test-clickhouse: test-pg.el
 #
 # Tested 2024-09 version 0.9.3. This database implements quite a lot of the PostgreSQL wire
 # protocol, but the names it uses for types in the pg_catalog.pg_types table are not the sames as
-# PostgreSQL, so our parsing machinery does not work.
+# PostgreSQL, so our parsing machinery does not work (we see 42 returned as "42").
 test-greptimedb: test-pg.el
 	podman run --rm --name greptimedb \
 	  --publish 127.0.0.1:4003:4003 \

@@ -153,6 +153,12 @@
   (pg-enable-query-log con)
   (message "Backend major-version is %s" (pgcon-server-version-major con))
   (message "Detected backend variant: %s" (pgcon-server-variant con))
+  (let* ((res (pg-exec con "SELECT pg_catalog.current_setting('ssl_library')"))
+         (row (pg-result res :tuple 0)))
+    (message "Backend compiled with SSL library %s" (cl-first row)))
+  (let* ((res (pg-exec con "SHOW ssl"))
+         (row (pg-result res :tuple 0)))
+    (message "PostgreSQL connection TLS: %s" (cl-first row)))
   (message "Testing basic type parsing")
   (pg-test-basic con)
   (message "Testing insertions...")
@@ -272,6 +278,17 @@
        (message "Running pg.el tests in %s against backend %s"
                 (version) (pg-backend-version conn))
        (pg-run-tests conn))))
+
+;; Simple connect and list tables test on a public RNAcentral PostgreSQL server hosted at ebi.ac.uk, see
+;;  https://rnacentral.org/help/public-database.
+(defun pg-test-ebiacuk ()
+  (let ((con (pg-connect/uri "postgres://reader:NWDMCE5xdipIjRrp@hh-pgsql-public.ebi.ac.uk/pfmegrnargs")))
+    (message "Connected to %s, %s"
+             (cl-prin1-to-string con)
+             (pg-backend-version con))
+    (dolist (table (pg-tables con))
+      (message "  Table: %s" table))))
+
 
 
 (defun pg-test-prepared (con)
@@ -1385,7 +1402,6 @@ bar$$")))
                        "BOX3D(1 2 3,5 6 5)"))
       (should (string= (scalar "SELECT Box3D(ST_GeomFromEWKT('CIRCULARSTRING(220268 150415 1,220227 150505 1,220227 150406 1)'))")
                        "BOX3D(220186.99512189245 150406 1,220288.24878054656 150506.12682932706 1)")))))
-
 
 ;; https://www.postgresql.org/docs/current/sql-copy.html
 (defun pg-test-copy (con)
