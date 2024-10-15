@@ -237,7 +237,7 @@
 (defun pg-test-note-param-change (con name value)
   (message "PG> backend parameter %s=%s" name value)
   (when (and (string= "session_authorization" name)
-             (string= "xata" (cl-subseq value 0 4)))
+             (string-prefix-p "xata" value))
     ;; This is a rather rude and ugly way of hiding some private information in the PostgreSQL
     ;; connection struct.
     (puthash "is-xata-p" t (pgcon-prepared-statement-cache con)))
@@ -1095,7 +1095,18 @@ bar$$")))
              (query "$.time_tz(2)")
              (res (pg-exec-prepared con sql `((,tstamp . "text") (,query . "jsonpath"))))
              (row (pg-result res :tuple 0)))
-        (should (string= "12:34:56.79+05:30" (cl-first row)))))))
+        (should (string= "12:34:56.79+05:30" (cl-first row))))
+      ;; The json_array function is new in PostgreSQL 17.0
+      (let* ((sql "SELECT json_array('pg-el', NULL, 42)")
+	     (res (pg-exec con sql))
+	     (row (pg-result res :tuple 0)))
+	;; Default is to drop nulls in the input list
+	(should (equal (vector "pg-el" 42) (cl-first row))))
+      (let* ((sql "SELECT json_array('pg-el', NULL, 42 NULL ON NULL)")
+	     (res (pg-exec con sql))
+	     (row (pg-result res :tuple 0)))
+	;; Default is to drop nulls in the input list
+	(should (equal (vector "pg-el" :null 42) (cl-first row)))))))
 
 
 
