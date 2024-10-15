@@ -5,7 +5,7 @@
 [![test-pgv16](https://github.com/emarsden/pg-el/workflows/test-pgv16/badge.svg)](https://github.com/emarsden/pg-el/actions/)
 [![Documentation build](https://img.shields.io/github/actions/workflow/status/emarsden/pg-el/mdbook.yml?label=Documentation)](https://github.com/emarsden/pg-el/actions/)
 
-This library lets you access the PostgreSQL 🐘 object-relational DBMS from Emacs, using its
+This library lets you access the PostgreSQL 🐘 database management system from Emacs, using its
 network-level frontend/backend “wire” protocol. The module is capable of automatic type coercions from a
 range of SQL types to the equivalent Emacs Lisp type.
 
@@ -41,7 +41,7 @@ This library has support for:
 - Connections over TCP or (on Unix machines) a local Unix socket.
 
 
-Tested **PostgreSQL versions**: The code has been tested with versions 17rc1, 16.4, 15.4, 13.8,
+Tested **PostgreSQL versions**: The code has been tested with versions 17.0, 16.4, 15.4, 13.8,
 11.17, and 10.22 on Linux. It is also tested via GitHub actions on MacOS and Windows. This library
 also works, more or less, against other “PostgreSQL-compatible” databases. There are four main points
 where this compatibility may be problematic: 
