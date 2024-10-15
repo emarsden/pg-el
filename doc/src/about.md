@@ -4,10 +4,9 @@
 [![MELPA](https://melpa.org/packages/pg-badge.svg)](https://melpa.org/#/pg) 
 [![test-pgv16](https://github.com/emarsden/pg-el/workflows/test-pgv16/badge.svg)](https://github.com/emarsden/pg-el/workflows/test-pgv16/badge.svg)
 
-This Emacs Lisp library lets you access the [PostgreSQL](https://www.postgresql.org/) 🐘
-object-relational DBMS from Emacs, using its network-level frontend/backend protocol. The library is
-capable of automatic type coercions from a range of SQL types to and from the equivalent Emacs Lisp
-type.
+This Emacs Lisp library lets you access the [PostgreSQL](https://www.postgresql.org/) 🐘 database
+from Emacs, using its network-level frontend/backend protocol. The library is capable of automatic
+type coercions from a range of SQL types to and from the equivalent Emacs Lisp type.
 
 This libary will be useful for developers, rather than end users. If you’re looking for an
 Emacs-based browser/editor for PostgreSQL, you may be interested in
@@ -39,7 +38,7 @@ PostgreSQL or a compatible database.
 - Connections over TCP or (on Unix machines) a local Unix socket.
 ~~~
 
-The code has been tested with **PostgreSQL versions** 17beta2, 16.3, 15.4, 13.8, 11.17, and 10.22 on
+The code has been tested with **PostgreSQL versions** 17.0, 16.3, 15.4, 13.8, 11.17, and 10.22 on
 Linux. It is also tested via GitHub actions on MacOS and Microsoft Windows. This library also works,
 to a variable extent, against other databases that implement the PostgreSQL wire protocol:
 
