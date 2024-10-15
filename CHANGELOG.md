@@ -1,7 +1,7 @@
 # Changelog
 
 
-## [0.43] - Unreleased
+## [0.43] - 2024-10-15
 
 - Fix serialization for `UUID` types in prepared statements.
 

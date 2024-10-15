@@ -3,7 +3,7 @@
 ;; Copyright: (C) 1999-2002, 2022-2024  Eric Marsden
 
 ;; Author: Eric Marsden <eric.marsden@risk-engineering.org>
-;; Version: 0.42
+;; Version: 0.43
 ;; Keywords: data comm database postgresql
 ;; URL: https://github.com/emarsden/pg-el
 ;; Package-Requires: ((emacs "28.1") (peg "1.0"))
@@ -27,9 +27,9 @@
 ;; Overview
 ;; --------
 ;;
-;; This module lets you access the PostgreSQL object-relational DBMS from Emacs, using its
-;; socket-level frontend/backend protocol (the PostgreSQL wire protocol). The module is capable of
-;; automatic type coercions from a range of SQL types to the equivalent Emacs Lisp type.
+;; This module lets you access the PostgreSQL database from Emacs, using its socket-level
+;; frontend/backend protocol (the PostgreSQL wire protocol). The module is capable of automatic type
+;; coercions from a range of SQL types to the equivalent Emacs Lisp type.
 ;;
 ;; Supported features:
 ;;
