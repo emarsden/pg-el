@@ -14,6 +14,8 @@
 - Additional checks on connection startup to identify the PostgreSQL variant IvorySQL (currently a
   very compatible variant with additional Oracle compatibility functions).
 
+- Fix bug in startup sequence exposed by very short usernames (reported by Ákos Kiss aka `ak`).
+
 
 ## [0.42] - 2024-09-21
 

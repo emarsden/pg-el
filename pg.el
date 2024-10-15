@@ -584,11 +584,11 @@ Uses database DBNAME, user USER and password PASSWORD."
           ;; Now some somewhat ugly code to detect semi-compatible PostgreSQL variants, to allow us
           ;; to work around some of their behaviour that is incompatible with real PostgreSQL.
           (when (string= "session_authorization" key)
-            (when (string= "xata" (cl-subseq val 0 4))
+            (when (string-prefix-p "xata" val)
               (setf (pgcon-server-variant con) 'xata))
             (when (string= "PGAdapter" val)
               (setf (pgcon-server-variant con) 'spanner)))
-          (when (eql 0 (cl-search "ivorysql." key))
+          (when (string-prefix-p "ivorysql." key)
             (setf (pgcon-server-variant con) 'ivorydb))
           (dolist (handler pg-parameter-change-functions)
             (funcall handler con key val)))))
