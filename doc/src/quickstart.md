@@ -15,7 +15,7 @@ postgres=# alter user pgeltestuser with encrypted password 'pgeltest';
 If you want to enable and test the support for the HSTORE and pgvector extensions, you will need to
 load them into the test database as PostgreSQL superuser (the normal user `pgeltestuser` we created
 above is not allowed to load extensions). The pgvector extension generally needs to be installed
-separately from PostgreSQL (for example by installing the `postgresql-16-pgvector` package on Debian).
+separately from PostgreSQL (for example by installing the `postgresql-17-pgvector` package on Debian).
 
 ```shell
 sudo -u postgres psql
@@ -24,6 +24,8 @@ CREATE EXTENSION
 postgres=# CREATE EXTENSION vector;
 CREATE EXTENSION
 ```
+
+The same applies to the PostGIS extension.
 ~~~
 
 Now, from your preferred Emacs Lisp shell (here `M-x ielm`), check that you are able to connect to
