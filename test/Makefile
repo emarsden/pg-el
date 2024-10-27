@@ -29,6 +29,9 @@ xata: install-deps
 	${EMACS} -Q --batch -L .. -L . -l load-deps.el -l ../pg.el -l xata-bug.el -f test
 
 
+hang: install-deps
+	${EMACS} -Q -L .. -L . -l load-deps.el -l ../pg.el -l hang.el
+
 # Run tests over an encrypted connection to PostgreSQL. Encryption is not available for all versions
 # and installations (the PostgreSQL backend needs to be set up with TLS certificates), so this is a
 # separate test target.
@@ -290,12 +293,16 @@ test-neon: test-pg.el
 	PGEL_PASSWORD=foobles PGEL_HOSTNAME=foobles.eu-central-1.aws.neon.tech PGEL_USER=username PGEL_DATABASE=main $(MAKE) test-tls
 
 
-# app.xata.io are running PostgreSQL 15.5 on aarch64/Linux as of 2024-07
+# app.xata.io are running PostgreSQL 15.5 on aarch64/Linux as of 2024-10
 test-xata: test-pg.el
 	PGURI="postgresql://user:password@eu-central-1.sql.xata.sh/pgeltestdb:main?sslmode=force" $(MAKE) test-tls
 
 
 # https://docs.timescale.com/self-hosted/latest/install/installation-docker/
+#
+# Note that Timescaledb has a bunch of internal tables (owned by the currently connected user) in
+# schemas named _timescaledb_cache, _timescaledb_catalog, timescaledb_internal and so on. We have
+# code in pg-el to remove these from the list of tables returned by pg-tables.
 test-timescale: test-pg.el
 	${DOCKER} run --rm --name timescale \
 	   --publish 5981:5981 \
@@ -312,7 +319,7 @@ test-timescale: test-pg.el
 
 # https://docs.ivorysql.org/en/ivorysql-doc/v3.4/v3.4/6#Docker-installation
 # An Oracle-compatible flavour of PostgreSQL.
-test-ivorydb: test-pg.el
+test-ivorysql: test-pg.el
 	${DOCKER} run --rm --name ivorydb \
 	  --publish 5437:5432 \
 	  -e LANG=C.UTF8 \
@@ -345,7 +352,7 @@ test-pgbouncer: test-pg.el
 	${DOCKER} stop pgbouncer
 
 
-# Last tested 2024-09 with cratedb v5.8.3. CrateDB uses a default database name of "doc" that we
+# Last tested 2024-10 with cratedb v5.8.3. CrateDB uses a default database name of "doc" that we
 # can't set via Docker. Doesn't get very far through the tests: CrateDB doesn't accept a query which
 # only contains an SQL comment, and doesn't implement the BYTEA, JSON, JSONB and HSTORE types,
 # doesn't support COPY.
@@ -395,8 +402,8 @@ test-questdb: test-pg.el
 	${DOCKER} stop questdb
 
 
-# Tested 2024-09, Yugabyte 2.23 is based on PostgreSQL 11.2. This works very well, including the
-# HSTORE and pgvector extensions. The sequence test fails (SELECT last_value FROM pg_sequences).
+# Last tested 2024-10, Yugabyte 2.23 is based on PostgreSQL 11.2. This works very well, including
+# the HSTORE and pgvector extensions. The sequence test fails (SELECT last_value FROM pg_sequences).
 # Some more recent SQL evolutions suchas "INTEGER GENERATED ALWAYS AS expression STORED" are not
 # supported. LISTEN/NOTIFY is not supported.
 test-yugabyte: test-pg.el
@@ -453,7 +460,8 @@ test-greenplum: test-pg.el
 # An ElasticSearch alternative, built as a PostgreSQL extension. Works fine with pg.el.
 # https://docs.paradedb.com/introduction#get-started
 #
-# As of 2024-10, the paradedb docker image is built on a Debian PostgreSQL 16.4.
+# As of 2024-10, the paradedb docker image is built on a Debian PostgreSQL 16.4. It has some TIGER
+# data preloaded.
 test-paradedb: test-pg.el
 	${DOCKER} run --rm --name paradedb \
 	  --publish 5441:5441 \
@@ -484,11 +492,12 @@ test-spanner: test-pg.el
 	${DOCKER} stop spanner
 
 
-# YDB by Yandex. Last tested 2024-09 version 23.4.
+# YDB by Yandex. Last tested 2024-10 version 23.4.
 # 
 # https://ydb.tech/docs/en/postgresql/docker-connect
 #
 # Fairly limited PostgreSQL support currently; for example all tables must have a primary key.
+# Bit vectors are not returned with a bitvector oid in the metainformation.
 test-ydb: test-pg.el
 	${DOCKER} run --rm --name ydb \
 	  --publish 5411:5432 --publish 8765:8765 \
@@ -502,10 +511,10 @@ test-ydb: test-pg.el
 	${DOCKER} stop ydb
 
 
-# Tested 2024-09 with version 24.8. Very limited PostgreSQL support: there is no pg_type table so we
-# can't retrieve information regarding the OID of builtin types. During our initialization sequence
-# we send the query "SET datestyle = 'ISO'", which fails and causes the network connection to be
-# reset (!).
+# Last tested 2024-10 with version 24.9.2. Very limited PostgreSQL support: there is no pg_type
+# table so we can't retrieve information regarding the OID of builtin types. During our
+# initialization sequence we send the query "SET datestyle = 'ISO'", which fails and causes the
+# network connection to be reset (!).
 test-clickhouse: test-pg.el
 	echo '<clickhouse><postgresql_port>5491</postgresql_port><core_dump><size_limit>0</size_limit></core_dump></clickhouse>' > /tmp/pgel-config.xml
 	${DOCKER} run --rm --name clickhouse \
