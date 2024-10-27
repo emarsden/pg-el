@@ -1,6 +1,12 @@
 # Changelog
 
 
+## [0.44] - Unreleased
+
+- Detect the PostgreSQL variant TimescaleDB. Implement a specific SQL query for `pg-tables` for this
+  variant to avoid returning TimescaleDB-internal tables alongside user tables.
+
+
 ## [0.43] - 2024-10-15
 
 - Fix serialization for `UUID` types in prepared statements.

@@ -386,22 +386,31 @@ Uses connection CON. Also run variant-specific configuration actions.
 The variant can be accessed by pgcon-server-variant'."
   ;; This is the default value, meaning we haven't yet identified a variant based on its backend
   ;; parameter values.
-  (when (eq (pgcon-server-variant con) 'postgresql)
-    (let ((version (pg-backend-version con)))
-      (cond ((cl-search "CrateDB" version)
-             (setf (pgcon-server-variant con) 'cratedb))
-            ((cl-search "CockroachDB" version)
-             (setf (pgcon-server-variant con) 'cockroachdb))
-            ((cl-search "-YB-" version)
-             (setf (pgcon-server-variant con) 'yugabyte))
-            ((cl-search "Visual C++ build 1914" version)
-             (setf (pgcon-server-variant con) 'questdb))
-            ((cl-search "GreptimeDB" version)
-             (setf (pgcon-server-variant con) 'greptimedb))
-            ((cl-search "implemented by immudb" version)
-             (setf (pgcon-server-variant con) 'immudb)))))
-  (when (eq 'ydb (pgcon-server-variant con))
-    (pg-exec con "SET search_path = public")))
+  (pcase (pgcon-server-variant con)
+    ('postgresql
+     (let ((version (pg-backend-version con)))
+       (cond ((cl-search "CrateDB" version)
+              (setf (pgcon-server-variant con) 'cratedb))
+             ((cl-search "CockroachDB" version)
+              (setf (pgcon-server-variant con) 'cockroachdb))
+             ((cl-search "-YB-" version)
+              (setf (pgcon-server-variant con) 'yugabyte))
+             ((cl-search "Visual C++ build 1914" version)
+              (setf (pgcon-server-variant con) 'questdb))
+             ((cl-search "GreptimeDB" version)
+              (setf (pgcon-server-variant con) 'greptimedb))
+             ((cl-search "implemented by immudb" version)
+              (setf (pgcon-server-variant con) 'immudb)))))
+    ('ydb
+     (pg-exec con "SET search_path = public"))
+    ;; The Timescale status was "guessed" early on in the startup sequence from the presence of the
+    ;; "default_transaction_read_only" backend parameter key. To make sure that this is really
+    ;; TimescaleDB, we check for the existence of a TimescaleDB-specific schema.
+    ('timescaledb
+     (let* ((sql "SELECT 1 FROM information_schema.schemata WHERE schema_name=$1")
+            (res (pg-exec-prepared con sql '(("_timescaledb_catalog" . "text")))))
+       (when (null (pg-result res :tuples))
+         (setq (pgcon-server-variant con) 'postgresql))))))
 
 (defun pg-handle-error-response (con &optional context)
   "Handle an ErrorMessage from the backend we are connected to over CON.
@@ -590,6 +599,10 @@ Uses database DBNAME, user USER and password PASSWORD."
               (setf (pgcon-server-variant con) 'spanner)))
           (when (string-prefix-p "ivorysql." key)
             (setf (pgcon-server-variant con) 'ivorydb))
+          ;; We confirm this guess later in the startup sequence by checking for the existence of
+          ;; TimescaleDB-specific schemas in the current database.
+          (when (string= "default_transaction_read_only" key)
+            (setf (pgcon-server-variant con) 'timescaledb))
           (dolist (handler pg-parameter-change-functions)
             (funcall handler con key val)))))
 
@@ -2888,11 +2901,26 @@ Queries legacy internal PostgreSQL tables."
                       "c.relname !~ '^sql_' ORDER BY relname")))
     (apply #'append (pg-result res :tuples))))
 
+;; Exclude TimescaleDB-internal tables (which are in TimescaleDB-specific schemata) from the list of
+;; tables returned by pg-tables.
+(defun pg--tables-timescaledb (con)
+  (cl-labels ((timescale-name-p (tbl)
+                (when (pg-qualified-name-p tbl)
+                  (let ((s (pg-qualified-name-schema tbl)))
+                    (cl-find s '("_timescaledb_cache"
+                                 "_timescaledb_catalog"
+                                 "_timescaledb_internal"
+                                 "_timescaledb_config")
+                             :test #'string=)))))
+    (cl-delete-if #'timescale-name-p (pg--tables-information-schema con))))
+
 (defun pg-tables (con)
   "List of the tables present in the database we are connected to via CON.
 Only tables to which the current user has access are listed."
     (cond ((eq (pgcon-server-variant con) 'ydb)
            (pg--tables-legacy con))
+          ((eq (pgcon-server-variant con) 'timescaledb)
+           (pg--tables-timescaledb con))
           ((> (pgcon-server-version-major con) 7)
            (pg--tables-information-schema con))
           (t
