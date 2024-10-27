@@ -410,7 +410,7 @@ The variant can be accessed by pgcon-server-variant'."
      (let* ((sql "SELECT 1 FROM information_schema.schemata WHERE schema_name=$1")
             (res (pg-exec-prepared con sql '(("_timescaledb_catalog" . "text")))))
        (when (null (pg-result res :tuples))
-         (setq (pgcon-server-variant con) 'postgresql))))))
+         (setf (pgcon-server-variant con) 'postgresql))))))
 
 (defun pg-handle-error-response (con &optional context)
   "Handle an ErrorMessage from the backend we are connected to over CON.
@@ -2914,6 +2914,14 @@ Queries legacy internal PostgreSQL tables."
                              :test #'string=)))))
     (cl-delete-if #'timescale-name-p (pg--tables-information-schema con))))
 
+;; Exclude CrateDB-internal tables (which are in the "sys" schemata) from the list of
+;; tables returned by pg-tables.
+(defun pg--tables-cratedb (con)
+  (cl-labels ((cratedb-name-p (tbl)
+                (when (pg-qualified-name-p tbl)
+                  (string= "sys" (pg-qualified-name-schema tbl)))))
+    (cl-delete-if #'cratedb-name-p (pg--tables-information-schema con))))
+
 (defun pg-tables (con)
   "List of the tables present in the database we are connected to via CON.
 Only tables to which the current user has access are listed."
@@ -2921,6 +2929,8 @@ Only tables to which the current user has access are listed."
            (pg--tables-legacy con))
           ((eq (pgcon-server-variant con) 'timescaledb)
            (pg--tables-timescaledb con))
+          ((eq (pgcon-server-variant con) 'cratedb)
+           (pg--tables-cratedb con))
           ((> (pgcon-server-version-major con) 7)
            (pg--tables-information-schema con))
           (t

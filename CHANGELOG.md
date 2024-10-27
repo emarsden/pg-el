@@ -6,6 +6,9 @@
 - Detect the PostgreSQL variant TimescaleDB. Implement a specific SQL query for `pg-tables` for this
   variant to avoid returning TimescaleDB-internal tables alongside user tables.
 
+- Implement a specific SQL query for `pg-tables` for the CrateDB variant, to avoid returning system
+  tables alongside user tables.
+
 
 ## [0.43] - 2024-10-15
 
