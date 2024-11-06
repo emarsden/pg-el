@@ -1977,6 +1977,7 @@ Uses the client-encoding specified in the connection to PostgreSQL CON."
 ;; For Emacs, see coding-system-alist.
 (defconst pg--encoding-names
   '(("UTF8"    . utf-8)
+    ("UTF-8"   . utf-8)
     ("UNICODE" . utf-8)
     ("UTF16"   . utf-16)
     ("LATIN1"  . latin-1)
@@ -2578,11 +2579,14 @@ Return nil if the extension could not be set up."
 (defun pg--serialize-float (number _encoding)
   "Serialize floating point NUMBER to PostgreSQL wire-level text format for floats.
 Respects floating-point infinities and NaN."
-  (cond ((= number 1.0e+INF) "Infinity")
-        ((= number -1.0e+INF) "-Infinity")
-        ((isnan number) "NaN")
-        (t
-         (number-to-string number))))
+  (unless (numberp number)
+    (pg-signal-type-error "Expecting a number, got %s" number))
+  (let ((fl (float number)))
+    (cond ((= fl 1.0e+INF) "Infinity")
+          ((= fl -1.0e+INF) "-Infinity")
+          ((isnan fl) "NaN")
+          (t
+           (number-to-string fl)))))
 
 (pg-register-textual-serializer "float4" #'pg--serialize-float)
 (pg-register-textual-serializer "float8" #'pg--serialize-float)

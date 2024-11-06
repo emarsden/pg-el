@@ -9,6 +9,8 @@
 - Implement a specific SQL query for `pg-tables` for the CrateDB variant, to avoid returning system
   tables alongside user tables.
 
+- The serialization function for floating point values accepts non-float numeric values.
+
 
 ## [0.43] - 2024-10-15
 
