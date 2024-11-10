@@ -42,12 +42,30 @@ The code has been tested with **PostgreSQL versions** 17.0, 16.3, 15.4, 13.8, 11
 Linux. It is also tested via GitHub actions on MacOS and Microsoft Windows. This library also works,
 to a variable extent, against other databases that implement the PostgreSQL wire protocol:
 
-- [YugabyteDB](https://yugabyte.com/): tested against version 2.21. This database uses a lot of
+- [Neon](https://neon.tech/) “serverless PostgreSQL” works perfectly.
+
+- [ParadeDB](https://www.paradedb.com/) version 0.9.1 works perfectly (it's really a PostgreSQL
+  extension rather than a distinct database implementation).
+
+- [IvorySQL](https://www.ivorysql.org/) version 3.4 works perfectly (this fork of PostgreSQL adds
+  some features for compatibility with Oracle).
+
+- The [Timescale DB](https://www.timescale.com/) extension for time series data works perfectly
+  (tested with version 2.16.1).
+
+- The [PgBouncer](https://www.pgbouncer.org/) connection pooler for PostgreSQL works fine (tested
+  with version 1.23 in the default session pooling mode).
+
+- [Xata](https://xata.io/) “serverless PostgreSQL” has many limitations including lack of support
+  for `CREATE DATABASE`, `CREATE COLLATION`, for XML processing, for temporary tables, for cursors,
+  for `EXPLAIN`, for `CREATE EXTENSION`, for functions such as `pg_notify`.
+
+- [YugabyteDB](https://yugabyte.com/): tested against version 2.23. This database uses a lot of
   code from PostgreSQL 11 and is quite compatible, including with the HSTORE and pgvector
   extensions. However, some system tables differ from PostgreSQL, such as the `pg_sequences` table.
   It does not support the XML type. It does not support `LISTEN`/`NOTIFY`.
 
-- [CrateDB](https://crate.io/): tested with version 5.7.2. There are limitations in this database's
+- [CrateDB](https://crate.io/): tested with version 5.8.3. There are limitations in this database's
   emulation of the PostgreSQL system tables: for example, it's not possible to query the owner of a
   table (function `pg-table-owner`). It doesn't accept SQL statements that only include an SQL
   comment. It doesn't support setting comments on SQL tables. As
@@ -55,7 +73,7 @@ to a variable extent, against other databases that implement the PostgreSQL wire
   does not support the `TIME` type without a time zone. It doesn't support casting integers to bits.
   It doesn't support the `VARBIT` type. It has no support for the COPY protocol.
 
-- [CockroachDB](https://github.com/cockroachdb/cockroach): tested with CockroachDB CCL v24.1. Note
+- [CockroachDB](https://github.com/cockroachdb/cockroach): tested with CockroachDB CCL v24.2. Note
   that this database does not implement the large object functionality, and its interpretation of
   SQL occasionally differs from that of PostgreSQL. It is currently [reporting an internal
   error](https://github.com/cockroachdb/cockroach/issues/104009) when we call `pg-table-comment`.
@@ -76,6 +94,15 @@ to a variable extent, against other databases that implement the PostgreSQL wire
   statements such as `SET datestyle`. It doesn't specify a `server_name` in the startup sequence,
   which might allow us to detect this special case and restrict functionality to the most basic
   aspects.
+
+- [GreptimeDB](https://github.com/GrepTimeTeam/greptimedb) version 0.9.5 implements quite a lot of
+  the PostgreSQL wire protocol, but the names it uses for types in the `pg_catalog.pg_types` table
+  are not the same as those used by PostgreSQL (e.g. `Int64` instead of `int8`), so our parsing
+  machinery does not work.
+
+- Untested but likely to work: Amazon RDS, Google Cloud SQL, Azure Database for PostgreSQL, Amazon
+  Auroa, Google AlloyDB, Materialize, CitusData. You may however encounter difficulties with TLS
+  connections, as noted above.
 
 
 Tested with **Emacs versions** 30-pre-release, 29.4, 28.2, 27.2 and 26.3. Emacs versions older than

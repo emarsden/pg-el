@@ -65,8 +65,14 @@ The following PostgreSQL-compatible databases have been tested:
 - [ParadeDB](https://www.paradedb.com/) version 0.9.1 works perfectly (it's really a PostgreSQL
   extension rather than a distinct database implementation).
 
+- [IvorySQL](https://www.ivorysql.org/) version 3.4 works perfectly (this fork of PostgreSQL adds
+  some features for compatibility with Oracle).
+
 - The [Timescale DB](https://www.timescale.com/) extension for time series data works perfectly
   (tested with version 2.16.1).
+
+- The [PgBouncer](https://www.pgbouncer.org/) connection pooler for PostgreSQL works fine (tested
+  with version 1.23 in the default session pooling mode).
 
 - [Xata](https://xata.io/) “serverless PostgreSQL” has many limitations including lack of support
   for `CREATE DATABASE`, `CREATE COLLATION`, for XML processing, for temporary tables, for cursors,
@@ -104,7 +110,7 @@ The following PostgreSQL-compatible databases have been tested:
   system tables that we query to obtain the list of tables in the current database are not
   implemented.
 
-- [GreptimeDB](https://github.com/GrepTimeTeam/greptimedb) version 0.9.3 implements quite a lot of
+- [GreptimeDB](https://github.com/GrepTimeTeam/greptimedb) version 0.9.5 implements quite a lot of
   the PostgreSQL wire protocol, but the names it uses for types in the `pg_catalog.pg_types` table
   are not the same as those used by PostgreSQL (e.g. `Int64` instead of `int8`), so our parsing
   machinery does not work.
