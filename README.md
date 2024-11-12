@@ -71,6 +71,9 @@ The following PostgreSQL-compatible databases have been tested:
 - The [Timescale DB](https://www.timescale.com/) extension for time series data works perfectly
   (tested with version 2.16.1).
 
+- The [CitusDB](https://github.com/citusdata/citus) extension for sharding PostgreSQL over multiple
+  hosts works perfectly (tested with Citus version 12.1.5 which is based on PostgreSQL 16.3).
+
 - The [PgBouncer](https://www.pgbouncer.org/) connection pooler for PostgreSQL works fine (tested
   with version 1.23 in the default session pooling mode).
 
@@ -114,6 +117,9 @@ The following PostgreSQL-compatible databases have been tested:
   the PostgreSQL wire protocol, but the names it uses for types in the `pg_catalog.pg_types` table
   are not the same as those used by PostgreSQL (e.g. `Int64` instead of `int8`), so our parsing
   machinery does not work.
+
+- Hosted PostgreSQL services that have been tested: [Railway.app](https://railway.app/) is running a
+  hosted Debian build of PostgreSQL 16.4, and works fine.
 
 - Untested but likely to work: Amazon RDS, Google Cloud SQL, Azure Database for PostgreSQL, Amazon
   Auroa, Google AlloyDB, Materialize, CitusData. You may however encounter difficulties with TLS

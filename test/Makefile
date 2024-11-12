@@ -317,6 +317,28 @@ test-timescale: test-pg.el
 	${DOCKER} stop timescale
 
 
+# https://hub.docker.com/r/citusdata/citus
+#
+# An extension for sharding PostgreSQL. We could recognize it by checking for the system tables
+# s(pg-qualified-name columnar_internal options) #s(pg-qualified-name columnar_internal stripe)
+# #s(pg-qualified-name columnar_internal chunk_group) #s(pg-qualified-name columnar_internal chunk),
+# but since we don't see any behavioural difference from standard PostgreSQL, we don't report this
+# as a variant.
+test-citus: test-pg.el
+	${DOCKER} run --rm --name citus \
+	   --publish 5409:5409 \
+	   -e POSTGRES_DB=pgeltestdb \
+	   -e POSTGRES_USER=pgeltestuser \
+	   -e POSTGRES_PASSWORD=pgeltest \
+	   -e PGPORT=5409 \
+	   -d docker.io/citusdata/citus:latest
+	sleep 5
+	PGEL_PORT=5409 $(MAKE) test
+	${DOCKER} stop citus
+
+
+
+
 # https://docs.ivorysql.org/en/ivorysql-doc/v3.4/v3.4/6#Docker-installation
 # An Oracle-compatible flavour of PostgreSQL.
 test-ivorysql: test-pg.el
