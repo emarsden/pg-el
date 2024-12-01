@@ -147,6 +147,17 @@
                    "postgres://pgeltestuser:pgeltest@%2Fvar%2Frun%2Fpostgresql%2F.s.PGSQL.5432/pgeltestdb"))
     (let ((con (pg-connect/uri v)))
       (should (process-live-p (pgcon-process con)))
+      (pg-disconnect con)))
+  ;; Now testing various environment variables. For libpq the recognized names are in
+  ;; https://www.postgresql.org/docs/current/libpq-envars.html
+  (dolist (v (list "postgresql://pgeltestuser@localhost/pgeltestdb?application_name=testingtesting"
+                   "postgres://pgeltestuser@localhost/pgeltestdb?application_name=testingtesting"
+                   "postgres://pgeltestuser@localhost:5432/pgeltestdb"
+                   "postgres://pgeltestuser@localhost:5432/pgeltestdb?sslmode=prefer"
+                   "postgres://pgeltestuser@%2Fvar%2Frun%2Fpostgresql%2F.s.PGSQL.5432/pgeltestdb"))
+    (setenv "PGPASSWORD" "pgeltest")
+    (let ((con (pg-connect/uri v)))
+      (should (process-live-p (pgcon-process con)))
       (pg-disconnect con))))
 
 (defun pg-run-tests (con)
@@ -162,6 +173,8 @@
            (row (pg-result res :tuple 0)))
       (message "PostgreSQL connection TLS: %s" (cl-first row))))
   (message "List of tables in db: %s" (pg-tables con))
+  (when (eq 'orioledb (pgcon-server-variant con))
+    (pg-exec con "CREATE EXTENSION orioledb"))
   (message "Testing basic type parsing")
   (pg-test-basic con)
   (message "Testing insertions...")
@@ -519,7 +532,11 @@ bar$$")))
     (let ((count 100))
       (when (member "count_test" (pg-tables con))
         (pg-exec con "DROP TABLE count_test"))
-      (pg-exec con "CREATE TABLE count_test(key INT PRIMARY KEY, val INT)")
+      (pg-exec con
+               (format "CREATE TABLE count_test(key INT PRIMARY KEY, val INT) %s"
+                       (if (eq 'orioledb (pgcon-server-variant con))
+                           " USING orioledb"
+                         "")))
       (should (member "count_test" (pg-tables con)))
       (should (member "val" (pg-columns con "count_test")))
       (unless (or (pg-test-is-cratedb con)
