@@ -1,4 +1,4 @@
-;;; pg.el --- Emacs Lisp socket-level interface to the PostgreSQL RDBMS  -*- lexical-binding: t -*-
+;;; pg.el --- Socket-level interface to the PostgreSQL database  -*- lexical-binding: t -*-
 
 ;; Copyright: (C) 1999-2002, 2022-2024  Eric Marsden
 
@@ -81,6 +81,7 @@
 (require 'rx)
 
 
+;; https://www.postgresql.org/docs/current/libpq-envars.html
 (defvar pg-application-name (or (getenv "PGAPPNAME") "pg.el")
   "The application_name sent to the PostgreSQL backend.
 This information appears in queries to the `pg_stat_activity' table
@@ -589,7 +590,9 @@ Uses database DBNAME, user USER and password PASSWORD."
             (when (cl-search "ydb stable" val)
               (setf (pgcon-server-variant con) 'ydb))
             (when (cl-search "-greptimedb-" val)
-              (setf (pgcon-server-variant con) 'greptimedb)))
+              (setf (pgcon-server-variant con) 'greptimedb))
+            (when (cl-search "OrioleDB" val)
+              (setf (pgcon-server-variant con) 'orioledb)))
           ;; Now some somewhat ugly code to detect semi-compatible PostgreSQL variants, to allow us
           ;; to work around some of their behaviour that is incompatible with real PostgreSQL.
           (when (string= "session_authorization" key)
@@ -729,14 +732,22 @@ connect_timeout, client_encoding and application_name."
                   collect (cons (cl-first param-val) (cl-second param-val))))
          (host (or (cdr (assoc "host" params))
                    (cdr (assoc "hostaddr" params))
+                   (getenv "PGHOST")
+                   (getenv "PGHOSTADDR")
                    "localhost"))
-         (port (or (cdr (assoc "port" params)) 5432))
+         (port (or (cdr (assoc "port" params))
+                   (getenv "PGPORT")
+                   5432))
          (dbname (or (cdr (assoc "dbname" params))
-                     (error "Database name not specified in connection string")))
+                     (getenv "PGDATABASE")
+                     (error "Database name not specified in connection string or PGDATABASE environment variable")))
          (user (or (cdr (assoc "user" params))
-                   (error "User not specified in connection string")))
-         (password (cdr (assoc "password" params)))
-         (sslmode (cdr (assoc "sslmode" params)))
+                   (getenv "PGUSER")
+                   (error "User not specified in connection string or PGUSER environment variable")))
+         (password (or (cdr (assoc "password" params))
+                       (getenv "PGPASSWORD")))
+         (sslmode (or (cdr (assoc "sslmode" params))
+                      (getenv "PGSSLMODE")))
          (tls (cond ((string= sslmode "disable") nil)
                     ((string= sslmode "allow") t)
                     ((string= sslmode "prefer") t)
@@ -767,7 +778,6 @@ connect_timeout, client_encoding and application_name."
       (when client-encoding
         (setf (pgcon-client-encoding con) client-encoding))
       con)))
-  
 
 (defun pg-parse-url (url)
   "Adaptation of function `url-generic-parse-url' that does not downcase
@@ -878,18 +888,24 @@ sslmode (partial support) and application_name."
     ;; FIXME unfortunately the url-host is being downcased by url-generic-parse-url, which is
     ;; incorrect when the hostname is specifying a local path.
     (let* ((host (url-unhex-string (url-host parsed)))
-           (user (url-user parsed))
-           (password (url-password parsed))
-           (port (or (url-portspec parsed) 5432))
+           (user (or (url-user parsed)
+                     (getenv "PGUSER")))
+           (password (or (url-password parsed)
+                         (getenv "PGPASSWORD")))
+           (port (or (url-portspec parsed)
+                     (getenv "PGPORT")
+                     5432))
            (path-query (url-path-and-query parsed))
-           (dbname (if (car path-query)
-                       ;; ignore the "/" prefix
-                       (substring (car path-query) 1)
-                     (signal 'pg-error '("Missing database name in connection URI"))))
+           (dbname (or (and (car path-query)
+                            ;; ignore the "/" prefix
+                            (substring (car path-query) 1))
+                       (getenv "PGDATABASE")
+                       (signal 'pg-error '("Missing database name in connection URI"))))
            (params (cdr path-query))
            ;; this is returning a list of lists, not an alist
            (params (and params (url-parse-query-string params)))
-           (sslmode (cadr (assoc "sslmode" params)))
+           (sslmode (or (cadr (assoc "sslmode" params))
+                        (getenv "PGSSLMODE")))
            (tls (cond ((string= sslmode "disable") nil)
                       ((string= sslmode "allow") t)
                       ((string= sslmode "prefer") t)

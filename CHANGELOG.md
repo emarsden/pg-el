@@ -6,10 +6,17 @@
 - Detect the PostgreSQL variant TimescaleDB. Implement a specific SQL query for `pg-tables` for this
   variant to avoid returning TimescaleDB-internal tables alongside user tables.
 
+- Detect the PostgreSQL variant OrioleDB (really an extension that provides an additional storage
+  mechanism).
+
 - Implement a specific SQL query for `pg-tables` for the CrateDB variant, to avoid returning system
   tables alongside user tables.
 
 - The serialization function for floating point values accepts non-float numeric values.
+
+- When parsing a PostgreSQL connection URI or connection string, additional environment variables
+  `PGHOST`, `PGHOSTADDR`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD` and `PGSSLMODE` are used as
+  default values when a value has not been explicitly set in the string.
 
 
 ## [0.43] - 2024-10-15
