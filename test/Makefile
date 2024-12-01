@@ -337,6 +337,22 @@ test-citus: test-pg.el
 	${DOCKER} stop citus
 
 
+# A PostgreSQL extension that adds a new storage engine designed for better multithreading and solid
+# state storage.
+#
+# https://github.com/orioledb/orioledb
+# https://hub.docker.com/r/orioledb/orioledb
+test-orioledb: test-pg.el
+	${DOCKER} run --rm --name orioledb \
+	  --publish 5317:5317 \
+	   -e POSTGRES_DB=pgeltestdb \
+	   -e POSTGRES_USER=pgeltestuser \
+	   -e POSTGRES_PASSWORD=pgeltest \
+	   -e PGPORT=5317 \
+	   -d docker.io/orioledb/orioledb:latest-pg16
+	sleep 5
+	PGEL_PORT=5317 $(MAKE) test
+	${DOCKER} stop orioledb
 
 
 # https://docs.ivorysql.org/en/ivorysql-doc/v3.4/v3.4/6#Docker-installation
@@ -431,7 +447,7 @@ test-questdb: test-pg.el
 test-yugabyte: test-pg.el
 	${DOCKER} run --rm --name yugabyte \
 	  --net host \
-	  -d docker.io/yugabytedb/yugabyte \
+	  -d docker.io/yugabytedb/yugabyte:latest \
 	  bin/yugabyted start \
 	  --advertise_address 127.0.0.1 \
 	  --base_dir=/tmp \
@@ -474,6 +490,18 @@ test-greenplum: test-pg.el
 	sleep 5
 	PGEL_DATABASE=postgres PGEL_USER=gpadmin PGEL_PASSWORD="greenplum" PGEL_PORT=5433 $(MAKE) test
 	${DOCKER} stop greenplum
+
+
+# The Cloudberry fork of Greenplum, incubated at Apache.
+# https://github.com/apache/cloudberry/
+# https://hub.docker.com/r/apache/incubator-cloudberry/
+test-cloudberry: test-pg.el
+	${DOCKER} run --rm --name cloudberry \
+	  --publish 5661:5661 \
+	  -e PGPORT=5661 \
+	  -d docker.io/apache/incubator-cloudberry:cbdb-test-rocky9-latest
+	sleep 5
+
 
 
 # An ElasticSearch alternative, built as a PostgreSQL extension. Works fine with pg.el.
