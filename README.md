@@ -41,7 +41,7 @@ This library has support for:
 - Connections over TCP or (on Unix machines) a local Unix socket.
 
 
-Tested **PostgreSQL versions**: The code has been tested with versions 17.0, 16.4, 15.4, 13.8,
+Tested **PostgreSQL versions**: The code has been tested with versions 17.2, 16.4, 15.4, 13.8,
 11.17, and 10.22 on Linux. It is also tested via GitHub actions on MacOS and Windows. This library
 also works, more or less, against other “PostgreSQL-compatible” databases. There are four main points
 where this compatibility may be problematic: 
@@ -119,15 +119,16 @@ The following PostgreSQL-compatible databases have been tested:
   instead of `int8`), so our parsing machinery does not work.
 
 - Hosted PostgreSQL services that have been tested: [Railway.app](https://railway.app/) is running a
-  hosted Debian build of PostgreSQL 16.4, and works fine.
+  Debian build of PostgreSQL 16.4, and works fine; [Aiven.io](https://aiven.io/) is running a Red
+  Hat build of PostgreSQL 16.4 on Linux/Aarch64 and works fine.
 
 - Untested but likely to work: Amazon RDS, Google Cloud SQL, Azure Database for PostgreSQL, Amazon
-  Auroa, Google AlloyDB, Materialize, CitusData. You may however encounter difficulties with TLS
-  connections, as noted above.
+  Auroa, Google AlloyDB, Materialize. You may however encounter difficulties with TLS connections,
+  as noted above.
 
 It does not work with the ClickHouse database, whose PostgreSQL support is too limited (no
 implementation of the `pg_types` system table, no support for basic PostgreSQL-flavoured SQL
-commands such as `SET`).
+commands such as `SET`, no support for the extended query mechanism).
 
 Tested **Emacs versions**: Tested with versions 30-prerelease, 29.4, 28.2, 27.2 and 26.3. Emacs
 versions older than 26.1 will not work against a recent PostgreSQL version (whose default
