@@ -390,7 +390,7 @@ test-pgbouncer: test-pg.el
 	${DOCKER} stop pgbouncer
 
 
-# Last tested 2024-11 with cratedb v5.9.2. CrateDB uses a default database name of "doc" that we
+# Last tested 2024-12 with cratedb v5.9.3. CrateDB uses a default database name of "doc" that we
 # can't set via Docker. Doesn't get very far through the tests: CrateDB doesn't accept a query which
 # only contains an SQL comment, and doesn't implement the BYTEA, JSON, JSONB and HSTORE types,
 # doesn't support COPY.
@@ -559,12 +559,15 @@ test-ydb: test-pg.el
 	${DOCKER} stop ydb
 
 
-# Last tested 2024-11 with version 24.10.1. Very limited PostgreSQL support: there is no pg_type
+# Last tested 2024-12 with version 24.11. Very limited PostgreSQL support: there is no pg_type
 # table so we can't retrieve information regarding the OID of builtin types. During our
 # initialization sequence we send the query "SET datestyle = 'ISO'", which fails and causes the
 # network connection to be reset (!).
+#
+# Default values for config.xml file at
+# https://github.com/ClickHouse/ClickHouse/blob/c7996d54536492ebd4f436672e466464e8474ff9/programs/server/config.xml
 test-clickhouse: test-pg.el
-	echo '<clickhouse><postgresql_port>5491</postgresql_port><core_dump><size_limit>0</size_limit></core_dump></clickhouse>' > /tmp/pgel-config.xml
+	echo '<clickhouse><postgresql_port>5491</postgresql_port><core_dump><size_limit>0</size_limit></core_dump><tcp_connection_close>0</tcp_connection_close></clickhouse>' > /tmp/pgel-config.xml
 	${DOCKER} run --rm --name clickhouse \
 	   --ulimit nofile=62144:62144 \
 	   --ulimit core=234567:234567 \
