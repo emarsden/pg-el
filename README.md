@@ -49,12 +49,15 @@ where this compatibility may be problematic:
 - Compatibility with the PostgreSQL wire protocol. This is the most basic form of compatibility.
 
 - Compatibility with the PostgreSQL flavour of SQL, such as row expressions, non-standard functions
-  such as `CHR`, data types such as `BIT` and `VARBIT`, user-defined ENUMS and so on.
+  such as `CHR`, data types such as `BIT`, `VARBIT`, `JSON` and `JSONB`, user-defined ENUMS and so
+  on, functionality such as `LISTEN`. Some databases that claim to be “Postgres compatible” don’t
+  even support foreign keys, views, triggers, sequences, tablespaces and temporary tables (looking
+  at you, Amazon Aurora DSQL).
 
 - Implementation of the system tables that are used by certain pg-el functions, to retrieve the list
   of tables in a database, the list of types, and so on.
 
-- Establishing encrypted TLS connection to hosted services. Most PostgreSQL client libraries (in
+- Establishing encrypted TLS connections to hosted services. Most PostgreSQL client libraries (in
   particular the official client library libpq) use OpenSSL for TLS support, whereas Emacs uses
   GnuTLS, and you may encounter incompatibilities.
 
@@ -72,7 +75,7 @@ The following PostgreSQL-compatible databases have been tested:
   (tested with version 2.16.1).
 
 - The [CitusDB](https://github.com/citusdata/citus) extension for sharding PostgreSQL over multiple
-  hosts works perfectly (last tested with Citus version 12.1.5 which is based on PostgreSQL 16.3).
+  hosts works perfectly (last tested with Citus version 12.1.5, which is based on PostgreSQL 16.3).
 
 - The [PgBouncer](https://www.pgbouncer.org/) connection pooler for PostgreSQL works fine (tested
   with version 1.23 in the default session pooling mode).
