@@ -1,7 +1,7 @@
 # Changelog
 
 
-## [0.44] - Unreleased
+## [0.44] - 2024-12-04
 
 - Detect the PostgreSQL variant TimescaleDB. Implement a specific SQL query for `pg-tables` for this
   variant to avoid returning TimescaleDB-internal tables alongside user tables.
