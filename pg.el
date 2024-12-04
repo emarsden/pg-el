@@ -2951,7 +2951,7 @@ Only tables to which the current user has access are listed."
            (pg--tables-timescaledb con))
           ((eq (pgcon-server-variant con) 'cratedb)
            (pg--tables-cratedb con))
-          ((> (pgcon-server-version-major con) 7)
+          ((> (pgcon-server-version-major con) 11)
            (pg--tables-information-schema con))
           (t
            (pg--tables-legacy con))))
