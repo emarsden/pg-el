@@ -204,7 +204,7 @@ test-enterprisedb: test-pg.el
 	   -e POSTGRES_USER=pgeltestuser \
 	   -e POSTGRES_PASSWORD=pgeltest \
 	   -e PGPORT=5366 \
-	   -d ghcr.io/enterprisedb/postgresql:16
+	   -d ghcr.io/enterprisedb/postgresql:17
 	PGEL_PORT=5366 $(MAKE) test
 	${DOCKER} stop edb
 
@@ -370,6 +370,26 @@ test-ivorysql: test-pg.el
 	PGEL_PORT=5437 $(MAKE) test
 	${DOCKER} stop ivorydb
 
+# An ElasticSearch alternative, built as a PostgreSQL extension. Works fine with pg.el.
+# https://docs.paradedb.com/introduction#get-started
+#
+# As of 2024-11, the paradedb docker image is built on a Debian PostgreSQL 16.4. It has some TIGER
+# data preloaded.
+test-paradedb: test-pg.el
+	${DOCKER} run --rm --name paradedb \
+	  --publish 5441:5441 \
+          -e POSTGRES_DB=pgeltestdb \
+          -e POSTGRESQL_PORT_NUMBER=5441 \
+          -e PGPORT=5441 \
+          -e POSTGRESQL_MASTER_PORT_NUMBER=5441 \
+          -e POSTGRES_USER=pgeltestuser \
+          -e POSTGRES_PASSWORD=pgeltest \
+          -e POSTGRESQL_POSTGRES_PASSWORD=pgeltest \
+          -d docker.io/paradedb/paradedb:latest
+	sleep 5
+	PGEL_PORT=5441 $(MAKE) test
+	${DOCKER} stop paradedb
+
 
 # Test pgbouncer proxying to our local PostgreSQL (in session pooling mode, so that functionality
 # such as LISTEN works).
@@ -498,31 +518,11 @@ test-greenplum: test-pg.el
 test-cloudberry: test-pg.el
 	${DOCKER} run --rm --name cloudberry \
 	  --publish 5661:5661 \
-	  -e PGPORT=5661 \
+	  -h cdw -e PGPORT=5661 \
 	  -d docker.io/apache/incubator-cloudberry:cbdb-test-rocky9-latest
 	sleep 5
-
-
-
-# An ElasticSearch alternative, built as a PostgreSQL extension. Works fine with pg.el.
-# https://docs.paradedb.com/introduction#get-started
-#
-# As of 2024-11, the paradedb docker image is built on a Debian PostgreSQL 16.4. It has some TIGER
-# data preloaded.
-test-paradedb: test-pg.el
-	${DOCKER} run --rm --name paradedb \
-	  --publish 5441:5441 \
-          -e POSTGRES_DB=pgeltestdb \
-          -e POSTGRESQL_PORT_NUMBER=5441 \
-          -e PGPORT=5441 \
-          -e POSTGRESQL_MASTER_PORT_NUMBER=5441 \
-          -e POSTGRES_USER=pgeltestuser \
-          -e POSTGRES_PASSWORD=pgeltest \
-          -e POSTGRESQL_POSTGRES_PASSWORD=pgeltest \
-          -d docker.io/paradedb/paradedb:latest
-	sleep 5
-	PGEL_PORT=5441 $(MAKE) test
-	${DOCKER} stop paradedb
+	PGEL_DATABASE=postgres PGEL_USER=gpadmin PGEL_PASSWORD="greenplum" PGEL_PORT=5661 $(MAKE) test
+	${DOCKER} stop cloudberry
 
 
 # Google Spanner emulator
