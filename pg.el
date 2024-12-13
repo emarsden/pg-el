@@ -596,6 +596,7 @@ Uses database DBNAME, user USER and password PASSWORD."
           ;; Now some somewhat ugly code to detect semi-compatible PostgreSQL variants, to allow us
           ;; to work around some of their behaviour that is incompatible with real PostgreSQL.
           (when (string= "session_authorization" key)
+            ;; We could also look for the existence of the "xata" schema in pg-schemas
             (when (string-prefix-p "xata" val)
               (setf (pgcon-server-variant con) 'xata))
             (when (string= "PGAdapter" val)
@@ -640,9 +641,11 @@ These are passed to GnuTLS."
   (let* ((buf (generate-new-buffer " *PostgreSQL*"))
          (process (open-network-stream "postgres" buf host port
                                        :coding nil
-                                       :nowait t
+                                       ;; :nowait t
                                        :nogreeting t))
          (con (make-pgcon :dbname dbname :process process)))
+    (when (featurep 'make-network-process :nodelay)
+      (set-network-process-option process :nodelay t))
     (unless (zerop pg-connect-timeout)
       (setf (pgcon-connect-timer con)
             (run-at-time pg-connect-timeout nil
@@ -700,7 +703,11 @@ Connect to the database DBNAME with the username USER, providing
 PASSWORD if necessary. Return a connection to the database (as an
 opaque type). PASSWORD defaults to an empty string."
   (let* ((buf (generate-new-buffer " *PostgreSQL*"))
-         (process (make-network-process :name "postgres" :buffer buf :family 'local :service path :coding nil))
+         (process (make-network-process :name "postgres"
+                                        :buffer buf
+                                        :family 'local
+                                        :service path
+                                        :coding nil))
          (connection (make-pgcon :dbname dbname :process process)))
     ;; Save connection info in the pgcon object, for possible later use by pg-cancel
     (setf (pgcon-connect-info connection) (list :local path nil dbname user password))
@@ -976,8 +983,7 @@ Return a result structure which can be decoded using `pg-result'."
         (signal 'pg-user-error (list "Query is too large")))
       (pg-send-char con ?Q)
       (pg-send-uint con (+ 4 len 1) 4)
-      (pg-send-string con encoded)
-      (pg-flush con))
+      (pg-send-string con encoded))
     (cl-loop for c = (pg-read-char con) do
        ;; (message "pg-exec message-type = %c" c)
        (cl-case c
@@ -1356,7 +1362,7 @@ Returns a pgresult structure (see function `pg-result')."
            ;; send a Flush message
            (pg-send-char con ?H)
            (pg-send-uint con 4 4)))
-    (pg-flush con)
+    ;; (pg-flush con)
     (cl-loop
      for c = (pg-read-char con) do
      ;; (message "pg-fetch got %c" c)
@@ -2257,7 +2263,8 @@ Return nil if the extension could not be loaded."
 (pg-register-parser "_bpchar" #'pg-chararray-parser)
 
 (defun pg-textarray-parser (str encoding)
-  "Parse PostgreSQL value STR as an array of TEXT values."
+  "Parse PostgreSQL value STR as an array of TEXT values.
+Uses text encoding ENCODING."
   (let ((len (length str)))
     (unless (and (eql (aref str 0) ?{)
                  (eql (aref str (1- len)) ?}))
@@ -2660,8 +2667,7 @@ Authenticate as USER with PASSWORD."
          (hash (concat "md5" (md5 (concat pwdhash salt)))))
     (pg-send-char con ?p)
     (pg-send-uint con (+ 5 (length hash)) 4)
-    (pg-send-string con hash)
-    (pg-flush con)))
+    (pg-send-string con hash)))
 
 
 ;; TODO: implement stringprep for user names and passwords, as per RFC4013.
@@ -2743,7 +2749,6 @@ Authenticate as USER with PASSWORD."
     (pg-send-string con mechanism)
     (pg-send-uint con len-cf 4)
     (pg-send-octets con client-first)
-    (pg-flush con)
     (let ((c (pg-read-char con)))
       (cl-case c
         (?E
@@ -2788,7 +2793,6 @@ Authenticate as USER with PASSWORD."
              (pg-send-char con ?p)
              (pg-send-uint con (+ 4 (length client-final-msg)) 4)
              (pg-send-octets con client-final-msg)
-             (pg-flush con)
              (let ((c (pg-read-char con)))
                (cl-case c
                  (?E
@@ -2844,8 +2848,9 @@ Uses database connection CON."
          (table-name (if (pg-qualified-name-p table)
                          (pg-qualified-name-name table)
                        table))
-         (schema-sql (if schema "AND schemaname=$2" ""))
-         (sql (format "SELECT tableowner FROM pg_catalog.pg_tables WHERE tablename=$1 %s" schema-sql))
+         (schema-sql (if schema " AND schemaname=$2" ""))
+         (sql (concat "SELECT tableowner FROM pg_catalog.pg_tables WHERE tablename=$1" schema-sql))
+         ;; (_ (message "££ table-name = %s" table-name))
          (args (if schema
                    `((,table-name . "text") (,schema . "text"))
                  `((,table-name . "text"))))
@@ -3084,7 +3089,7 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
       (when (null (char-after pgcon--position))
         (dotimes (_i (pgcon-timeout con))
           (when (null (char-after pgcon--position))
-            (sleep-for 0.1)
+            ;; (sleep-for 0.1)
             (accept-process-output process 1.0))))
       (when (null (char-after pgcon--position))
         (let ((msg (format "Timeout in pg-read-char reading from %s" con)))
@@ -3129,7 +3134,7 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
         (when (> end (point-max))
           (dotimes (_i (pgcon-timeout con))
             (when (> end (point-max))
-              (sleep-for 0.1)
+              ;; (sleep-for 0.1)
               (accept-process-output process 1.0))))
         (when (> end (point-max))
           (let ((msg (format "Timeout in pg-read-chars reading from %s" con)))

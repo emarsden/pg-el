@@ -1,6 +1,14 @@
 # Changelog
 
 
+## [0.45] - Unreleased
+
+- When supported by Emacs, enable `TCP_NODELAY` on the network connections to PostgreSQL to disable
+  Nagle's algorithm (network segments are sent as soon as possible, even when they contain little
+  data). This is done by libpq and results in a 12x (!) speedup on some benchmarks. This is a new
+  feature available in (currently unreleased) Emacs 31 (bug#74793).
+
+
 ## [0.44] - 2024-12-04
 
 - Detect the PostgreSQL variant TimescaleDB. Implement a specific SQL query for `pg-tables` for this
