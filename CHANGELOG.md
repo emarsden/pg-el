@@ -8,6 +8,10 @@
   data). This is done by libpq and results in a 12x (!) speedup on some benchmarks. This is a new
   feature available in (currently unreleased) Emacs 31 (bug#74793).
 
+- New function `pg-schemas` which returns the list of the schemas in a PostgreSQL database. Schemas
+  are a form of namespace, which can contain elements such as tables, sequences, indexes and views.
+  The default schema name is `public`.
+
 
 ## [0.44] - 2024-12-04
 

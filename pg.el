@@ -2899,6 +2899,13 @@ Uses database connection CON."
   (let ((res (pg-exec con "SELECT datname FROM pg_catalog.pg_database")))
     (apply #'append (pg-result res :tuples))))
 
+;; Possible alternative query:
+;;   SELECT nspname FROM pg_namespace
+(defun pg-schemas (con)
+  "List of the schemas in the PostgreSQL database we are connected to via CON."
+  (let ((res (pg-exec con "SELECT schema_name FROM information_schema.schemata")))
+    (apply #'append (pg-result res :tuples))))
+
 (defun pg--tables-information-schema (con)
   "List of the tables present in the database we are connected to via CON.
 Queries the information schema."
