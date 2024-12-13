@@ -147,6 +147,13 @@ Return a list of the databases available over PostgreSQL connection `CON`. A dat
 tables; in a fresh PostgreSQL installation there is a single database named "template1".
 
 
+    (pg-schemas con) -> list of strings
+
+Return the list of the schemas in the PostgreSQL server to which we are connected with `CON`.
+Schemas are a form of namespace, which can contain elements such as tables, sequences, indexes and
+views. The default schema name is `public`.
+
+
     (pg-tables con) -> list of strings
 
 Return a list of the tables present in the database to which we are currently connected over `CON`.
