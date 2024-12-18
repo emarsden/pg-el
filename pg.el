@@ -2903,8 +2903,12 @@ Uses database connection CON."
 ;;   SELECT nspname FROM pg_namespace
 (defun pg-schemas (con)
   "List of the schemas in the PostgreSQL database we are connected to via CON."
-  (let ((res (pg-exec con "SELECT schema_name FROM information_schema.schemata")))
-    (apply #'append (pg-result res :tuples))))
+  (pcase (pgcon-server-variant con)
+    ;; QuestDB doesn't really support schemas.
+    ('questdb (list "sys" "public"))
+    (t
+     (let ((res (pg-exec con "SELECT schema_name FROM information_schema.schemata")))
+       (apply #'append (pg-result res :tuples))))))
 
 (defun pg--tables-information-schema (con)
   "List of the tables present in the database we are connected to via CON.
