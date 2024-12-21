@@ -384,10 +384,10 @@ tag called pg-finished."
 (defun pg--detect-server-variant (con)
   "Detect the flavour of PostgreSQL that we are connected to.
 Uses connection CON. Also run variant-specific configuration actions.
-The variant can be accessed by pgcon-server-variant'."
-  ;; This is the default value, meaning we haven't yet identified a variant based on its backend
-  ;; parameter values.
+The variant can be accessed by `pgcon-server-variant'."
   (pcase (pgcon-server-variant con)
+    ;; This is the default value, meaning we haven't yet identified a variant based on its backend
+    ;; parameter values.
     ('postgresql
      (let ((version (pg-backend-version con)))
        (cond ((cl-search "CrateDB" version)
@@ -400,6 +400,8 @@ The variant can be accessed by pgcon-server-variant'."
               (setf (pgcon-server-variant con) 'questdb))
              ((cl-search "GreptimeDB" version)
               (setf (pgcon-server-variant con) 'greptimedb))
+             ((cl-search "RisingWave" version)
+              (setf (pgcon-server-variant con) 'risingwave))
              ((cl-search "implemented by immudb" version)
               (setf (pgcon-server-variant con) 'immudb)))))
     ('ydb
@@ -2906,7 +2908,7 @@ Uses database connection CON."
   (pcase (pgcon-server-variant con)
     ;; QuestDB doesn't really support schemas.
     ('questdb (list "sys" "public"))
-    (t
+    (_
      (let ((res (pg-exec con "SELECT schema_name FROM information_schema.schemata")))
        (apply #'append (pg-result res :tuples))))))
 
