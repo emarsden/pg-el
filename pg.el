@@ -2341,7 +2341,7 @@ Uses text encoding ENCODING."
             (day     (string-to-number (match-string 3 str)))
             (hours   (string-to-number (match-string 4 str)))
             (minutes (string-to-number (match-string 5 str)))
-            (seconds (round (string-to-number (match-string 6 str))))
+            (seconds (string-to-number (match-string 6 str)))
             ;; If the timezone is not explicitly specified, use the local one
             (tz      (or (match-string 7 str) nil)))
         (encode-time (list seconds minutes hours day month year nil nil tz)))
@@ -2356,7 +2356,7 @@ Uses text encoding ENCODING."
             (day     (string-to-number (match-string 3 str)))
             (hours   (string-to-number (match-string 4 str)))
             (minutes (string-to-number (match-string 5 str)))
-            (seconds (round (string-to-number (match-string 6 str))))
+            (seconds (string-to-number (match-string 6 str)))
             ;; The timezone must be ignored even if it is specified
             (tz      nil))
         (encode-time (list seconds minutes hours day month year nil nil tz)))
