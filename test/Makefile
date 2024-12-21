@@ -372,8 +372,10 @@ test-orioledb: test-pg.el
 	${DOCKER} stop orioledb
 
 
-# https://docs.ivorysql.org/en/ivorysql-doc/v3.4/v3.4/6#Docker-installation
 # An Oracle-compatible flavour of PostgreSQL.
+#
+# https://docs.ivorysql.org/en/ivorysql-doc/v3.4/v3.4/6#Docker-installation
+# https://registry.hub.docker.com/r/ivorysql/ivorysql/tags
 test-ivorysql: test-pg.el
 	${DOCKER} run --rm --name ivorydb \
 	  --publish 5437:5432 \
@@ -468,6 +470,10 @@ test-cockroachdb: test-pg.el
 # tests; it fails on "SELECT 1::integer" because it doesn't recognize integer as a type. Also DELETE
 # statements are not supported.
 #
+# Note: we could test the TLS support for the PostgreSQL wire protocol by setting parameters
+#   tls.enabled=true
+#   tls.demo.mode=true
+# 
 # https://questdb.io/docs/configuration/
 test-questdb: test-pg.el
 	${DOCKER} run --rm --name questdb \
@@ -606,7 +612,7 @@ test-clickhouse: test-pg.el
 
 # https://docs.greptime.com/getting-started/installation/greptimedb-standalone
 #
-# Tested 2024-11 version 0.9.5. This database implements quite a lot of the PostgreSQL wire
+# Tested 2024-12 version 0.12.0. This database implements quite a lot of the PostgreSQL wire
 # protocol, but the names it uses for types in the pg_catalog.pg_types table are not the same as
 # PostgreSQL, so our parsing machinery does not work (we see 42 returned as "42").
 #
@@ -622,6 +628,23 @@ test-greptimedb: test-pg.el
 	sleep 5
 	PGEL_PORT=4003 PGEL_DATABASE=public $(MAKE) test
 	${DOCKER} stop greptimedb
+
+
+# RisingWave event streaming database. Last tested 2024-12 with v2.1.0.
+# https://github.com/risingwavelabs/risingwave
+# https://docs.risingwave.com/get-started/quickstart
+#
+# Fails on query "SELECT 'gday'::varchar(20)"
+#
+# Could test TLS support with environment variables RW_SSL_CERT and RW_SSL_KEY.
+test-risingwave: test-pg.el
+	${DOCKER} run --rm --name risingwave \
+	  --pull=always \
+	  -e ENABLE_TELEMETRY=false \
+	  --publish 4566:4566 \
+	  -d docker.io/risingwavelabs/risingwave:latest single_node
+	sleep 5
+	PGURI=postgresql://root@127.0.0.1:4566/dev $(MAKE) test
 
 
 # Create and populate a new database with information concerning works by Shakespeare.
