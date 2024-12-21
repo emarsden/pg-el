@@ -12,6 +12,11 @@
   are a form of namespace, which can contain elements such as tables, sequences, indexes and views.
   The default schema name is `public`.
 
+- Add support for detecting the RisingWave database, which is compatible with the PostgreSQL wire
+  protocol, with certain limitations.
+
+- When parsing timestamp data, preserve the fractional part of a second (patch from @akurth).
+
 
 ## [0.44] - 2024-12-04
 
