@@ -72,7 +72,7 @@ The following PostgreSQL-compatible databases have been tested:
   some features for compatibility with Oracle).
 
 - The [Timescale DB](https://www.timescale.com/) extension for time series data works perfectly
-  (tested with version 2.16.1).
+  (last tested with version 2.16.1).
 
 - The [CitusDB](https://github.com/citusdata/citus) extension for sharding PostgreSQL over multiple
   hosts works perfectly (last tested with Citus version 12.1.5, which is based on PostgreSQL 16.6).
@@ -87,9 +87,10 @@ The following PostgreSQL-compatible databases have been tested:
 - [YugabyteDB](https://yugabyte.com/): last tested against version 2.23. Mostly working though the
   `pg_sequences` table is not implemented so certain tests fail. YugabyteDB does not have full
   compatibility with PostgreSQL SQL, and for example `GENERATED ALWAYS AS` columns are not
-  supported, and `LISTEN` and `NOTIFY` are not supported.
+  supported, and `LISTEN` and `NOTIFY` are not supported. It does support certain extensions such as
+  pgvector, however.
 
-- [CrateDB](https://crate.io/): last tested with version 5.9.4. CrateDB does not support rows (e.g.
+- [CrateDB](https://crate.io/): last tested with version 5.9.5. CrateDB does not support rows (e.g.
   `SELECT (1,2)`), does not support the `time`, `varbit`, `bytea`, `jsonb` and `hstore` types, does
   not handle a query which only contains an SQL comment, does not handle various PostgreSQL
   functions such as `factorial`, and does not return a correct type OID for text columns in rows
@@ -115,10 +116,10 @@ The following PostgreSQL-compatible databases have been tested:
   Has very limited PostgreSQL compatibility. For example, an empty query string leads to a hung
   connection, and the `bit` type is returned as a string with the wrong oid.
 
-- [GreptimeDB](https://github.com/GrepTimeTeam/greptimedb): last tested with version 0.10.2. This
-  database implements quite a lot of the PostgreSQL wire protocol, but the names it uses for types
-  in the `pg_catalog.pg_types` table are not the same as those used by PostgreSQL (e.g. `Int64`
-  instead of `int8`), so our parsing machinery does not work.
+- [GreptimeDB](https://github.com/GrepTimeTeam/greptimedb): this time series database implements
+  quite a lot of the PostgreSQL wire protocol, but the names it uses for types in the
+  `pg_catalog.pg_types` table are not the same as those used by PostgreSQL (e.g. `Int64` instead of
+  `int8`), so our parsing machinery does not work. Last tested v0.12.0 in 2024-12.
 
 - Hosted PostgreSQL services that have been tested: as of 2024-12
   [Railway.app](https://railway.app/) is running a Debian build of PostgreSQL 16.4, and works fine;
