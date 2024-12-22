@@ -663,19 +663,21 @@ bar$$"))))
 (defun pg-test-date (con)
   (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0))))
     (pg-exec con "DROP TABLE IF EXISTS date_test")
-    (pg-exec con "CREATE TABLE date_test(id SERIAL PRIMARY KEY, a timestamp, b time, c timetz, d date)")
+    (pg-exec con "CREATE TABLE date_test(id integer, ts timestamp, tstz timestamptz, t time, ttz timetz, d date)")
     (unwind-protect
         (progn
-          (pg-exec con "INSERT INTO date_test(a, b, c, d) VALUES "
-                   "(current_timestamp, 'now', 'now', current_date)")
+          (pg-exec con "INSERT INTO date_test(id, ts, tstz, t, ttz, d) VALUES "
+                   "(1, current_timestamp, current_timestamp, 'now', 'now', current_date)")
           (let* ((res (pg-exec con "SELECT * FROM date_test"))
                  (row (pg-result res :tuple 0)))
-            (message "timestamp = %s" (nth 2 row))
+            (message "timestamp = %s" (nth 1 row))
+            (message "timestamptz = %s" (nth 2 row))
             (message "time = %s" (nth 3 row))
             (message "timetz = %s" (nth 4 row))
             (message "date = %s" (nth 5 row)))
-          (pg-exec-prepared con "INSERT INTO date_test(a,b,c,d) VALUES($1, $2, $3, $4)"
+          (pg-exec-prepared con "INSERT INTO date_test(id, ts, tstz, t, ttz, d) VALUES(2, $1, $2, $3, $4, $5)"
                             `((,(pg-isodate-without-timezone-parser "2024-04-27T11:34:42" nil) . "timestamp")
+                              (,(pg-isodate-with-timezone-parser "2024-04-27T11:34:42.789+11" nil) . "timestamptz")
                               ("11:34" . "time")
                               ("16:55.33456+11" . "timetz")
                               (,(pg-date-parser "2024-04-27" nil) . "date")))
