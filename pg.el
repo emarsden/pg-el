@@ -2642,9 +2642,9 @@ Respects floating-point infinities and NaN."
 (defun pg--serialize-encoded-time (encoded-time _encoding)
   (unless (and (listp encoded-time)
                (integerp (car encoded-time))
-               (integerp (cadr encoded-time)))
+               (or (listp (cdr encoded-time))(integerp (cdr encoded-time))))
     (pg-signal-type-error "Expecting an encoded time-date (a . b), got %s" encoded-time))
-  (format-time-string "%Y-%m-%dT%T" encoded-time))
+  (format-time-string "%Y-%m-%dT%T.%N" encoded-time))
 
 (pg-register-textual-serializer "timestamp"  #'pg--serialize-encoded-time)
 (pg-register-textual-serializer "timestamptz" #'pg--serialize-encoded-time)
