@@ -1,7 +1,7 @@
 # Changelog
 
 
-## [0.45] - Unreleased
+## [0.45] - 2024-12-22
 
 - When supported by Emacs, enable `TCP_NODELAY` on the network connections to PostgreSQL to disable
   Nagle's algorithm (network segments are sent as soon as possible, even when they contain little
@@ -13,9 +13,10 @@
   The default schema name is `public`.
 
 - Add support for detecting the RisingWave database, which is compatible with the PostgreSQL wire
-  protocol, with certain limitations.
+  protocol, with certain limitations. For this database, `pgcon-server-variant` returns the symbol
+  `risingwave`.
 
-- When parsing timestamp data, preserve the fractional part of a second (patch from @akurth).
+- When parsing timestamp and time data, preserve the fractional part of a second (patch from @akurth).
 
 
 ## [0.44] - 2024-12-04
