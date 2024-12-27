@@ -189,6 +189,8 @@
               (version< emacs-version "29.1"))
     (message "Testing date routines...")
     (pg-test-date con))
+  (message "Testing timezone handling ...")
+  (pg-run-tz-tests con)
   (message "Testing numeric routines...")
   (pg-test-numeric con)
   (unless (or (pg-test-is-xata con)

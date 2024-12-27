@@ -79,6 +79,7 @@
 (require 'url)
 (require 'peg)
 (require 'rx)
+(require 'parse-time)
 
 
 ;; https://www.postgresql.org/docs/current/libpq-envars.html
@@ -2326,27 +2327,21 @@ Uses text encoding ENCODING."
 (pg-register-parser "date" #'pg-date-parser)
 
 (defconst pg--ISODATE_REGEX
-  (concat "\\([0-9]+\\)-\\([0-9][0-9]\\)-\\([0-9][0-9]\\)[ T]" ; Y-M-D
+  (concat "^\\([0-9]+\\)-\\([0-9][0-9]\\)-\\([0-9][0-9]\\)" ; Y-M-D
+          "\\([ T]\\)" ; delim
           "\\([0-9][0-9]\\):\\([0-9][0-9]\\):\\([.0-9]+\\)" ; H:M:S.S
-          "\\([-+][0-9]+\\)?")) ; TZ
+          "\\(?:\\(?:[zZ]\\)\\|\\(?:[-+][0-9]\\{2\\}:?\\(?:[0-9]\\{2\\}\\)?\\)\\)?$")) ; TZ
 
 ;;  format for abstime/timestamp etc with ISO output syntax is
-;;;    "1999-01-02 14:32:53+01"
+;;;    "1999-01-02 14:32:53.789+01"
 ;; which we convert to the internal Emacs date/time representation
 ;; (there may be a fractional seconds quantity as well, which the regex
 ;; handles)
 (defun pg-isodate-with-timezone-parser (str _encoding)
   "Parse PostgreSQL value STR as an ISO-formatted date."
   (if (string-match pg--ISODATE_REGEX str)  ; is non-null
-      (let ((year    (string-to-number (match-string 1 str)))
-            (month   (string-to-number (match-string 2 str)))
-            (day     (string-to-number (match-string 3 str)))
-            (hours   (string-to-number (match-string 4 str)))
-            (minutes (string-to-number (match-string 5 str)))
-            (seconds (string-to-number (match-string 6 str)))
-            ;; If the timezone is not explicitly specified, use the local one
-            (tz      (or (match-string 7 str) nil)))
-        (encode-time (list seconds minutes hours day month year nil nil tz)))
+      (let ((iso (replace-match "T" nil nil str 4)))
+        (parse-iso8601-time-string iso t))
     (let ((msg (format "Badly formed ISO timestamp from backend: %s" str)))
       (signal 'pg-protocol-error (list msg)))))
 
@@ -2356,9 +2351,9 @@ Uses text encoding ENCODING."
       (let ((year    (string-to-number (match-string 1 str)))
             (month   (string-to-number (match-string 2 str)))
             (day     (string-to-number (match-string 3 str)))
-            (hours   (string-to-number (match-string 4 str)))
-            (minutes (string-to-number (match-string 5 str)))
-            (seconds (string-to-number (match-string 6 str)))
+            (hours   (string-to-number (match-string 5 str)))
+            (minutes (string-to-number (match-string 6 str)))
+            (seconds (string-to-number (match-string 7 str)))
             ;; The timezone must be ignored even if it is specified
             (tz      nil))
         (encode-time (list seconds minutes hours day month year nil nil tz)))
@@ -2644,7 +2639,7 @@ Respects floating-point infinities and NaN."
                (integerp (car encoded-time))
                (or (listp (cdr encoded-time))(integerp (cdr encoded-time))))
     (pg-signal-type-error "Expecting an encoded time-date (a . b), got %s" encoded-time))
-  (format-time-string "%Y-%m-%dT%T.%N" encoded-time))
+  (format-time-string "%Y-%m-%dT%T.%N%z" encoded-time "UTC"))
 
 (pg-register-textual-serializer "timestamp"  #'pg--serialize-encoded-time)
 (pg-register-textual-serializer "timestamptz" #'pg--serialize-encoded-time)
