@@ -4,7 +4,7 @@
   (pg-exec con "DROP TABLE IF EXISTS tz_test")
   (pg-exec con "CREATE TABLE tz_test(id INTEGER PRIMARY KEY, ts TIMESTAMP, tstz TIMESTAMPTZ)")
   (let ((tz-orig (getenv "TZ")))
-    (setenv "TZ" "Berlin/Germany")
+    (setenv "TZ" "Europe/Berlin")
     (unwind-protect
         (progn
           (test-iso8601-regexp)
@@ -43,13 +43,13 @@
         (tstz-dst (pg-isodate-with-timezone-parser "2024-05-27T15:34:42.789+04" nil))
         (tstz-no-tz (pg-isodate-with-timezone-parser "2024-02-27T15:34:42.789" nil))
         (tstz-zulu (pg-isodate-with-timezone-parser "2024-02-27T15:34:42.789Z" nil)))
-    (assert-equals "2024-02-27T11:34:42.789+0000" (fmt-ts-utc ts))
-    (assert-equals "2024-05-27T11:34:42.789+0000" (fmt-ts-utc ts-dst))
-    (assert-equals "2024-02-27T11:34:42.789+0000" (fmt-ts-utc ts-no-tz))
-    (assert-equals "2024-02-27T11:34:42.789+0000" (fmt-ts-utc ts-zulu))
+    (assert-equals "2024-02-27T10:34:42.789+0000" (fmt-ts-utc ts))
+    (assert-equals "2024-05-27T10:34:42.789+0000" (fmt-ts-utc ts-dst))
+    (assert-equals "2024-02-27T10:34:42.789+0000" (fmt-ts-utc ts-no-tz))
+    (assert-equals "2024-02-27T10:34:42.789+0000" (fmt-ts-utc ts-zulu))
     (assert-equals "2024-02-27T11:34:42.789+0000" (fmt-ts-utc tstz))
     (assert-equals "2024-05-27T11:34:42.789+0000" (fmt-ts-utc tstz-dst))
-    (assert-equals "2024-02-27T15:34:42.789+0000" (fmt-ts-utc tstz-no-tz))
+    (assert-equals "2024-02-27T14:34:42.789+0000" (fmt-ts-utc tstz-no-tz))
     (assert-equals "2024-02-27T15:34:42.789+0000" (fmt-ts-utc tstz-zulu))))
 
 (defun test-serialize (con)
@@ -77,7 +77,7 @@
   (let* ((data (pg-result (pg-exec con "SELECT ts::text, tstz::text FROM tz_test WHERE id=2") :tuple 0))
          (ts (nth 0 data))
          (tstz (nth 1 data)))
-    (assert-equals "2024-02-27 11:34:42.789" ts)
+    (assert-equals "2024-02-27 10:34:42.789" ts)
     (assert-equals "2024-02-27 11:34:42.789+00" tstz)))
 
 
