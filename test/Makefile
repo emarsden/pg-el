@@ -15,11 +15,11 @@ install-deps:
 
 test: test-pg.el install-deps
 	${EMACS} -Q --batch -L .. -L . -l load-deps.el ../pg.el \
-	   -l pg.el -l pg-geometry.el -l pg-gis.el -l test-pg.el -l test-tz.el -f pg-test
+	   -l pg.el -l pg-geometry.el -l pg-gis.el -l test-pg.el -f pg-test
 
 test-interactive: test-pg.el install-deps
 	${EMACS} -Q -L .. -L . -l load-deps.el ../pg.el \
-	   -l pg.el -l pg-geometry.el -l pg-gis.el -l test-pg.el -l test-tz.el -f pg-test
+	   -l pg.el -l pg-geometry.el -l pg-gis.el -l test-pg.el -f pg-test
 
 supabase: install-deps
 	${EMACS} -Q --batch -L .. -L . -l load-deps.el -l ../pg.el -l supabase.el -f test-supabase
