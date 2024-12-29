@@ -2347,7 +2347,12 @@ Uses text encoding ENCODING."
   "Parse PostgreSQL value STR as an ISO-formatted date."
   (if (string-match pg--ISODATE_REGEX str)  ; is non-null
       (let ((iso (replace-match "T" nil nil str 4)))
-        (parse-iso8601-time-string iso t))
+        ;; Use of parse-iso8601-time-string with a second argument is only supported from Emacs 29.1
+        ;; onwards. In earlier versions we call the function with a single argument, which loses sub
+        ;; second precision (and will fail our test suite for this reason).
+        (if (>= emacs-major-version 29)
+            (parse-iso8601-time-string iso t)
+          (parse-iso8601-time-string iso)))
     (let ((msg (format "Badly formed ISO timestamp from backend: %s" str)))
       (signal 'pg-protocol-error (list msg)))))
 
