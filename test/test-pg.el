@@ -670,51 +670,52 @@ bar$$"))))
 ;; Testing for the date/time handling routines.
 (defun pg-test-date (con)
   (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0))))
-    (pg-exec con "SET TimeZone = 'Europe/Berlin'")
-    (pg-exec con "DROP TABLE IF EXISTS date_test")
-    (pg-exec con "CREATE TABLE date_test(id integer, ts timestamp, tstz timestamptz, t time, ttz timetz, d date)")
-    (unwind-protect
-        (progn
-          (pg-exec con "INSERT INTO date_test(id, ts, tstz, t, ttz, d) VALUES "
-                   "(1, current_timestamp, current_timestamp, 'now', 'now', current_date)")
-          (let* ((res (pg-exec con "SELECT * FROM date_test"))
-                 (row (pg-result res :tuple 0)))
-            (message "timestamp = %s" (nth 1 row))
-            (message "timestamptz = %s" (nth 2 row))
-            (message "time = %s" (nth 3 row))
-            (message "timetz = %s" (nth 4 row))
-            (message "date = %s" (nth 5 row)))
-          (pg-exec-prepared con "INSERT INTO date_test(id, ts, tstz, t, ttz, d) VALUES(2, $1, $2, $3, $4, $5)"
-                            `((,(pg-isodate-without-timezone-parser "2024-04-27T11:34:42" nil) . "timestamp")
-                              (,(pg-isodate-with-timezone-parser "2024-04-27T11:34:42.789+11" nil) . "timestamptz")
-                              ("11:34" . "time")
-                              ("16:55.33456+11" . "timetz")
-                              (,(pg-date-parser "2024-04-27" nil) . "date")))
-          (should (eql 2 (scalar "SELECT COUNT(*) FROM date_test"))))
-      (pg-exec con "DROP TABLE date_test"))
-    ;; this fails on CockroachDB
-    (unless (pg-test-is-cockroachdb con)
-      (should (equal (scalar "SELECT 'allballs'::time") "00:00:00")))
-    (should (equal (scalar "SELECT '2022-10-01'::date")
-                   (encode-time (list 0 0 0 1 10 2022))))
-    ;; When casting to DATE, the time portion is truncated
-    (should (equal (scalar "SELECT '2063-03-31T22:13:02'::date")
-                   (encode-time (list 0 0 0 31 3 2063))))
-    ;; Here the hh:mm:ss are taken into account.
-    (should (equal (scalar "SELECT '2063-03-31T22:13:02'::timestamp")
-                   (encode-time (list 2 13 22 31 3 2063 nil -1 'wall))))
-    (should (equal (scalar "SELECT '2010-04-05 14:42:21'::timestamp with time zone")
-                   ;; SECOND MINUTE HOUR DAY MONTH YEAR IGNORED DST ZONE
-                   ;; Passing ZONE=nil means using Emacs' interpretation of local time
-                   (encode-time (list 21 42 14 5 4 2010 nil -1 nil))))
-    (should (equal (scalar "SELECT '2010-04-05 14:42:21'::timestamp without time zone")
-                   (encode-time (list 21 42 14 5 4 2010 nil -1 'wall))))
-    (should (equal (scalar "SELECT 'PT42S'::interval") "00:00:42"))
-    (should (equal (scalar "SELECT 'PT3H4M42S'::interval") "03:04:42"))
-    (should (equal (scalar "select '05:00'::time") "05:00:00"))
-    (should (equal (scalar "SELECT '04:15:31.445+05'::timetz") "04:15:31.445+05"))
-    (should (equal (scalar "SELECT '2001-02-03 04:05:06'::timestamp")
-                   (encode-time (list 6 5 4 3 2 2001 nil -1 nil))))))
+    (with-environment-variables (("TZ" "Europe/Berlin"))
+      (pg-exec con "SET TimeZone = 'Europe/Berlin'")
+      (pg-exec con "DROP TABLE IF EXISTS date_test")
+      (pg-exec con "CREATE TABLE date_test(id integer, ts timestamp, tstz timestamptz, t time, ttz timetz, d date)")
+      (unwind-protect
+          (progn
+            (pg-exec con "INSERT INTO date_test(id, ts, tstz, t, ttz, d) VALUES "
+                     "(1, current_timestamp, current_timestamp, 'now', 'now', current_date)")
+            (let* ((res (pg-exec con "SELECT * FROM date_test"))
+                   (row (pg-result res :tuple 0)))
+              (message "timestamp = %s" (nth 1 row))
+              (message "timestamptz = %s" (nth 2 row))
+              (message "time = %s" (nth 3 row))
+              (message "timetz = %s" (nth 4 row))
+              (message "date = %s" (nth 5 row)))
+            (pg-exec-prepared con "INSERT INTO date_test(id, ts, tstz, t, ttz, d) VALUES(2, $1, $2, $3, $4, $5)"
+                              `((,(pg-isodate-without-timezone-parser "2024-04-27T11:34:42" nil) . "timestamp")
+                                (,(pg-isodate-with-timezone-parser "2024-04-27T11:34:42.789+11" nil) . "timestamptz")
+                                ("11:34" . "time")
+                                ("16:55.33456+11" . "timetz")
+                                (,(pg-date-parser "2024-04-27" nil) . "date")))
+            (should (eql 2 (scalar "SELECT COUNT(*) FROM date_test"))))
+        (pg-exec con "DROP TABLE date_test"))
+      ;; this fails on CockroachDB
+      (unless (pg-test-is-cockroachdb con)
+        (should (equal (scalar "SELECT 'allballs'::time") "00:00:00")))
+      (should (equal (scalar "SELECT '2022-10-01'::date")
+                     (encode-time (list 0 0 0 1 10 2022))))
+      ;; When casting to DATE, the time portion is truncated
+      (should (equal (scalar "SELECT '2063-03-31T22:13:02'::date")
+                     (encode-time (list 0 0 0 31 3 2063))))
+      ;; Here the hh:mm:ss are taken into account.
+      (should (equal (scalar "SELECT '2063-03-31T22:13:02'::timestamp")
+                     (encode-time (list 2 13 22 31 3 2063 nil -1 'wall))))
+      (should (equal (scalar "SELECT '2010-04-05 14:42:21'::timestamp with time zone")
+                     ;; SECOND MINUTE HOUR DAY MONTH YEAR IGNORED DST ZONE
+                     ;; Passing ZONE=nil means using Emacs' interpretation of local time
+                     (encode-time (list 21 42 14 5 4 2010 nil -1 nil))))
+      (should (equal (scalar "SELECT '2010-04-05 14:42:21'::timestamp without time zone")
+                     (encode-time (list 21 42 14 5 4 2010 nil -1 'wall))))
+      (should (equal (scalar "SELECT 'PT42S'::interval") "00:00:42"))
+      (should (equal (scalar "SELECT 'PT3H4M42S'::interval") "03:04:42"))
+      (should (equal (scalar "select '05:00'::time") "05:00:00"))
+      (should (equal (scalar "SELECT '04:15:31.445+05'::timetz") "04:15:31.445+05"))
+      (should (equal (scalar "SELECT '2001-02-03 04:05:06'::timestamp")
+                     (encode-time (list 6 5 4 3 2 2001 nil -1 nil)))))))
 
 (defun pg-test-numeric (con)
   (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0)))
