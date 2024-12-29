@@ -534,7 +534,8 @@ Uses database DBNAME, user USER and password PASSWORD."
              (pg-initialize-parsers con))
         (pg--detect-server-variant con)
         ;; This statement fails on ClickHouse (and the database immediately closes the connection!).
-        (pg-exec con "SET datestyle = 'ISO'")
+        (unless (eq 'clickhouse (pgcon-server-variant con))
+          (pg-exec con "SET datestyle = 'ISO'"))
         (pg-enable-async-notification-handlers con)
         (pg-connection-set-busy con nil)
         (cl-return-from pg-do-startup con)))
@@ -627,7 +628,8 @@ Uses database DBNAME, user USER and password PASSWORD."
                              (password "")
                              (host "localhost")
                              (port 5432)
-                             (tls-options nil))
+                             (tls-options nil)
+                             (server-variant nil))
   "Initiate a connection with the PostgreSQL backend over TCP.
 Connect to the database DBNAME with the username USER, on PORT of
 HOST, providing PASSWORD if necessary. Return a connection to the
@@ -647,6 +649,8 @@ These are passed to GnuTLS."
                                        ;; :nowait t
                                        :nogreeting t))
          (con (make-pgcon :dbname dbname :process process)))
+    (when server-variant
+      (setf (pgcon-server-variant con) server-variant))
     (when (featurep 'make-network-process :nodelay)
       (set-network-process-option process :nodelay t))
     (unless (zerop pg-connect-timeout)
@@ -1936,11 +1940,11 @@ PostgreSQL and Emacs. CON should no longer be used."
 ;; other activity has led to the creation of new PostgreSQL types (e.g. "CREATE TYPE ..."), and that
 ;; we need to repopulate our caches.
 ;;
-;; Some databases such as Clickhouse that implement the PostgreSQL wire protocol do implement the
+;; Some databases such as Clickhouse that implement the PostgreSQL wire protocol do not implement the
 ;; pg_type table. They send all data in textual format with an OID of zero. For this reason, we
 ;; tolerate an error in the query on pg_type and leave all our oid-related caches empty.
 ;;
-;; Note: the psycopg libary make the following query to also retrieve datatype delimiters and array
+;; Note: the psycopg libary makes the following query to also retrieve datatype delimiters and array
 ;; types:
 ;;
 ;; SELECT typname AS name, oid, typarray AS array_oid, oid::regtype::text AS regtype, typdelim AS delimiter
@@ -1948,8 +1952,10 @@ PostgreSQL and Emacs. CON should no longer be used."
 ;; WHERE t.oid = to_regtype($1)
 ;; ORDER BY t.oid
 
-(defun pg-initialize-parsers (con)
+(cl-defun pg-initialize-parsers (con)
   "Initialize the datatype parsers on PostgreSQL connection CON."
+  (when (eq 'clickhouse (pgcon-server-variant con))
+    (cl-return-from pg-initialize-parsers nil))
   (let ((type-names (list))
         (parser-by-oid (pgcon-parser-by-oid con))
         (oid-by-typname (pgcon-oid-by-typname con))
@@ -2847,7 +2853,6 @@ Uses database connection CON."
                        table))
          (schema-sql (if schema " AND schemaname=$2" ""))
          (sql (concat "SELECT tableowner FROM pg_catalog.pg_tables WHERE tablename=$1" schema-sql))
-         ;; (_ (message "££ table-name = %s" table-name))
          (args (if schema
                    `((,table-name . "text") (,schema . "text"))
                  `((,table-name . "text"))))
@@ -2955,6 +2960,9 @@ Queries legacy internal PostgreSQL tables."
                   (string= "sys" (pg-qualified-name-schema tbl)))))
     (cl-delete-if #'cratedb-name-p (pg--tables-information-schema con))))
 
+;; TODO: if we are able to detect Clickhouse and survive the startup sequence, list of tables is
+;;   SELECT name FROM system.tables WHERE database == currentDatabase()
+
 (defun pg-tables (con)
   "List of the tables present in the database we are connected to via CON.
 Only tables to which the current user has access are listed."
@@ -3043,7 +3051,7 @@ COLUMN is in TABLE. Uses connection to PostgreSQL CON."
   "Version and operating environment of PostgreSQL backend.
 Concerns the backend that we are connected to over connection CON.
 PostgreSQL returns the version as a string. CrateDB returns it as an integer."
-  (let ((res (pg-exec con "SELECT pg_catalog.version()")))
+  (let ((res (pg-exec con "SELECT version()")))
     (cl-first (pg-result res :tuple 0))))
 
 
