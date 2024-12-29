@@ -12,6 +12,7 @@ jobs:
         # Docker Hub image
         image: postgres:16
         env:
+          TZ: Asia/Kolkata
           POSTGRES_DB: pgeltestdb
           POSTGRES_USER: pgeltestuser
           POSTGRES_PASSWORD: pgeltest

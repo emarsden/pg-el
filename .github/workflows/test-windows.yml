@@ -9,6 +9,8 @@ jobs:
     steps:
       - name: Set up pre-installed PostgreSQL
         uses: ikalnytskyi/action-setup-postgres@v6
+        env:
+          TZ: Asia/Kolkata
         with:
           username: pgeltestuser
           password: pgeltest
