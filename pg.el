@@ -2360,12 +2360,10 @@ Uses text encoding ENCODING."
             (hours   (string-to-number (match-string 5 str)))
             (minutes (string-to-number (match-string 6 str)))
             (seconds (string-to-number (match-string 7 str)))
-            ;; The timezone must be ignored even if it is specified
-            (tz      nil))
-        (encode-time (list seconds minutes hours day month year nil nil tz)))
+            (tz      'wall))
+        (encode-time (list seconds minutes hours day month year nil -1 tz)))
     (let ((msg (format "Badly formed ISO timestamp from backend: %s" str)))
       (signal 'pg-protocol-error (list msg)))))
-
 
 (pg-register-parser "timestamp"  #'pg-isodate-without-timezone-parser)
 (pg-register-parser "timestamptz" #'pg-isodate-with-timezone-parser)

@@ -99,18 +99,16 @@
 ;; Some utility functions to allow us to skip some tests that we know fail on some PostgreSQL
 ;; versions or hosters or semi-compatible implementations
 (defun pg-test-is-cratedb (con)
-  (cl-search "CrateDB" (pg-backend-version con)))
+  (eq (pgcon-server-variant con) 'cratedb))
 
 ;; Nothing is present in the server-version string. But it has some unusual behaviour; for example
 ;; not respecting the table_owner setting (the value returned by pg-table-owner is not the same as
 ;; the username we use to connect).
 (defun pg-test-is-xata (con)
-  ;; See function pg-test-note-param-change below; this is an ugly hack!
-  (gethash "is-xata-p" (pgcon-prepared-statement-cache con) nil))
-
+  (eq (pgcon-server-variant con) 'xata))
 
 (defun pg-test-is-cockroachdb (con)
-  (cl-search "CockroachDB" (pg-backend-version con)))
+  (eq (pgcon-server-variant con) 'cockroachdb))
 
 (defun pg-test-is-yugabyte (con)
   (cl-search "-YB-" (pg-backend-version con)))
@@ -703,17 +701,19 @@ bar$$"))))
                    (encode-time (list 0 0 0 31 3 2063))))
     ;; Here the hh:mm:ss are taken into account.
     (should (equal (scalar "SELECT '2063-03-31T22:13:02'::timestamp")
-                   (encode-time (list 2 13 22 31 3 2063 nil nil nil))))
+                   (encode-time (list 2 13 22 31 3 2063 nil -1 'wall))))
     (should (equal (scalar "SELECT '2010-04-05 14:42:21'::timestamp with time zone")
-                   (encode-time (list 21 42 14 5 4 2010 nil nil t))))
+                   ;; SECOND MINUTE HOUR DAY MONTH YEAR IGNORED DST ZONE
+                   ;; Passing ZONE=nil means using Emacs' interpretation of local time
+                   (encode-time (list 21 42 14 5 4 2010 nil -1 nil))))
     (should (equal (scalar "SELECT '2010-04-05 14:42:21'::timestamp without time zone")
-                   (encode-time (list 21 42 14 5 4 2010 nil nil nil))))
+                   (encode-time (list 21 42 14 5 4 2010 nil -1 'wall))))
     (should (equal (scalar "SELECT 'PT42S'::interval") "00:00:42"))
     (should (equal (scalar "SELECT 'PT3H4M42S'::interval") "03:04:42"))
     (should (equal (scalar "select '05:00'::time") "05:00:00"))
     (should (equal (scalar "SELECT '04:15:31.445+05'::timetz") "04:15:31.445+05"))
     (should (equal (scalar "SELECT '2001-02-03 04:05:06'::timestamp")
-                   (encode-time (list 6 5 4 3 2 2001 nil nil nil))))))
+                   (encode-time (list 6 5 4 3 2 2001 nil -1 nil))))))
 
 (defun pg-test-numeric (con)
   (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0)))
@@ -1868,8 +1868,8 @@ bar$$"))))
 (defun pg-run-tz-tests (con)
   (pg-exec con "DROP TABLE IF EXISTS tz_test")
   (pg-exec con "CREATE TABLE tz_test(id INTEGER PRIMARY KEY, ts TIMESTAMP, tstz TIMESTAMPTZ)")
-  (let ((tz-orig (getenv "TZ")))
-    (setenv "TZ" "Europe/Berlin")
+  (with-environment-variables (("TZ" "Europe/Berlin"))
+    (pg-exec con "SET TimeZone = 'Europe/Berlin'")
     (unwind-protect
         (progn
           (pg-test-iso8601-regexp)
@@ -1877,7 +1877,6 @@ bar$$"))))
           (pg-test-serialize-ts con)
           (pg-test-insert-literal-ts con)
           (pg-test-insert-parsed-ts con))
-      (setenv "TZ" tz-orig)
       (pg-exec con "DROP TABLE tz_test"))))
 
 (defun pg-test-iso8601-regexp ()
@@ -1908,8 +1907,10 @@ bar$$"))))
         (tstz-dst (pg-isodate-with-timezone-parser "2024-05-27T15:34:42.789+04" nil))
         (tstz-no-tz (pg-isodate-with-timezone-parser "2024-02-27T15:34:42.789" nil))
         (tstz-zulu (pg-isodate-with-timezone-parser "2024-02-27T15:34:42.789Z" nil)))
+    ;; Without DST, there is a one hour difference between UTC and Europe/Berlin.
     (pg-assert-equals "2024-02-27T10:34:42.789+0000" (pg-fmt-ts-utc ts))
-    (pg-assert-equals "2024-05-27T10:34:42.789+0000" (pg-fmt-ts-utc ts-dst))
+    ;; With DST (switchover is in March), there is a two hour difference between UTC and Europe/Berlin.
+    (pg-assert-equals "2024-05-27T09:34:42.789+0000" (pg-fmt-ts-utc ts-dst))
     (pg-assert-equals "2024-02-27T10:34:42.789+0000" (pg-fmt-ts-utc ts-no-tz))
     (pg-assert-equals "2024-02-27T10:34:42.789+0000" (pg-fmt-ts-utc ts-zulu))
     (pg-assert-equals "2024-02-27T11:34:42.789+0000" (pg-fmt-ts-utc tstz))
@@ -1927,23 +1928,33 @@ bar$$"))))
   (message "Test literal (string) timestamp insertion ...")
   ;; We take this as reference. It behaves exactly like psql.
   ;; Entering literals works as expected. Note that we cast to text to rule out deserialization errors.
+  (pg-exec con "SET TimeZone = 'UTC'")
   (pg-exec con "INSERT INTO tz_test(id, ts, tstz) VALUES(1, '2024-02-27T11:34:42.789+04', '2024-02-27T15:34:42.789+04')")
   (let* ((data (pg-result (pg-exec con "SELECT ts::text, tstz::text FROM tz_test WHERE id=1") :tuple 0))
          (ts (nth 0 data))
          (tstz (nth 1 data)))
     (pg-assert-equals "2024-02-27 11:34:42.789" ts)
-    (pg-assert-equals "2024-02-27 11:34:42.789+00" tstz)))
+    (pg-assert-equals "2024-02-27 11:34:42.789+00" tstz))
+  (pg-exec con "SET TimeZone = 'Europe/Berlin'")
+  (let* ((data (pg-result (pg-exec con "SELECT ts::text, tstz::text FROM tz_test WHERE id=1") :tuple 0))
+         (tstz (nth 1 data)))
+    (pg-assert-equals "2024-02-27 12:34:42.789+01" tstz)))
 
 (defun pg-test-insert-parsed-ts (con)
   (message "Test object timestamp insertion ...")
   (pg-exec-prepared con "INSERT INTO tz_test(id, ts, tstz) VALUES(2, $1, $2)"
                     `((,(pg-isodate-without-timezone-parser "2024-02-27T11:34:42.789+04" nil) . "timestamp")
                       (,(pg-isodate-with-timezone-parser "2024-02-27T15:34:42.789+04:00" nil) . "timestamptz")))
+  (pg-exec con "SET TimeZone = 'UTC'")
   (let* ((data (pg-result (pg-exec con "SELECT ts::text, tstz::text FROM tz_test WHERE id=2") :tuple 0))
          (ts (nth 0 data))
          (tstz (nth 1 data)))
     (pg-assert-equals "2024-02-27 10:34:42.789" ts)
-    (pg-assert-equals "2024-02-27 11:34:42.789+00" tstz)))
+    (pg-assert-equals "2024-02-27 11:34:42.789+00" tstz))
+  (pg-exec con "SET TimeZone = 'Europe/Berlin'")
+  (let* ((data (pg-result (pg-exec con "SELECT ts::text, tstz::text FROM tz_test WHERE id=1") :tuple 0))
+         (tstz (nth 1 data)))
+    (pg-assert-equals "2024-02-27 12:34:42.789+01" tstz)))
 
 
 (defun pg-assert-equals (expected actual)
