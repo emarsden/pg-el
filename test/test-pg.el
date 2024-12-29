@@ -670,6 +670,7 @@ bar$$"))))
 ;; Testing for the date/time handling routines.
 (defun pg-test-date (con)
   (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0))))
+    (pg-exec con "SET TimeZone = 'Europe/Berlin'")
     (pg-exec con "DROP TABLE IF EXISTS date_test")
     (pg-exec con "CREATE TABLE date_test(id integer, ts timestamp, tstz timestamptz, t time, ttz timetz, d date)")
     (unwind-protect
@@ -1928,7 +1929,7 @@ bar$$"))))
   (message "Test literal (string) timestamp insertion ...")
   ;; We take this as reference. It behaves exactly like psql.
   ;; Entering literals works as expected. Note that we cast to text to rule out deserialization errors.
-  (pg-exec con "SET TimeZone = 'UTC'")
+  (pg-exec con "SET TimeZone = 'Etc/UTC'")
   (pg-exec con "INSERT INTO tz_test(id, ts, tstz) VALUES(1, '2024-02-27T11:34:42.789+04', '2024-02-27T15:34:42.789+04')")
   (let* ((data (pg-result (pg-exec con "SELECT ts::text, tstz::text FROM tz_test WHERE id=1") :tuple 0))
          (ts (nth 0 data))
@@ -1945,7 +1946,7 @@ bar$$"))))
   (pg-exec-prepared con "INSERT INTO tz_test(id, ts, tstz) VALUES(2, $1, $2)"
                     `((,(pg-isodate-without-timezone-parser "2024-02-27T11:34:42.789+04" nil) . "timestamp")
                       (,(pg-isodate-with-timezone-parser "2024-02-27T15:34:42.789+04:00" nil) . "timestamptz")))
-  (pg-exec con "SET TimeZone = 'UTC'")
+  (pg-exec con "SET TimeZone = 'Etc/UTC'")
   (let* ((data (pg-result (pg-exec con "SELECT ts::text, tstz::text FROM tz_test WHERE id=2") :tuple 0))
          (ts (nth 0 data))
          (tstz (nth 1 data)))
