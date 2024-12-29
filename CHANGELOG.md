@@ -1,6 +1,12 @@
 # Changelog
 
 
+## [0.46] - Unreleased
+
+- Fixes to the handling of timezones when parsing and serializing `time` and `timetz` data. Timezone
+  information was previously lost during parsing and serialization. Patch from @akurth.
+
+
 ## [0.45] - 2024-12-22
 
 - When supported by Emacs, enable `TCP_NODELAY` on the network connections to PostgreSQL to disable
