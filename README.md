@@ -94,7 +94,7 @@ The following PostgreSQL-compatible databases have been tested:
   `SELECT (1,2)`), does not support the `time`, `varbit`, `bytea`, `jsonb` and `hstore` types, does
   not handle a query which only contains an SQL comment, does not handle various PostgreSQL
   functions such as `factorial`, and does not return a correct type OID for text columns in rows
-  returned from a prepared statement.
+  returned from a prepared statement, doesn't support Unicode identifiers.
 
 - [CockroachDB](https://github.com/cockroachdb/cockroach): last tested with CockroachDB CCL v24.3.
   Note that this database does not implement the large object functionality, and its interpretation

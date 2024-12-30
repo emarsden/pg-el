@@ -11,7 +11,7 @@ jobs:
         # Docker Hub image
         image: postgres:12-alpine
         env:
-          TZ: Asia/Kolkata
+          TZ: UTC+01:00
           POSTGRES_DB: pgeltestdb
           POSTGRES_USER: pgeltestuser
           POSTGRES_PASSWORD: pgeltest
