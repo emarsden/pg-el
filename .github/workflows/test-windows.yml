@@ -10,11 +10,11 @@ jobs:
       - name: Set up pre-installed PostgreSQL
         uses: ikalnytskyi/action-setup-postgres@v6
         env:
-          TZ: Asia/Kolkata
+           TZ: Asia/Kolkata
         with:
-          username: pgeltestuser
-          password: pgeltest
-          database: pgeltestdb
+           username: pgeltestuser
+           password: pgeltest
+           database: pgeltestdb
         id: postgres
 
       - name: Install Emacs
@@ -25,3 +25,8 @@ jobs:
 
       - name: Run tests
         run: make -C test test
+        uses: szenius/set-timezone@v2.0
+        with:
+           timezoneLinux: "Asia/Kolkota"
+           timezoneMacos: "Asia/Kolkota"
+           timezoneWindows: "Asia/Kolkota"
