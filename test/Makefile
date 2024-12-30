@@ -128,6 +128,7 @@ test-postgresql17: test-pg.el
 	   -e POSTGRES_USER=pgeltestuser \
 	   -e POSTGRES_PASSWORD=pgeltest \
 	   -e PGPORT=5426 \
+	   -e TZ=Asia/Kolkata \
 	   -d docker.io/library/postgres:17-alpine
 	sleep 5
 	PGEL_PORT=5426 $(MAKE) test
@@ -157,6 +158,18 @@ test-postgresql16: test-pg.el
 	   -d docker.io/library/postgres:16.3-bullseye
 	sleep 5
 	PGEL_PORT=5416 $(MAKE) test
+	${DOCKER} stop pgsql
+
+test-postgresql15: test-pg.el
+	${DOCKER} run --rm --name pgsql \
+	   --publish 5116:5116 \
+	   -e POSTGRES_DB=pgeltestdb \
+	   -e POSTGRES_USER=pgeltestuser \
+	   -e POSTGRES_PASSWORD=pgeltest \
+	   -e PGPORT=5116 \
+	   -d docker.io/library/postgres:15
+	sleep 5
+	PGEL_PORT=5116 $(MAKE) test
 	${DOCKER} stop pgsql
 
 test-postgresql14: test-pg.el
@@ -432,7 +445,7 @@ test-pgbouncer: test-pg.el
 # Last tested 2024-12 with cratedb v5.9.5. CrateDB uses a default database name of "doc" that we
 # can't set via Docker. Doesn't get very far through the tests: CrateDB doesn't accept a query which
 # only contains an SQL comment, and doesn't implement the BYTEA, JSON, JSONB and HSTORE types,
-# doesn't support COPY.
+# doesn't support COPY, doesn't support Unicode identifiers.
 #
 # It even seems to lose some INSERT statements (failing in pg-test-insert on the count of rows
 # inserted into the row_count table).
@@ -447,7 +460,7 @@ test-cratedb: test-pg.el
           -d docker.io/crate \
 	  -Cnetwork.host=127.0.0.1 -Cdiscovery.type=single-node -Cpsql.port=5789
 	sleep 5
-	PGEL_USER=crate PGEL_DATABASE=postgres PGEL_HOST=127.0.0.1 PGEL_PORT=5789 $(MAKE) test
+	PGURI=postgresql://crate@127.0.0.1:5789/postgres $(MAKE) test
 	${DOCKER} stop cratedb
 
 # Last tested 2024-12 with version 24.3 of CockroachDB. Doesn't get very far through the tests, with
