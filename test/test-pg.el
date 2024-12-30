@@ -705,14 +705,17 @@ bar$$"))))
       ;; Here the hh:mm:ss are taken into account.
       (should (equal (scalar "SELECT '2063-03-31T22:13:02'::timestamp")
                      (encode-time (list 2 13 22 31 3 2063 nil -1 'wall))))
-      (message "TZ test from PostgreSQL: %s"
+      (message "TZ test: current PostgreSQL timezone is %s" (scalar "SHOW timezone"))
+      (message "TZ test: timestamp with timezone from PostgreSQL: %s"
                (scalar "SELECT '2010-04-05 14:42:21'::timestamp with time zone"))
+      (message "TZ test: timestamptz from PostgreSQL: %s"
+               (scalar "SELECT '2010-04-05 14:42:21'::timestamptz"))
       (message "TZ test: encoded time ZONE=nil = %s"
-               (encode-time (list 21 42 14 5 4 2010 nil -1 nil)))
+               (encode-time (list 21 42 14 5 4 2010 nil nil nil)))
       (message "TZ test: encoded time Europe/Berlin = %s"
-               (encode-time (list 21 42 14 5 4 2010 nil -1 "Europe/Berlin")))
+               (encode-time (list 21 42 14 5 4 2010 nil nil "Europe/Berlin")))
       (message "TZ test: encoded time 'wall = %s"
-               (encode-time (list 21 42 14 5 4 2010 nil -1 'wall)))
+               (encode-time (list 21 42 14 5 4 2010 nil nil 'wall)))
       (message "TZ non-DST test from PostgreSQL: %s"
                (scalar "SELECT '2010-02-05 14:42:21'::timestamp with time zone"))
       (message "TZ test: encoded time non-DST ZONE=nil = %s"
