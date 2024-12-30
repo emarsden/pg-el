@@ -705,6 +705,22 @@ bar$$"))))
       ;; Here the hh:mm:ss are taken into account.
       (should (equal (scalar "SELECT '2063-03-31T22:13:02'::timestamp")
                      (encode-time (list 2 13 22 31 3 2063 nil -1 'wall))))
+      (message "TZ test from PostgreSQL: %s"
+               (scalar "SELECT '2010-04-05 14:42:21'::timestamp with time zone"))
+      (message "TZ test: encoded time ZONE=nil = %s"
+               (encode-time (list 21 42 14 5 4 2010 nil -1 nil)))
+      (message "TZ test: encoded time Europe/Berlin = %s"
+               (encode-time (list 21 42 14 5 4 2010 nil -1 "Europe/Berlin")))
+      (message "TZ test: encoded time 'wall = %s"
+               (encode-time (list 21 42 14 5 4 2010 nil -1 'wall)))
+      (message "TZ non-DST test from PostgreSQL: %s"
+               (scalar "SELECT '2010-02-05 14:42:21'::timestamp with time zone"))
+      (message "TZ test: encoded time non-DST ZONE=nil = %s"
+               (encode-time (list 21 42 14 5 2 2010 nil -1 nil)))
+      (message "TZ test: encoded time non-DST Europe/Berlin = %s"
+               (encode-time (list 21 42 14 5 2 2010 nil -1 "Europe/Berlin")))
+      (message "TZ test: encoded time non-DST 'wall = %s"
+               (encode-time (list 21 42 14 5 2 2010 nil -1 'wall)))
       ;; In this test, we have ensured that the PostgreSQL session timezone is the same as the
       ;; timezone used by Emacs for encode-time. Passing ZONE=nil means using Emacs' interpretation
       ;; of local time, which should correspond to that of PostgreSQL.
