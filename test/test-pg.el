@@ -1,7 +1,7 @@
 ;;; Tests for the pg.el library   -*- coding: utf-8; lexical-binding: t; -*-
-;;;
-;;; Author: Eric Marsden <eric.marsden@risk-engineering.org>
-;;; Copyright: (C) 2022-2024  Eric Marsden
+;;
+;; Author: Eric Marsden <eric.marsden@risk-engineering.org>
+;; Copyright: (C) 2022-2024  Eric Marsden
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 
@@ -705,10 +705,12 @@ bar$$"))))
       ;; Here the hh:mm:ss are taken into account.
       (should (equal (scalar "SELECT '2063-03-31T22:13:02'::timestamp")
                      (encode-time (list 2 13 22 31 3 2063 nil -1 'wall))))
+      ;; In this test, we have ensured that the PostgreSQL session timezone is the same as the
+      ;; timezone used by Emacs for encode-time. Passing ZONE=nil means using Emacs' interpretation
+      ;; of local time, which should correspond to that of PostgreSQL.
       (should (equal (scalar "SELECT '2010-04-05 14:42:21'::timestamp with time zone")
                      ;; SECOND MINUTE HOUR DAY MONTH YEAR IGNORED DST ZONE
-                     ;; Passing ZONE=nil means using Emacs' interpretation of local time
-                     (encode-time (list 21 42 14 5 4 2010 nil -1 nil))))
+                     (encode-time (list 21 42 14 5 4 2010 nil -1 "Europe/Berlin"))))
       (should (equal (scalar "SELECT '2010-04-05 14:42:21'::timestamp without time zone")
                      (encode-time (list 21 42 14 5 4 2010 nil -1 'wall))))
       (should (equal (scalar "SELECT 'PT42S'::interval") "00:00:42"))
