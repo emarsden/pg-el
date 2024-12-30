@@ -228,6 +228,7 @@ test-postgresql11: test-pg.el
 test-enterprisedb: test-pg.el
 	${DOCKER} run --rm --name edb \
 	   --publish 5366:5366 \
+	   -e TZ=UTC-7:00 \
 	   -e LANG=en_US.UTF8 \
 	   -e LC_CTYPE=en_US.UTF8 \
 	   -e POSTGRES_DB=pgeltestdb \
@@ -235,7 +236,7 @@ test-enterprisedb: test-pg.el
 	   -e POSTGRES_PASSWORD=pgeltest \
 	   -e PGPORT=5366 \
 	   -d ghcr.io/enterprisedb/postgresql:17
-	PGEL_PORT=5366 $(MAKE) test
+	TZ=UTC-7:00 PGEL_PORT=5366 $(MAKE) test
 	${DOCKER} stop edb
 
 
