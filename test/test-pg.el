@@ -706,6 +706,7 @@ bar$$"))))
       (should (equal (scalar "SELECT '2063-03-31T22:13:02'::timestamp")
                      (encode-time (list 2 13 22 31 3 2063 nil -1 'wall))))
       (message "TZ test: current PostgreSQL timezone is %s" (scalar "SHOW timezone"))
+      (message "TZ test: current Emacs timezone is %s" (current-time-zone))
       (message "TZ test: timestamp with timezone from PostgreSQL: %s"
                (scalar "SELECT '2010-04-05 14:42:21'::timestamp with time zone"))
       (message "TZ test: timestamptz from PostgreSQL: %s"
