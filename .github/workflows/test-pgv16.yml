@@ -29,6 +29,13 @@ jobs:
           - /var/run/postgresql:/var/run/postgresql
 
     steps:
+      - name: Set runner timezone
+        uses: szenius/set-timezone@v2.0
+        with:
+           timezoneLinux: "Asia/Kolkota"
+           timezoneMacos: "Asia/Kolkota"
+           timezoneWindows: "Asia/Kolkota"
+
       - name: Install Emacs
         uses: purcell/setup-emacs@master
         with:
@@ -39,11 +46,6 @@ jobs:
 
       - name: Run tests over TCP socket
         run: make -C test test
-        uses: szenius/set-timezone@v2.0
-        with:
-           timezoneLinux: "Asia/Kolkota"
-           timezoneMacos: "Asia/Kolkota"
-           timezoneWindows: "Asia/Kolkota"
 
       - name: Run tests over local Unix socket
         run: make -C test test-local

@@ -8,6 +8,13 @@ jobs:
     timeout-minutes: 20
 
     steps:
+      - name: Set runner timezone
+        uses: szenius/set-timezone@v2.0
+        with:
+           timezoneLinux: "Asia/Kolkota"
+           timezoneMacos: "Asia/Kolkota"
+           timezoneWindows: "Asia/Kolkota"
+
       - name: Set up pre-installed PostgreSQL
         uses: ikalnytskyi/action-setup-postgres@v6
         env:
@@ -27,11 +34,6 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run tests over network
+        run: make -C test test
         env:
            TZ: Asia/Kolkata
-        uses: szenius/set-timezone@v2.0
-        with:
-           timezoneLinux: "Asia/Kolkota"
-           timezoneMacos: "Asia/Kolkota"
-           timezoneWindows: "Asia/Kolkota"
-        run: make -C test test

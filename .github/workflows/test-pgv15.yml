@@ -40,11 +40,11 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run tests over TCP socket
+        run: make -C test test
         env:
            TZ: Asia/Kolkata
-        run: make -C test test
 
       - name: Run tests over local Unix socket
+        run: make -C test test-local
         env:
            TZ: Asia/Kolkata
-        run: make -C test test-local
