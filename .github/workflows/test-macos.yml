@@ -11,9 +11,9 @@ jobs:
       - name: Set runner timezone
         uses: szenius/set-timezone@v2.0
         with:
-           timezoneLinux: "UTC+01:00"
-           timezoneMacos: "UTC+01:00"
-           timezoneWindows: "UTC+01:00"
+           timezoneLinux: "UTC-01:00"
+           timezoneMacos: "UTC-01:00"
+           timezoneWindows: "UTC-01:00"
 
       - name: Set up pre-installed PostgreSQL
         uses: ikalnytskyi/action-setup-postgres@v6
@@ -23,7 +23,7 @@ jobs:
            database: pgeltestdb
         id: postgres
         env:
-           TZ: UTC+01:00
+           TZ: UTC-01:00
 
       - name: Install Emacs
         uses: purcell/setup-emacs@master
@@ -36,4 +36,4 @@ jobs:
       - name: Run tests over network
         run: make -C test test
         env:
-           TZ: UTC+01:00
+           TZ: UTC-01:00

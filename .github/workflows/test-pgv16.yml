@@ -12,7 +12,7 @@ jobs:
         # Docker Hub image
         image: postgres:16
         env:
-          TZ: UTC+01:00
+          TZ: UTC-01:00
           POSTGRES_DB: pgeltestdb
           POSTGRES_USER: pgeltestuser
           POSTGRES_PASSWORD: pgeltest
@@ -29,13 +29,6 @@ jobs:
           - /var/run/postgresql:/var/run/postgresql
 
     steps:
-      - name: Set runner timezone
-        uses: szenius/set-timezone@v2.0
-        with:
-           timezoneLinux: "UTC+01:00"
-           timezoneMacos: "UTC+01:00"
-           timezoneWindows: "UTC+01:00"
-
       - name: Install Emacs
         uses: purcell/setup-emacs@master
         with:

@@ -670,9 +670,8 @@ bar$$"))))
 ;; Testing for the date/time handling routines.
 (defun pg-test-date (con)
   (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0))))
-    (with-environment-variables (("TZ" "UTC+01:00"))
-      ;; (setenv "TZ" "UTC+01:00")
-      (pg-exec con "SET TimeZone = 'UTC+01:00'")
+    (with-environment-variables (("TZ" "UTC-01:00"))
+      (pg-exec con "SET TimeZone = 'UTC-01:00'")
       (pg-exec con "DROP TABLE IF EXISTS date_test")
       (pg-exec con "CREATE TABLE date_test(id integer, ts timestamp, tstz timestamptz, t time, ttz timetz, d date)")
       (unwind-protect
@@ -713,16 +712,16 @@ bar$$"))))
                (scalar "SELECT '2010-04-05 14:42:21'::timestamp"))
       (message "TZ test: encoded time ZONE=nil = %s"
                (encode-time (list 21 42 14 5 4 2010 nil -1 nil)))
-      (message "TZ test: encoded time UTC+01:00 = %s"
-               (encode-time (list 21 42 14 5 4 2010 nil -1 "UTC+01:00")))
+      (message "TZ test: encoded time UTC-01:00 = %s"
+               (encode-time (list 21 42 14 5 4 2010 nil -1 "UTC-01:00")))
       (message "TZ test: encoded time 'wall = %s"
                (encode-time (list 21 42 14 5 4 2010 nil -1 'wall)))
       (message "TZ non-DST test from PostgreSQL: %s"
                (scalar "SELECT '2010-02-05 14:42:21'::timestamp with time zone"))
       (message "TZ test: encoded time non-DST ZONE=nil = %s"
                (encode-time (list 21 42 14 5 2 2010 nil -1 nil)))
-      (message "TZ test: encoded time non-DST UTC+01:00 = %s"
-               (encode-time (list 21 42 14 5 2 2010 nil -1 "UTC+01:00")))
+      (message "TZ test: encoded time non-DST UTC-01:00 = %s"
+               (encode-time (list 21 42 14 5 2 2010 nil -1 "UTC-01:00")))
       (message "TZ test: encoded time non-DST 'wall = %s"
                (encode-time (list 21 42 14 5 2 2010 nil -1 'wall)))
       ;; In this test, we have ensured that the PostgreSQL session timezone is the same as the
@@ -730,7 +729,7 @@ bar$$"))))
       ;; of local time, which should correspond to that of PostgreSQL.
       (should (equal (scalar "SELECT '2010-04-05 14:42:21'::timestamp with time zone")
                      ;; SECOND MINUTE HOUR DAY MONTH YEAR IGNORED DST ZONE
-                     (encode-time (list 21 42 14 5 4 2010 nil -1 "UTC+01:00"))))
+                     (encode-time (list 21 42 14 5 4 2010 nil -1 "UTC-01:00"))))
       (should (equal (scalar "SELECT '2010-04-05 14:42:21'::timestamp without time zone")
                      (encode-time (list 21 42 14 5 4 2010 nil -1 'wall))))
       (should (equal (scalar "SELECT 'PT42S'::interval") "00:00:42"))
@@ -738,7 +737,7 @@ bar$$"))))
       (should (equal (scalar "select '05:00'::time") "05:00:00"))
       (should (equal (scalar "SELECT '04:15:31.445+05'::timetz") "04:15:31.445+05"))
       (should (equal (scalar "SELECT '2001-02-03 04:05:06'::timestamp")
-                     (encode-time (list 6 5 4 3 2 2001 nil -1 nil)))))))
+                     (encode-time (list 6 5 4 3 2 2001 nil -1 'wall)))))))
 
 (defun pg-test-numeric (con)
   (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0)))
@@ -1893,8 +1892,12 @@ bar$$"))))
 (defun pg-run-tz-tests (con)
   (pg-exec con "DROP TABLE IF EXISTS tz_test")
   (pg-exec con "CREATE TABLE tz_test(id INTEGER PRIMARY KEY, ts TIMESTAMP, tstz TIMESTAMPTZ)")
-  (with-environment-variables (("TZ" "UTC+01:00"))
-    (pg-exec con "SET TimeZone = 'UTC+01:00'")
+  ;; This is the same as CET: in a Posix time zone specification, a positive sign is used for zones
+  ;; west of Greenwich, which is the opposite (!) of the ISO-8601 sign convention used when printing
+  ;; timestamps. However, Emacs on certain platforms like Windows has a very limited ability to
+  ;; interpret timezones like Europe/Paris or CET, so we use this format instead.
+  (with-environment-variables (("TZ" "UTC-01:00"))
+    (pg-exec con "SET TimeZone = 'UTC-01:00'")
     (unwind-protect
         (progn
           (pg-test-iso8601-regexp)
@@ -1932,9 +1935,9 @@ bar$$"))))
         (tstz-dst (pg-isodate-with-timezone-parser "2024-05-27T15:34:42.789+04" nil))
         (tstz-no-tz (pg-isodate-with-timezone-parser "2024-02-27T15:34:42.789" nil))
         (tstz-zulu (pg-isodate-with-timezone-parser "2024-02-27T15:34:42.789Z" nil)))
-    ;; Without DST, there is a one hour difference between UTC UTC+01:00.
+    ;; Without DST, there is a one hour difference between UTC UTC-01:00.
     (pg-assert-equals "2024-02-27T10:34:42.789+0000" (pg-fmt-ts-utc ts))
-    ;; With DST (switchover is in March), there is a two hour difference between UTC and UTC+01:00.
+    ;; With DST (switchover is in March), there is a two hour difference between UTC and UTC-01:00.
     (pg-assert-equals "2024-05-27T09:34:42.789+0000" (pg-fmt-ts-utc ts-dst))
     (pg-assert-equals "2024-02-27T10:34:42.789+0000" (pg-fmt-ts-utc ts-no-tz))
     (pg-assert-equals "2024-02-27T10:34:42.789+0000" (pg-fmt-ts-utc ts-zulu))
@@ -1949,6 +1952,12 @@ bar$$"))))
          (ts-ser (pg--serialize-encoded-time ts nil)))
     (pg-assert-equals "2024-02-27T11:34:42.789000000+0000" ts-ser)))
 
+;; The timestamp with timezone type is converted to UTC on input and stored without any timezone
+;; information. On output (during the cast to text) the timezone is converted and printed in the
+;; current session's timezone.
+;;
+;; https://www.postgresql.org/docs/current/datatype-datetime.html
+;; https://www.postgresql.org/docs/14//datetime-posix-timezone-specs.html
 (defun pg-test-insert-literal-ts (con)
   (message "Test literal (string) timestamp insertion ...")
   ;; We take this as reference. It behaves exactly like psql.
@@ -1958,11 +1967,14 @@ bar$$"))))
   (let* ((data (pg-result (pg-exec con "SELECT ts::text, tstz::text FROM tz_test WHERE id=1") :tuple 0))
          (ts (nth 0 data))
          (tstz (nth 1 data)))
+    ;; Here we are assuming that DateStyle=ISO (this is the default setting)
     (pg-assert-equals "2024-02-27 11:34:42.789" ts)
     (pg-assert-equals "2024-02-27 11:34:42.789+00" tstz))
-  (pg-exec con "SET TimeZone = 'UTC+01:00'")
+  (pg-exec con "SET TimeZone = 'UTC-01:00'")
   (let* ((data (pg-result (pg-exec con "SELECT ts::text, tstz::text FROM tz_test WHERE id=1") :tuple 0))
+         (ts (nth 0 data))
          (tstz (nth 1 data)))
+    (pg-assert-equals "2024-02-27 11:34:42.789" ts)
     (pg-assert-equals "2024-02-27 12:34:42.789+01" tstz)))
 
 (defun pg-test-insert-parsed-ts (con)
@@ -1976,8 +1988,8 @@ bar$$"))))
          (tstz (nth 1 data)))
     (pg-assert-equals "2024-02-27 10:34:42.789" ts)
     (pg-assert-equals "2024-02-27 11:34:42.789+00" tstz))
-  (pg-exec con "SET TimeZone = 'UTC+01:00'")
-  (let* ((data (pg-result (pg-exec con "SELECT ts::text, tstz::text FROM tz_test WHERE id=1") :tuple 0))
+  (pg-exec con "SET TimeZone = 'UTC-01:00'")
+  (let* ((data (pg-result (pg-exec con "SELECT ts::text, tstz::text FROM tz_test WHERE id=2") :tuple 0))
          (tstz (nth 1 data)))
     (pg-assert-equals "2024-02-27 12:34:42.789+01" tstz)))
 

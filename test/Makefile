@@ -128,7 +128,7 @@ test-postgresql17: test-pg.el
 	   -e POSTGRES_USER=pgeltestuser \
 	   -e POSTGRES_PASSWORD=pgeltest \
 	   -e PGPORT=5426 \
-	   -e TZ=Asia/Kolkata \
+	   -e TZ=UTC-01:00 \
 	   -d docker.io/library/postgres:17-alpine
 	sleep 5
 	PGEL_PORT=5426 $(MAKE) test

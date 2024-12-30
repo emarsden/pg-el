@@ -12,7 +12,7 @@ jobs:
         # Docker Hub image
         image: postgres:15
         env:
-          TZ: UTC+01:00
+          TZ: UTC-01:00
           POSTGRES_DB: pgeltestdb
           POSTGRES_USER: pgeltestuser
           POSTGRES_PASSWORD: pgeltest
@@ -42,9 +42,9 @@ jobs:
       - name: Run tests over TCP socket
         run: make -C test test
         env:
-           TZ: UTC+01:00
+           TZ: UTC-01:00
 
       - name: Run tests over local Unix socket
         run: make -C test test-local
         env:
-           TZ: UTC+01:00
+           TZ: UTC-01:00
