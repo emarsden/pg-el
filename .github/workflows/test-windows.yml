@@ -23,5 +23,5 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v4
 
-      - name: Run connection tests
+      - name: Run tests
         run: make -C test test

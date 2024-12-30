@@ -11,11 +11,11 @@ jobs:
       - name: Set up pre-installed PostgreSQL
         uses: ikalnytskyi/action-setup-postgres@v6
         env:
-          TZ: Asia/Kolkata
+           TZ: Asia/Kolkata
         with:
-          username: pgeltestuser
-          password: pgeltest
-          database: pgeltestdb
+           username: pgeltestuser
+           password: pgeltest
+           database: pgeltestdb
         id: postgres
 
       - name: Install Emacs
@@ -26,5 +26,7 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v4
 
-      - name: Run connection tests over network
+      - name: Run tests over network
+        env:
+           TZ: Asia/Kolkata
         run: make -C test test

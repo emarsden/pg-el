@@ -22,7 +22,6 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-        # would also like to pass -c ssl=on -c ssl_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem -c ssl_key_file=/etc/ssl/private/ssl-cert-snakeoil.key
         ports:
           # Maps tcp port 5432 on service container to the host
           - 5432:5432
@@ -35,13 +34,13 @@ jobs:
       - name: Install Emacs
         uses: purcell/setup-emacs@master
         with:
-           version: 29.3
+           version: 29.4
 
       - name: Check out repository code
         uses: actions/checkout@v4
 
-      - name: Run connection tests over TCP socket
+      - name: Run tests over TCP socket
         run: make -C test test
 
-      - name: Run connection tests over local Unix socket
+      - name: Run tests over local Unix socket
         run: make -C test test-local
