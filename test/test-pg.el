@@ -706,24 +706,26 @@ bar$$"))))
                      (encode-time (list 2 13 22 31 3 2063 nil -1 'wall))))
       (message "TZ test: current PostgreSQL timezone is %s" (scalar "SHOW timezone"))
       (message "TZ test: current Emacs timezone is %s" (current-time-zone))
-      (message "TZ test: timestamp with timezone from PostgreSQL: %s"
-               (scalar "SELECT '2010-04-05 14:42:21'::timestamp with time zone"))
-      (message "TZ test: timestamp from PostgreSQL: %s"
-               (scalar "SELECT '2010-04-05 14:42:21'::timestamp"))
-      (message "TZ test: encoded time ZONE=nil = %s"
-               (encode-time (list 21 42 14 5 4 2010 nil -1 nil)))
-      (message "TZ test: encoded time UTC-01:00 = %s"
-               (encode-time (list 21 42 14 5 4 2010 nil -1 "UTC-01:00")))
-      (message "TZ test: encoded time 'wall = %s"
-               (encode-time (list 21 42 14 5 4 2010 nil -1 'wall)))
-      (message "TZ non-DST test from PostgreSQL: %s"
-               (scalar "SELECT '2010-02-05 14:42:21'::timestamp with time zone"))
-      (message "TZ test: encoded time non-DST ZONE=nil = %s"
+      (message "TZ test: no-DST timestamptz from PostgreSQL: %s"
+               (scalar "SELECT '2010-02-05 14:42:21'::timestamptz"))
+      (message "TZ test: no-DST timestamp from PostgreSQL: %s"
+               (scalar "SELECT '2010-02-05 14:42:21'::timestamp"))
+      (message "TZ test: no-DST encoded time ZONE=nil = %s"
                (encode-time (list 21 42 14 5 2 2010 nil -1 nil)))
-      (message "TZ test: encoded time non-DST UTC-01:00 = %s"
+      (message "TZ test: no-DST encoded time UTC-01:00 = %s"
                (encode-time (list 21 42 14 5 2 2010 nil -1 "UTC-01:00")))
-      (message "TZ test: encoded time non-DST 'wall = %s"
+      (message "TZ test: no-DST encoded time 'wall = %s"
                (encode-time (list 21 42 14 5 2 2010 nil -1 'wall)))
+      (message "TZ test: w/DST timestamptz from PostgreSQL: %s"
+               (scalar "SELECT '2010-06-05 14:42:21'::timestamptz"))
+      (message "TZ test: w/DST timestamp from PostgreSQL: %s"
+               (scalar "SELECT '2010-06-05 14:42:21'::timestamp"))
+      (message "TZ test: w/DST encoded time ZONE=nil = %s"
+               (encode-time (list 21 42 14 5 6 2010 nil -1 nil)))
+      (message "TZ test: w/DST encoded time UTC-01:00 = %s"
+               (encode-time (list 21 42 14 5 6 2010 nil -1 "UTC-01:00")))
+      (message "TZ test: w/DST encoded time 'wall = %s"
+               (encode-time (list 21 42 14 5 6 2010 nil -1 'wall)))
       ;; In this test, we have ensured that the PostgreSQL session timezone is the same as the
       ;; timezone used by Emacs for encode-time. Passing ZONE=nil means using Emacs' interpretation
       ;; of local time, which should correspond to that of PostgreSQL.
@@ -1935,7 +1937,7 @@ bar$$"))))
         (tstz-dst (pg-isodate-with-timezone-parser "2024-05-27T15:34:42.789+04" nil))
         (tstz-no-tz (pg-isodate-with-timezone-parser "2024-02-27T15:34:42.789" nil))
         (tstz-zulu (pg-isodate-with-timezone-parser "2024-02-27T15:34:42.789Z" nil)))
-    ;; Without DST, there is a one hour difference between UTC UTC-01:00.
+    ;; Without DST, there is a one hour difference between UTC and UTC-01:00.
     (pg-assert-string= "2024-02-27T10:34:42.789+0000" (pg-fmt-ts-utc ts))
     ;; With DST (switchover is in March), there is a two hour difference between UTC and UTC-01:00.
     (pg-assert-string= "2024-05-27T09:34:42.789+0000" (pg-fmt-ts-utc ts-dst))
@@ -2007,7 +2009,8 @@ bar$$"))))
 
 (defun pg-fmt-ts-utc (ts)
   (let ((ft "%Y-%m-%dT%H:%M:%S.%3N%z"))
-    (format-time-string ft ts "UTC")))
+    (format-time-string ft ts t)))
+    ;; (format-time-string ft ts "UTC")))
 
 
 ;; EOF

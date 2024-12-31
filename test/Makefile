@@ -128,7 +128,7 @@ test-postgresql17: test-pg.el
 	   -e POSTGRES_USER=pgeltestuser \
 	   -e POSTGRES_PASSWORD=pgeltest \
 	   -e PGPORT=5426 \
-	   -e TZ=UTC-01:00 \
+	   -e TZ=Asia/Tokyo \
 	   -d docker.io/library/postgres:17-alpine
 	sleep 5
 	PGEL_PORT=5426 $(MAKE) test
@@ -155,9 +155,10 @@ test-postgresql16: test-pg.el
 	   -e POSTGRES_USER=pgeltestuser \
 	   -e POSTGRES_PASSWORD=pgeltest \
 	   -e PGPORT=5416 \
-	   -d docker.io/library/postgres:16.3-bullseye
+	   -e TZ=Asia/Tokyo \
+	   -d docker.io/library/postgres:16-alpine
 	sleep 5
-	PGEL_PORT=5416 $(MAKE) test
+	TZ=Asia/Tokyo PGEL_PORT=5416 $(MAKE) test
 	${DOCKER} stop pgsql
 
 test-postgresql15: test-pg.el
