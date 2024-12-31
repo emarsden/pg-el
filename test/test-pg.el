@@ -706,6 +706,14 @@ bar$$"))))
                      (encode-time (list 2 13 22 31 3 2063 nil -1 'wall))))
       (message "TZ test: current PostgreSQL timezone is %s" (scalar "SHOW timezone"))
       (message "TZ test: current Emacs timezone is %s" (current-time-zone))
+      (message "TZ test: no-DST value is 2010-02-05 14:42:21")
+      (let* ((ts (encode-time (list 21 42 14 5 2 2010 nil -1 'wall)))
+             (fmt (format-time-string "%Y-%m-%dT%H:%M:%S.%3N%z" ts t)))
+        (message "TZ test: encode-time 21 42 14 5 2 2010 nil -1 'wall => %s %s"
+                 ts fmt))
+      (let ((pg-disable-type-coercion t))
+        (message "TZ test: no-DST raw timestamp from PostgreSQL: %s"
+                 (scalar "SELECT '2010-02-05 14:42:21'::timestamp")))
       (message "TZ test: no-DST timestamptz from PostgreSQL: %s"
                (scalar "SELECT '2010-02-05 14:42:21'::timestamptz"))
       (message "TZ test: no-DST timestamp from PostgreSQL: %s"
@@ -716,6 +724,10 @@ bar$$"))))
                (encode-time (list 21 42 14 5 2 2010 nil -1 "UTC-01:00")))
       (message "TZ test: no-DST encoded time 'wall = %s"
                (encode-time (list 21 42 14 5 2 2010 nil -1 'wall)))
+      (message "TZ test: w/DST value is 2010-06-05 14:42:21")
+      (let ((pg-disable-type-coercion t))
+        (message "TZ test: w/DST raw timestamp from PostgreSQL: %s"
+                 (scalar "SELECT '2010-06-05 14:42:21'::timestamp")))
       (message "TZ test: w/DST timestamptz from PostgreSQL: %s"
                (scalar "SELECT '2010-06-05 14:42:21'::timestamptz"))
       (message "TZ test: w/DST timestamp from PostgreSQL: %s"
@@ -1929,6 +1941,9 @@ bar$$"))))
 
 (defun pg-test-parse-ts (con)
   (message "Test parsing of timestamps ...")
+  (message "timestamp parsing: current Emacs timezone is %s" (current-time-zone))
+  (message "2024-02-27T11:34:42.789+04 => %s"
+           (pg-isodate-without-timezone-parser "2024-02-27T11:34:42.789+04" nil))
   (let ((ts (pg-isodate-without-timezone-parser "2024-02-27T11:34:42.789+04" nil))
         (ts-dst (pg-isodate-without-timezone-parser "2024-05-27T11:34:42.789+04" nil))
         (ts-no-tz (pg-isodate-without-timezone-parser "2024-02-27T11:34:42.789" nil))
@@ -2009,8 +2024,8 @@ bar$$"))))
 
 (defun pg-fmt-ts-utc (ts)
   (let ((ft "%Y-%m-%dT%H:%M:%S.%3N%z"))
+    ;; Last argument of t means "UTC"
     (format-time-string ft ts t)))
-    ;; (format-time-string ft ts "UTC")))
 
 
 ;; EOF

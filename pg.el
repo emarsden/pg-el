@@ -1983,19 +1983,13 @@ PostgreSQL and Emacs. CON should no longer be used."
 (defun pg-parse (con str oid)
   "Deserialize textual representation STR to an Emacs Lisp object.
 Uses the client-encoding specified in the connection to PostgreSQL CON."
-  (let ((parser (gethash oid (pgcon-parser-by-oid con)))
-        (ce (pgcon-client-encoding con)))
-    (if parser
-        (funcall parser str ce)
-      str)))
-
-(defun pg-serialize-buggy (object type-name encoding)
-  (let ((serializer (gethash type-name pg--serializers)))
-    (if serializer
-        (let ((serialized (funcall serializer object)))
-          (if encoding (encode-coding-string serialized encoding t)
-            serialized))
-      object)))
+  (if pg-disable-type-coercion
+      str
+    (let ((parser (gethash oid (pgcon-parser-by-oid con)))
+          (ce (pgcon-client-encoding con)))
+      (if parser
+          (funcall parser str ce)
+        str))))
 
 (defun pg-serialize (object type-name encoding)
   (let ((serializer (gethash type-name pg--serializers)))
