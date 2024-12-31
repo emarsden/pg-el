@@ -703,7 +703,7 @@ bar$$"))))
                      (encode-time (list 0 0 0 31 3 2063))))
       ;; Here the hh:mm:ss are taken into account.
       (should (equal (scalar "SELECT '2063-03-31T22:13:02'::timestamp")
-                     (encode-time (list 2 13 22 31 3 2063 nil -1 'wall))))
+                     (encode-time (list 2 13 22 31 3 2063 nil -1 nil))))
       (message "TZ test: current PostgreSQL timezone is %s" (scalar "SHOW timezone"))
       (message "TZ test: current Emacs timezone is %s" (current-time-zone))
       (message "TZ test: no-DST value is 2010-02-05 14:42:21")
@@ -745,13 +745,13 @@ bar$$"))))
                      ;; SECOND MINUTE HOUR DAY MONTH YEAR IGNORED DST ZONE
                      (encode-time (list 21 42 14 5 4 2010 nil -1 "UTC-01:00"))))
       (should (equal (scalar "SELECT '2010-04-05 14:42:21'::timestamp without time zone")
-                     (encode-time (list 21 42 14 5 4 2010 nil -1 'wall))))
+                     (encode-time (list 21 42 14 5 4 2010 nil -1 nil))))
       (should (equal (scalar "SELECT 'PT42S'::interval") "00:00:42"))
       (should (equal (scalar "SELECT 'PT3H4M42S'::interval") "03:04:42"))
       (should (equal (scalar "select '05:00'::time") "05:00:00"))
       (should (equal (scalar "SELECT '04:15:31.445+05'::timetz") "04:15:31.445+05"))
       (should (equal (scalar "SELECT '2001-02-03 04:05:06'::timestamp")
-                     (encode-time (list 6 5 4 3 2 2001 nil -1 'wall)))))))
+                     (encode-time (list 6 5 4 3 2 2001 nil -1 nil)))))))
 
 (defun pg-test-numeric (con)
   (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0)))
@@ -1941,9 +1941,6 @@ bar$$"))))
 
 (defun pg-test-parse-ts (con)
   (message "Test parsing of timestamps ...")
-  (message "timestamp parsing: current Emacs timezone is %s" (current-time-zone))
-  (message "2024-02-27T11:34:42.789+04 => %s"
-           (pg-isodate-without-timezone-parser "2024-02-27T11:34:42.789+04" nil))
   (let ((ts (pg-isodate-without-timezone-parser "2024-02-27T11:34:42.789+04" nil))
         (ts-dst (pg-isodate-without-timezone-parser "2024-05-27T11:34:42.789+04" nil))
         (ts-no-tz (pg-isodate-without-timezone-parser "2024-02-27T11:34:42.789" nil))
@@ -1952,10 +1949,12 @@ bar$$"))))
         (tstz-dst (pg-isodate-with-timezone-parser "2024-05-27T15:34:42.789+04" nil))
         (tstz-no-tz (pg-isodate-with-timezone-parser "2024-02-27T15:34:42.789" nil))
         (tstz-zulu (pg-isodate-with-timezone-parser "2024-02-27T15:34:42.789Z" nil)))
-    ;; Without DST, there is a one hour difference between UTC and UTC-01:00.
-    (pg-assert-string= "2024-02-27T10:34:42.789+0000" (pg-fmt-ts-utc ts))
-    ;; With DST (switchover is in March), there is a two hour difference between UTC and UTC-01:00.
-    (pg-assert-string= "2024-05-27T09:34:42.789+0000" (pg-fmt-ts-utc ts-dst))
+    ;; This function is being run with TZ=UTC-1. There is a one hour difference between UTC and
+    ;; UTC-1. If we were using a location-based timezone such as Europe/Paris, there would be a 1
+    ;; hour difference with UTC in February, and a 2 hour difference in May. We don't test this
+    ;; because the GitHub actions runners are not all able to parse a Europe/Paris timezone.
+    (should (string= "2024-02-27T10:34:42.789+0000" (pg-fmt-ts-utc ts)))
+    (pg-assert-string= "2024-05-27T10:34:42.789+0000" (pg-fmt-ts-utc ts-dst))
     (pg-assert-string= "2024-02-27T10:34:42.789+0000" (pg-fmt-ts-utc ts-no-tz))
     (pg-assert-string= "2024-02-27T10:34:42.789+0000" (pg-fmt-ts-utc ts-zulu))
     (pg-assert-string= "2024-02-27T11:34:42.789+0000" (pg-fmt-ts-utc tstz))

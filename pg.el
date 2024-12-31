@@ -2359,7 +2359,9 @@ Uses text encoding ENCODING."
             (hours   (string-to-number (match-string 5 str)))
             (minutes (string-to-number (match-string 6 str)))
             (seconds (string-to-number (match-string 7 str)))
-            (tz      'wall))
+            (tz      nil))
+        ;; a tz of nil means that we are parsing into Emacs' local time, which is dependent on the
+        ;; setting of the TZ environment variable.
         (encode-time (list seconds minutes hours day month year nil -1 tz)))
     (let ((msg (format "Badly formed ISO timestamp from backend: %s" str)))
       (signal 'pg-protocol-error (list msg)))))
