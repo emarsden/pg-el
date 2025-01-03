@@ -2862,12 +2862,16 @@ Uses database connection CON."
 (defun pg-table-comment (con table)
   "Return the comment on TABLE in a PostgreSQL database.
 TABLE can be a string or a schema-qualified name. Uses database connection CON."
-  (let* ((t-id (pg-escape-identifier table))
-         (sql "SELECT obj_description($1::regclass::oid, 'pg_class')")
-         (res (pg-exec-prepared con sql `((,t-id . "text"))))
-         (tuples (pg-result res :tuples)))
-    (when tuples
-      (caar tuples))))
+  (pcase (pgcon-server-variant con)
+    ('cratedb nil)
+    ;; Our standard query below triggers an internal exception in CockroachDB
+    ('cockroachdb nil)
+    (_ (let* ((t-id (pg-escape-identifier table))
+              (sql "SELECT obj_description($1::regclass::oid, 'pg_class')")
+              (res (pg-exec-prepared con sql `((,t-id . "text"))))
+              (tuples (pg-result res :tuples)))
+         (when tuples
+           (caar tuples))))))
 
 (gv-define-setter pg-table-comment (comment con table)
   `(let* ((sql (format "COMMENT ON TABLE %s IS %s"
@@ -3005,7 +3009,7 @@ Only tables to which the current user has access are listed."
         (t
          (pg--columns-legacy con table))))
 
-(defun pg-column-default (con table column)
+(defun pg-column-default/full (con table column)
   "Return the default value for COLUMN in PostgreSQL TABLE.
 Using connection to PostgreSQL CON."
   (let* ((schema (if (pg-qualified-name-p table)
@@ -3021,6 +3025,13 @@ Using connection to PostgreSQL CON."
          (ps-name (pg-ensure-prepared-statement con "QRY-column-default" sql argument-types))
          (res (pg-fetch-prepared con ps-name params)))
     (caar (pg-result res :tuples))))
+
+(defun pg-column-default (con table column)
+  "Return the default value for COLUMN in PostgreSQL TABLE.
+Using connection to PostgreSQL CON."
+  (pcase (pgcon-server-variant con)
+    ('cratedb nil)
+    (_ (pg-column-default/full con table column))))
 
 ;; This returns non-nil for columns for which you can insert a row without specifying a value for
 ;; the column. That includes columns:

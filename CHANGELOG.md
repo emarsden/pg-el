@@ -6,6 +6,9 @@
 - Fixes to the handling of timezones when parsing and serializing `time` and `timetz` data. Timezone
   information was previously lost during parsing and serialization. Patch from @akurth.
 
+- Further workarounds in `pg-table-column` and `pg-column-default` to tolerate deficiencies in
+  the PostgreSQL compatibility of CrateDB and CockroachDB.
+
 
 ## [0.45] - 2024-12-22
 
