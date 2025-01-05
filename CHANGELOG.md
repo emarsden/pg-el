@@ -9,6 +9,8 @@
 - Further workarounds in `pg-table-column` and `pg-column-default` to tolerate deficiencies in
   the PostgreSQL compatibility of CrateDB and CockroachDB.
 
+- Add a workaround in `pg-schemas` for RisingWave database.
+
 
 ## [0.45] - 2024-12-22
 

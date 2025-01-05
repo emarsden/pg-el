@@ -2911,6 +2911,9 @@ Uses database connection CON."
   (pcase (pgcon-server-variant con)
     ;; QuestDB doesn't really support schemas.
     ('questdb (list "sys" "public"))
+    ('risingwave
+     (let ((res (pg-exec con "SELECT DISTINCT table_schema FROM information_schema.tables")))
+       (apply #'append (pg-result res :tuples))))
     (_
      (let ((res (pg-exec con "SELECT schema_name FROM information_schema.schemata")))
        (apply #'append (pg-result res :tuples))))))
