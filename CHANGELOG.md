@@ -1,7 +1,7 @@
 # Changelog
 
 
-## [0.46] - Unreleased
+## [0.46] - 2025-01-12
 
 - Fixes to the handling of timezones when parsing and serializing `time` and `timetz` data. Timezone
   information was previously lost during parsing and serialization. Patch from @akurth.
