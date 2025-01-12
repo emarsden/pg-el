@@ -486,6 +486,14 @@
     (should (eql nil (scalar "SELECT '0'::boolean")))
     (should (equal (list "hey" "Jude") (row "SELECT 'hey', 'Jude'")))
     (should (eql nil (scalar "SELECT NULL")))
+    (should (eql t (scalar "SELECT 42 = 42")))
+    ;; Empty strings are equal
+    (should (eql t (scalar "SELECT '' = ''")))
+    (should (eql nil (scalar "SELECT 53 = 33")))
+    ;; Returns NULL because NULL is wierd in SQL
+    (should (eql nil (scalar "SELECT NULL = NULL")))
+    ;; IS checks for NULL identity
+    (should (eql t (scalar "SELECT NULL IS NULL")))
     ;; This leads to a timeout with YDB
     (unless (pg-test-is-ydb con)
       (should (equal nil (row ""))))
@@ -576,7 +584,7 @@ bar$$"))))
             (should (string= user owner))
             (should (string= user (pg-table-owner con (make-pg-qualified-name :name "count_test"))))
             (should (string= user (pg-table-owner con "count_test"))))))
-      (unless (member (pgcon-server-variant con) '(ydb cratedb risingwave))
+      (unless (member (pgcon-server-variant con) '(ydb cratedb cockroachdb risingwave))
         (pg-exec con "COMMENT ON TABLE count_test IS 'Counting squared'")
         (pg-exec con "COMMENT ON COLUMN count_test.key IS 'preciouss'")
         (let* ((res (pg-exec con "SELECT obj_description('count_test'::regclass::oid, 'pg_class')"))
@@ -673,7 +681,13 @@ bar$$"))))
     (with-environment-variables (("TZ" "UTC-01:00"))
       (pg-exec con "SET TimeZone = 'UTC-01:00'")
       (pg-exec con "DROP TABLE IF EXISTS date_test")
-      (pg-exec con "CREATE TABLE date_test(id integer, ts timestamp, tstz timestamptz, t time, ttz timetz, d date)")
+      (pg-exec con "CREATE TABLE date_test(
+           id INTEGER PRIMARY KEY,
+           ts TIMESTAMP,
+           tstz TIMESTAMPTZ,
+           t TIME,
+           ttz TIMETZ,
+           d DATE)")
       (unwind-protect
           (progn
             (pg-exec con "INSERT INTO date_test(id, ts, tstz, t, ttz, d) VALUES "
@@ -704,7 +718,8 @@ bar$$"))))
       ;; Here the hh:mm:ss are taken into account.
       (should (equal (scalar "SELECT '2063-03-31T22:13:02'::timestamp")
                      (encode-time (list 2 13 22 31 3 2063 nil -1 nil))))
-      (message "TZ test: current PostgreSQL timezone is %s" (scalar "SHOW timezone"))
+      (unless (member (pgcon-server-variant con) '(ydb))
+        (message "TZ test: current PostgreSQL timezone is %s" (scalar "SHOW timezone")))
       (message "TZ test: current Emacs timezone is %s" (current-time-zone))
       (message "TZ test: no-DST value is 2010-02-05 14:42:21")
       (let* ((ts (encode-time (list 21 42 14 5 2 2010 nil -1 'wall)))

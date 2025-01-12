@@ -477,7 +477,8 @@ test-cockroachdb: test-pg.el
 	   --publish 26257:26257 \
 	   -d docker.io/cockroachdb/cockroach start-single-node --insecure
 	sleep 5
-	PGEL_DATABASE=postgres PGEL_USER=root PGEL_PASSWORD="" PGEL_PORT=26257 $(MAKE) test
+	PGURI=postgresql://root@127.0.0.1:26257/postgres $(MAKE) test
+#	PGEL_DATABASE=postgres PGEL_USER=root PGEL_PASSWORD="" PGEL_PORT=26257 $(MAKE) test
 	${DOCKER} stop cockroachdb
 
 
@@ -582,7 +583,7 @@ test-spanner: test-pg.el
 	${DOCKER} stop spanner
 
 
-# YDB by Yandex. Last tested 2024-11 version 23.4.
+# YDB by Yandex. Last tested 2024-12 version 23.4.
 # 
 # https://ydb.tech/docs/en/postgresql/docker-connect
 #
