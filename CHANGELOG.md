@@ -1,6 +1,20 @@
 # Changelog
 
 
+## [0.47] - Unreleased
+
+- New variable `pg-new-connection-hook` contains a list of functions to be run when a new PostgreSQL
+  connection is established. Each function will be called with the new connection as the single
+  argument. The default value of this variable includes the function `pg-detect-server-variant`,
+  which attempts to determine the type of semi-compatible PostgreSQL variant that we are connected
+  to.
+
+- New generic function `pg-do-variant-specific-setup` that allows you to specify setup operations to
+  run for a particular semi-compatible PostgreSQL variant.
+
+- Added logic to recognize the PostgreSQL variant AlloyDB Omni.
+
+
 ## [0.46] - 2025-01-12
 
 - Fixes to the handling of timezones when parsing and serializing `time` and `timetz` data. Timezone

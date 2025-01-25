@@ -80,6 +80,10 @@ The following PostgreSQL-compatible databases have been tested:
 - The [PgBouncer](https://www.pgbouncer.org/) connection pooler for PostgreSQL works fine (tested
   with version 1.23 in the default session pooling mode).
 
+- [Google AlloyDB Omni](https://cloud.google.com/alloydb/omni/docs/quickstart) is a proprietary fork
+  of PostgreSQL with Google-developed extensions, including a columnar storage extension, adaptive
+  autovacuum, and an index advisor. It works perfectly with pg-el as of 2025-01.
+
 - [Xata](https://xata.io/) “serverless PostgreSQL” has many limitations including lack of support
   for `CREATE DATABASE`, `CREATE COLLATION`, for XML processing, for temporary tables, for cursors,
   for `EXPLAIN`, for `CREATE EXTENSION`, for functions such as `pg_notify`.
@@ -90,11 +94,15 @@ The following PostgreSQL-compatible databases have been tested:
   supported, and `LISTEN` and `NOTIFY` are not supported. It does support certain extensions such as
   pgvector, however.
 
-- [CrateDB](https://crate.io/): last tested with version 5.9.5. CrateDB does not support rows (e.g.
+- The [RisingWave](https://github.com/risingwavelabs/risingwave) event streaming database is mostly
+  working. It does not support `GENERATED ALWAYS AS IDENTITY` columns. Last tested 2025-01 with v2.1.0.
+
+- [CrateDB](https://crate.io/): last tested with version 5.9.6. CrateDB does not support rows (e.g.
   `SELECT (1,2)`), does not support the `time`, `varbit`, `bytea`, `jsonb` and `hstore` types, does
   not handle a query which only contains an SQL comment, does not handle various PostgreSQL
   functions such as `factorial`, and does not return a correct type OID for text columns in rows
-  returned from a prepared statement, doesn't support Unicode identifiers.
+  returned from a prepared statement, doesn't support Unicode identifiers, doesn't support the `COPY`
+  protocol, doesn't support `TRUNCATE TABLE`.
 
 - [CockroachDB](https://github.com/cockroachdb/cockroach): last tested with CockroachDB CCL v24.3.
   Note that this database does not implement the large object functionality, and its interpretation
@@ -127,8 +135,7 @@ The following PostgreSQL-compatible databases have been tested:
   works fine.
 
 - Untested but likely to work: Amazon RDS, Google Cloud SQL, Azure Database for PostgreSQL, Amazon
-  Auroa, Google AlloyDB, Materialize. You may however encounter difficulties with TLS connections,
-  as noted above.
+  Auroa, Materialize. You may however encounter difficulties with TLS connections, as noted above.
 
 It does not work with the ClickHouse database, whose PostgreSQL support is too limited (no
 implementation of the `pg_types` system table, no support for basic PostgreSQL-flavoured SQL

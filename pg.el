@@ -124,6 +124,15 @@ the backend, the parameter name and the parameter value.")
 Each handler is called with one argument, the notice, as a pgerror
 struct.")
 
+(defvar pg-new-connection-hook (list #'pg-detect-server-variant)
+  "A list of functions called when a new PostgreSQL connection is established.
+Each function is called with the new connection as a single argument.
+
+The default value of this hook includes a function that detects various
+semi-compatible PostgreSQL variants, which sometimes requires additional
+SQL queries. To avoid this overhead on establishing a connection, remove
+`pg-detect-server-variant' from this list.")
+
 (define-error 'pg-error "PostgreSQL error" 'error)
 (define-error 'pg-user-error "pg-el user error" 'pg-error)
 (define-error 'pg-protocol-error "PostgreSQL protocol error" 'pg-error)
@@ -382,10 +391,25 @@ tag called pg-finished."
 (defconst pg--STARTUP_KRB5_MSG      11)
 (defconst pg--STARTUP_PASSWORD_MSG  14)
 
-(defun pg--detect-server-variant (con)
+(cl-defgeneric pg-do-variant-specific-setup (con variant)
+  "Run any setup actions on connnection establishment specific to VARIANT.
+Uses PostgreSQL connection CON.")
+
+;; QuestDB only supports text-encoded values in the extended query statement protocol, so for this
+;; PostgreSQL variant we ignore any binary serializers that were registered using
+;; pg--register-serializer.
+(cl-defmethod pg-do-variant-specific-setup ((con pgcon) (variant (eql 'questdb)))
+  (message "Running variant-specific setup for QuestDB")
+  (setq pg--serializers (make-hash-table :test #'equal)))
+
+(cl-defmethod pg-do-variant-specific-setup ((con pgcon) (variant t))
+  ;; This statement fails on ClickHouse (and the database immediately closes the connection!).
+  (unless (eq variant 'clickhouse)
+    (pg-exec con "SET datestyle = 'ISO'")))
+
+(defun pg-detect-server-variant (con)
   "Detect the flavour of PostgreSQL that we are connected to.
-Uses connection CON. Also run variant-specific configuration actions.
-The variant can be accessed by `pgcon-server-variant'."
+Uses connection CON. The variant can be accessed by `pgcon-server-variant'."
   (pcase (pgcon-server-variant con)
     ;; This is the default value, meaning we haven't yet identified a variant based on its backend
     ;; parameter values.
@@ -404,17 +428,20 @@ The variant can be accessed by `pgcon-server-variant'."
              ((cl-search "RisingWave" version)
               (setf (pgcon-server-variant con) 'risingwave))
              ((cl-search "implemented by immudb" version)
-              (setf (pgcon-server-variant con) 'immudb)))))
+              (setf (pgcon-server-variant con) 'immudb))
+             ;; A more expensive test is needed for Google AlloyDB. If this parameter is defined,
+             ;; the query will return "on" or "off" as a string, and if the parameter is not defined
+             ;; the query (second argument meaning no-error) will return '((nil)).
+             ((let ((res (pg-exec con "SELECT current_setting('omni_disk_cache_enabled', true)")))
+                (stringp (cl-first (pg-result res :tuple 0))))
+              (setf (pgcon-server-variant con) 'alloydb))
+             ((let* ((sql "SELECT 1 FROM information_schema.schemata WHERE schema_name=$1")
+                     (res (pg-exec-prepared con sql '(("_timescaledb_catalog" . "text")))))
+                (pg-result res :tuples))
+              (setf (pgcon-server-variant con) 'timescaledb)))))
     ('ydb
-     (pg-exec con "SET search_path = public"))
-    ;; The Timescale status was "guessed" early on in the startup sequence from the presence of the
-    ;; "default_transaction_read_only" backend parameter key. To make sure that this is really
-    ;; TimescaleDB, we check for the existence of a TimescaleDB-specific schema.
-    ('timescaledb
-     (let* ((sql "SELECT 1 FROM information_schema.schemata WHERE schema_name=$1")
-            (res (pg-exec-prepared con sql '(("_timescaledb_catalog" . "text")))))
-       (when (null (pg-result res :tuples))
-         (setf (pgcon-server-variant con) 'postgresql))))))
+     (pg-exec con "SET search_path = 'public'")))
+  (pg-do-variant-specific-setup con (pgcon-server-variant con)))
 
 (defun pg-handle-error-response (con &optional context)
   "Handle an ErrorMessage from the backend we are connected to over CON.
@@ -532,10 +559,8 @@ Uses database DBNAME, user USER and password PASSWORD."
         (and (not pg-disable-type-coercion)
              (zerop (hash-table-count (pgcon-parser-by-oid con)))
              (pg-initialize-parsers con))
-        (pg--detect-server-variant con)
-        ;; This statement fails on ClickHouse (and the database immediately closes the connection!).
-        (unless (eq 'clickhouse (pgcon-server-variant con))
-          (pg-exec con "SET datestyle = 'ISO'"))
+        (dolist (f pg-new-connection-hook)
+          (funcall f con))
         (pg-enable-async-notification-handlers con)
         (pg-connection-set-busy con nil)
         (cl-return-from pg-do-startup con)))
@@ -607,10 +632,6 @@ Uses database DBNAME, user USER and password PASSWORD."
               (setf (pgcon-server-variant con) 'spanner)))
           (when (string-prefix-p "ivorysql." key)
             (setf (pgcon-server-variant con) 'ivorydb))
-          ;; We confirm this guess later in the startup sequence by checking for the existence of
-          ;; TimescaleDB-specific schemas in the current database.
-          (when (string= "default_transaction_read_only" key)
-            (setf (pgcon-server-variant con) 'timescaledb))
           (dolist (handler pg-parameter-change-functions)
             (funcall handler con key val)))))
 
@@ -1356,7 +1377,7 @@ Returns a pgresult structure (see function `pg-result')."
   (let* ((tuples (list))
          (attributes (pgresult-attributes result)))
     (setf (pgresult-status result) nil)
-    ;; We are counting on the Describe message having been sent prior to calling pg-fetch
+    ;; We are counting on the Describe message having been sent prior to calling pg-fetch.
     (pg-execute con (pgresult-portal result) :max-rows max-rows)
     ;; If we are requesting a subset of available rows, we send a Flush message instead of a Sync
     ;; message, otherwise our unnamed portal will be closed by the Sync message and we won't be able
@@ -1369,7 +1390,9 @@ Returns a pgresult structure (see function `pg-result')."
            ;; send a Flush message
            (pg-send-char con ?H)
            (pg-send-uint con 4 4)))
-    ;; (pg-flush con)
+    ;; In the extended query protocol, the Execute phase is always terminated by the appearance of
+    ;; exactly one of these messages: CommandComplete, EmptyQueryResponse (if the portal was created
+    ;; from an empty query string), ErrorResponse, or PortalSuspended.
     (cl-loop
      for c = (pg-read-char con) do
      ;; (message "pg-fetch got %c" c)
@@ -1422,7 +1445,8 @@ Returns a pgresult structure (see function `pg-result')."
        ;; EmptyQueryResponse -- the response to an empty query string
        (?I
         (pg-read-net-int con 4)
-        (setf (pgresult-status result) "EMPTY"))
+        (setf (pgresult-status result) "EMPTY")
+        (setf (pgresult-incomplete result) nil))
 
        ;; NoData message
        (?n
@@ -1537,6 +1561,10 @@ Uses PostgreSQL connection CON."
 
        ;; CloseComplete
        (?3
+        (pg-read-net-int con 4))
+
+       ;; PortalSuspended: sent by some old PostgreSQL versions here?
+       (?s
         (pg-read-net-int con 4))
 
        ;; ErrorResponse
