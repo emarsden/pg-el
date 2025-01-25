@@ -1,7 +1,7 @@
 # Changelog
 
 
-## [0.47] - Unreleased
+## [0.47] - 2025-01-25
 
 - New variable `pg-new-connection-hook` contains a list of functions to be run when a new PostgreSQL
   connection is established. Each function will be called with the new connection as the single
