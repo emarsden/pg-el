@@ -1,7 +1,7 @@
 ;;; Tests for the pg.el library   -*- coding: utf-8; lexical-binding: t; -*-
 ;;
 ;; Author: Eric Marsden <eric.marsden@risk-engineering.org>
-;; Copyright: (C) 2022-2024  Eric Marsden
+;; Copyright: (C) 2022-2025  Eric Marsden
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 
