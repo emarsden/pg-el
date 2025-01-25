@@ -51,7 +51,7 @@
   (with-pgtest-connection-tls con
     (let ((seen (make-hash-table :test #'equal))
           (notification-count 0))
-      (cl-flet ((notification-handler (channel payload)
+      (cl-flet ((notification-handler (_channel payload)
                   (when (gethash payload seen)
                     (message "Duplicate notification %s" payload))
                   (puthash payload t seen)

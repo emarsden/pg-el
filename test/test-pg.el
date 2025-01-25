@@ -442,6 +442,7 @@
                                   `((,bobby . "text"))))
            (count (cl-first (row "SELECT COUNT(*) FROM students" nil)))
            (name (cl-first (row "SELECT name FROM students LIMIT 1" nil))))
+      (should (string-prefix-p "INSERT" (pg-result res :status)))
       (should (eql 1 count))
       (should (cl-search "Robert" name)))
     (should-error (scalar "SELECT * FROM" '(("a" . "text"))))
@@ -1076,9 +1077,9 @@ bar$$"))))
 ;; Schemas for qualified names such as public.tablename.
 (defun pg-test-schemas (con)
   (let ((res (pg-exec con "CREATE SCHEMA IF NOT EXISTS custom")))
-    (should (zerop (cl-search "CREATE" (pg-result res :status)))))
+    (should (string-prefix-p "CREATE" (pg-result res :status))))
   (let ((res (pg-exec con "CREATE TABLE IF NOT EXISTS custom.newtable(id INT4 PRIMARY KEY)")))
-    (should (zerop (cl-search "CREATE" (pg-result res :status)))))
+    (should (string-prefix-p "CREATE" (pg-result res :status))))
   (let ((tables (pg-tables con)))
     (should (cl-find "newtable" tables
                      :test #'string=
@@ -1953,6 +1954,11 @@ bar$$"))))
          (elapsed (float-time (time-since time))))
     (message "Emacs version %s: %s" (version) elapsed)))
 
+(defmacro pg-assert-string= (expected test-form)
+  `(unless (string= ,expected ,test-form)
+     (error "Test failure: %s => %s (expecting %s)"
+            ',test-form ,test-form ,expected)))
+
 (defun pg-run-tz-tests (con)
   (pg-exec con "DROP TABLE IF EXISTS tz_test")
   (pg-exec con "CREATE TABLE tz_test(id INTEGER PRIMARY KEY, ts TIMESTAMP, tstz TIMESTAMPTZ)")
@@ -1991,7 +1997,7 @@ bar$$"))))
     (pg-assert-matches "2024-02-27T11:34:42.78901Z" regexp)
     (pg-assert-matches "2024-02-27T11:34:42.78901z" regexp)))
 
-(defun pg-test-parse-ts (con)
+(defun pg-test-parse-ts (_con)
   (message "Test parsing of timestamps ...")
   (let ((ts (pg-isodate-without-timezone-parser "2024-02-27T11:34:42.789+04" nil))
         (ts-dst (pg-isodate-without-timezone-parser "2024-05-27T11:34:42.789+04" nil))
@@ -2061,11 +2067,6 @@ bar$$"))))
          (tstz (nth 1 data)))
     (pg-assert-string= "2024-02-27 12:34:42.789+01" tstz)))
 
-
-(defmacro pg-assert-string= (expected test-form)
-  `(unless (string= ,expected ,test-form)
-     (error "Test failure: %s => %s (expecting %s)"
-            ',test-form ,test-form ,expected)))
 
 (defun pg-assert-matches (str regexp)
   (should (string-match regexp str)))
