@@ -24,11 +24,6 @@ test-interactive: test-pg.el install-deps
 supabase: install-deps
 	${EMACS} -Q --batch -L .. -L . -l load-deps.el -l ../pg.el -l supabase.el -f test-supabase
 
-# We are currently seeing read timeous with xata.io
-xata: install-deps
-	${EMACS} -Q --batch -L .. -L . -l load-deps.el -l ../pg.el -l xata-bug.el -f test
-
-
 hang: install-deps
 	${EMACS} -Q -L .. -L . -l load-deps.el -l ../pg.el -l hang.el
 
@@ -325,7 +320,7 @@ test-neon: test-pg.el
 	PGURI="postgresql://user:password@foo.eu-central-1.aws.neon.tech/main?sslmode=require" $(MAKE) test-tls
 
 
-# app.xata.io are running PostgreSQL 15.5 on aarch64/Linux as of 2024-10
+# app.xata.io are running PostgreSQL 15.5 on aarch64/Linux as of 2025-01
 test-xata: test-pg.el
 	PGURI="postgresql://user:password@eu-central-1.sql.xata.sh/pgeltestdb:main?sslmode=force" $(MAKE) test-tls
 
@@ -589,17 +584,21 @@ test-spanner: test-pg.el
 #
 # Fairly limited PostgreSQL support currently; for example all tables must have a primary key.
 # Bit vectors are not returned with a bitvector oid in the metainformation.
+#
+# Many supported functions, as per https://ydb.tech/docs/en/postgresql/functions
+#
+# There is apparently an environment variable YDB_PG_PORT but it seems to be ignored.
 test-ydb: test-pg.el
 	${DOCKER} run --rm --name ydb \
-	  --publish 5411:5432 \
-	  --publish 8765:8765 \
-	  -e POSTGRES_USER=pgeltestuser \
-	  -e POSTGRES_PASSWORD=pgeltest \
-	  -e YDB_EXPERIMENTAL_PG=1 \
-	  -e YDB_USE_IN_MEMORY_PDISKS=true \
-	  -d ghcr.io/ydb-platform/local-ydb:nightly
+          --publish 5119:5432 \
+          -e YDB_PG_DATABASE=pgeltestdb \
+          -e POSTGRES_USER=pgeltestuser \
+          -e POSTGRES_PASSWORD=pgeltest \
+          -e YDB_EXPERIMENTAL_PG=1 \
+          -e YDB_USE_IN_MEMORY_PDISKS=true \
+          -d ghcr.io/ydb-platform/local-ydb:nightly
 	sleep 5
-	PGEL_PORT=5411 PGEL_DATABASE=local $(MAKE) test
+	PGEL_PORT=5119 PGEL_DATABASE=local $(MAKE) test
 	${DOCKER} stop ydb
 
 
@@ -638,6 +637,7 @@ test-clickhouse: test-pg.el
 # postgresql://pgeltestuser:pgeltest@localhost:4003/public
 test-greptimedb: test-pg.el
 	${DOCKER} run --rm --name greptimedb \
+	  --pull=newer \
 	  --publish 127.0.0.1:4003:4003 \
 	  -d docker.io/greptime/greptimedb:latest standalone start \
 	  --http-addr 0.0.0.0:4000 \
@@ -658,12 +658,33 @@ test-greptimedb: test-pg.el
 # Could test TLS support with environment variables RW_SSL_CERT and RW_SSL_KEY.
 test-risingwave: test-pg.el
 	${DOCKER} run --rm --name risingwave \
-	  --pull=always \
+	  --pull=newer \
 	  -e ENABLE_TELEMETRY=false \
 	  --publish 4566:4566 \
 	  -d docker.io/risingwavelabs/risingwave:latest single_node
 	sleep 5
 	PGURI=postgresql://root@127.0.0.1:4566/dev $(MAKE) test
+	${DOCKER} stop risingwave
+
+
+# Google AlloyDB Omni. This is PostgreSQL with Google-developed extensions, including a columnar
+# storage extension, adaptive autovacuum, and an index advisor.
+#
+# https://cloud.google.com/alloydb/omni/docs/quickstart
+# https://hub.docker.com/r/google/alloydbomni
+# https://cloud.google.com/alloydb/docs/reference/database-flags
+# Seems to ignore the PGPORT environment variable
+test-alloydb: test-pg.el
+	${DOCKER} run --rm --name alloydb \
+          --pull=newer \
+          --publish 4481:5432 \
+          -e POSTGRES_DB=pgeltestdb \
+          -e POSTGRES_USER=pgeltestuser \
+          -e POSTGRES_PASSWORD=pgeltest \
+          -d docker.io/google/alloydbomni:latest -c google_columnar_engine.enabled=on
+	sleep 10
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:4481/pgeltestdb $(MAKE) test
+	${DOCKER} stop alloydb
 
 
 # Create and populate a new database with information concerning works by Shakespeare.
