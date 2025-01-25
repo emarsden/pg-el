@@ -56,6 +56,14 @@ to a variable extent, against other databases that implement the PostgreSQL wire
 - The [PgBouncer](https://www.pgbouncer.org/) connection pooler for PostgreSQL works fine (tested
   with version 1.23 in the default session pooling mode).
 
+- [Google AlloyDB Omni](https://cloud.google.com/alloydb/omni/docs/quickstart) is a proprietary fork
+  of PostgreSQL with Google-developed extensions, including a columnar storage extension, adaptive
+  autovacuum, and an index advisor. It works perfectly with pg-el as of 2025-01.
+
+- [ParadeDB](https://www.paradedb.com/): This ElasticSearch alternative is very
+  PostgreSQL-compatible (more of an extension than a reimplementation). Tested with the Dockerhub
+  instance which is based on PostgreSQL 16.3. All tests pass.
+
 - [Xata](https://xata.io/) “serverless PostgreSQL” has many limitations including lack of support
   for `CREATE DATABASE`, `CREATE COLLATION`, for XML processing, for temporary tables, for cursors,
   for `EXPLAIN`, for `CREATE EXTENSION`, for functions such as `pg_notify`.
@@ -65,7 +73,10 @@ to a variable extent, against other databases that implement the PostgreSQL wire
   extensions. However, some system tables differ from PostgreSQL, such as the `pg_sequences` table.
   It does not support the XML type. It does not support `LISTEN`/`NOTIFY`.
 
-- [CrateDB](https://crate.io/): tested with version 5.8.3. There are limitations in this database's
+- The [RisingWave](https://github.com/risingwavelabs/risingwave) event streaming database is mostly
+  working. It does not support `GENERATED ALWAYS AS IDENTITY` columns. Last tested 2025-01 with v2.1.0.
+
+- [CrateDB](https://crate.io/): last tested with version 5.9.6. There are limitations in this database's
   emulation of the PostgreSQL system tables: for example, it's not possible to query the owner of a
   table (function `pg-table-owner`). It doesn't accept SQL statements that only include an SQL
   comment. It doesn't support setting comments on SQL tables. As
@@ -73,14 +84,10 @@ to a variable extent, against other databases that implement the PostgreSQL wire
   does not support the `TIME` type without a time zone. It doesn't support casting integers to bits.
   It doesn't support the `VARBIT` type. It has no support for the COPY protocol.
 
-- [CockroachDB](https://github.com/cockroachdb/cockroach): tested with CockroachDB CCL v24.2. Note
+- [CockroachDB](https://github.com/cockroachdb/cockroach): tested with CockroachDB CCL v24.3. Note
   that this database does not implement the large object functionality, and its interpretation of
   SQL occasionally differs from that of PostgreSQL. It is currently [reporting an internal
   error](https://github.com/cockroachdb/cockroach/issues/104009) when we call `pg-table-comment`.
-
-- [ParadeDB](https://www.paradedb.com/): This ElasticSearch alternative is very
-  PostgreSQL-compatible (more of an extension than a reimplementation). Tested with the Dockerhub
-  instance which is based on PostgreSQL 16.3. All tests pass.
 
 - [QuestDB](https://questdb.io/): tested against version 6.5.4. This is not very
   PostgreSQL-compatible: it fails on the SQL query `SELECT 1::integer` because it doesn't recognize
@@ -101,8 +108,8 @@ to a variable extent, against other databases that implement the PostgreSQL wire
   machinery does not work.
 
 - Untested but likely to work: Amazon RDS, Google Cloud SQL, Azure Database for PostgreSQL, Amazon
-  Auroa, Google AlloyDB, Materialize, CitusData. You may however encounter difficulties with TLS
-  connections, as noted above.
+  Auroa, Materialize, CitusData. You may however encounter difficulties with TLS connections, as
+  noted above.
 
 
 Tested with **Emacs versions** 30-pre-release, 29.4, 28.2, 27.2 and 26.3. Emacs versions older than
