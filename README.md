@@ -77,6 +77,9 @@ The following PostgreSQL-compatible databases have been tested:
 - The [CitusDB](https://github.com/citusdata/citus) extension for sharding PostgreSQL over multiple
   hosts works perfectly (last tested with Citus version 12.1.5, which is based on PostgreSQL 16.6).
 
+- The [Microsoft DocumentDB](https://github.com/microsoft/documentdb) extension for MongoDB-like
+  queries works perfectly. Note that this is not the same product as Amazon DocumentDB.
+
 - The [PgBouncer](https://www.pgbouncer.org/) connection pooler for PostgreSQL works fine (tested
   with version 1.23 in the default session pooling mode).
 
