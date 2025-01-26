@@ -420,6 +420,29 @@ test-paradedb: test-pg.el
 	${DOCKER} stop paradedb
 
 
+# Microsoft DocumentDB (PostgreSQL-based). This is not the same product as Amazon DocumentDB.
+#
+# https://github.com/microsoft/documentdb
+#
+# Here using the prebuilt Docker image provided by FerretDB
+# https://docs.ferretdb.io/installation/ferretdb/docker/
+#
+#            -e POSTGRES_INITDB_ARGS="-c cron.database_name=pgeltestdb" \
+
+# We can't change the database name with POSTGRES_DATABASE as that messes with the initialization of
+# the pg_cron extension. Likewise for the POSTGRES_USER because that changes the default database
+# name.
+test-documentdb: test-pg.el
+	${DOCKER} run --rm --name documentdb \
+	  --publish 5488:5488 \
+	   -e POSTGRES_PASSWORD=pgeltest \
+	   -e PGPORT=5488 \
+	   -d ghcr.io/ferretdb/postgres-documentdb:16
+	sleep 5
+	PGURI=postgresql://postgres:pgeltest@127.0.0.1:5488/postgres $(MAKE) test
+	${DOCKER} stop documentdb
+
+
 # Test pgbouncer proxying to our local PostgreSQL (in session pooling mode, so that functionality
 # such as LISTEN works).
 #
