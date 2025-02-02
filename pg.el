@@ -398,9 +398,23 @@ Uses PostgreSQL connection CON.")
 ;; QuestDB only supports text-encoded values in the extended query statement protocol, so for this
 ;; PostgreSQL variant we ignore any binary serializers that were registered using
 ;; pg--register-serializer.
-(cl-defmethod pg-do-variant-specific-setup ((con pgcon) (variant (eql 'questdb)))
-  (message "Running variant-specific setup for QuestDB")
+(cl-defmethod pg-do-variant-specific-setup ((_con pgcon) (_variant (eql 'questdb)))
+  (message "pg-el: running variant-specific setup for QuestDB")
   (setq pg--serializers (make-hash-table :test #'equal)))
+
+;; Register the OIDs associated with these OmniDB-specific types, so that their types appear in
+;; column metadata listings.
+(cl-defmethod pg-do-variant-specific-setup ((con pgcon) (_variant (eql 'alloydb)))
+  (message "pg-el: running variant-specific setup for AlloyDB Omni")
+  ;; These type names are in the google_ml schema
+  (pg-register-parser "model_family_type" #'pg-text-parser)
+  (pg-register-parser "model_family_info" #'pg-text-parser)
+  (pg-register-parser "model_provider" #'pg-text-parser)
+  (pg-register-parser "model_type" #'pg-text-parser)
+  (pg-register-parser "auth_type" #'pg-text-parser)
+  (pg-register-parser "auth_info" #'pg-text-parser)
+  (pg-register-parser "models" #'pg-text-parser)
+  (pg-initialize-parsers con))
 
 (cl-defmethod pg-do-variant-specific-setup ((con pgcon) (variant t))
   ;; This statement fails on ClickHouse (and the database immediately closes the connection!).
@@ -1255,9 +1269,12 @@ Uses PostgreSQL connection CON."
 Uses PostgreSQL connection CON."
   (let ((typname-by-oid (pgcon-typname-by-oid con)))
     (or (gethash oid typname-by-oid)
-        (progn
-          (pg-initialize-parsers con)
-          (gethash oid typname-by-oid)))))
+        (let* ((sql "SELECT typname FROM pg_catalog.pg_type WHERE oid=$1")
+               (res (pg-exec-prepared con sql `((,oid . "int4"))))
+               (maybe-name (cl-first (pg-result res :tuple 0))))
+          (when maybe-name
+            (setf (gethash oid typname-by-oid) maybe-name))
+          maybe-name))))
 
 
 (cl-defun pg-prepare (con query argument-types &key (name ""))
