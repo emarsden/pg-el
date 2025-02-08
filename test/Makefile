@@ -496,13 +496,12 @@ test-cockroachdb: test-pg.el
 	   -d docker.io/cockroachdb/cockroach start-single-node --insecure
 	sleep 5
 	PGURI=postgresql://root@127.0.0.1:26257/postgres $(MAKE) test
-#	PGEL_DATABASE=postgres PGEL_USER=root PGEL_PASSWORD="" PGEL_PORT=26257 $(MAKE) test
 	${DOCKER} stop cockroachdb
 
 
-# Last tested 2024-12 with QuestDB version 8.2.1. This version (based on PostgreSQL 12.3 but which
+# Last tested 2025-02 with QuestDB version 8.2.2. This version (based on PostgreSQL 12.3 but which
 # for some reason claims to have a backend major version of 11) doesn't get very far through the
-# tests; it fails on "SELECT 1::integer" because it doesn't recognize integer as a type. Also DELETE
+# tests; it fails on "SELECT 1::integer" because it doesn't recognize integer as a type. Also, DELETE
 # statements are not supported.
 #
 # Note: we could test the TLS support for the PostgreSQL wire protocol by setting parameters
@@ -518,24 +517,30 @@ test-questdb: test-pg.el
           -e QDB_PG_PASSWORD=pgeltest \
 	  -d docker.io/questdb/questdb
 	sleep 5
-	PGEL_HOSTNAME=127.0.0.1 PGEL_DATABASE=postgres PGEL_USER=pgeltestuser PGEL_PASSWORD=pgeltest PGEL_PORT=8812 $(MAKE) test
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:8812/postgres $(MAKE) test
 	${DOCKER} stop questdb
 
 
-# Last tested 2024-12, Yugabyte 2.23 is based on PostgreSQL 11.2. This works very well, including
+# Last tested 2025-02, Yugabyte 2.25 is based on PostgreSQL 15.2. This works very well, including
 # the HSTORE and pgvector extensions. The sequence test fails (SELECT last_value FROM pg_sequences).
 # Some more recent SQL evolutions such as "INTEGER GENERATED ALWAYS AS expression STORED" are not
 # supported. LISTEN/NOTIFY is not supported.
+#
+# TODO: test YSQL_PASSWORD
+# https://docs.yugabyte.com/preview/reference/configuration/yugabyted/
 test-yugabyte: test-pg.el
 	${DOCKER} run --rm --name yugabyte \
-	  --net host \
-	  -d docker.io/yugabytedb/yugabyte:latest \
-	  bin/yugabyted start \
-	  --advertise_address 127.0.0.1 \
-	  --base_dir=/tmp \
-	  --background=false
+          --net host \
+          -e YSQL_DB=pgeltestdb \
+          -e YSQL_USER=pgeltestuser \
+          -d docker.io/yugabytedb/yugabyte:latest \
+          bin/yugabyted start \
+          --ysql_port 5493 \
+          --advertise_address 127.0.0.1 \
+          --base_dir=/tmp \
+          --background=false
 	sleep 10
-	PGEL_DATABASE=yugabyte PGEL_USER=yugabyte PGEL_PASSWORD="" PGEL_HOST=127.0.0.1 PGEL_PORT=5433 $(MAKE) test
+	PGURI=postgresql://pgeltestuser@127.0.0.1:5493/pgeltestdb $(MAKE) test
 	${DOCKER} stop yugabyte
 
 
@@ -601,7 +606,7 @@ test-spanner: test-pg.el
 	${DOCKER} stop spanner
 
 
-# YDB by Yandex. Last tested 2024-12 version 23.4.
+# YDB by Yandex. Last tested 2025-02 version 23.4.
 # 
 # https://ydb.tech/docs/en/postgresql/docker-connect
 #
@@ -625,7 +630,7 @@ test-ydb: test-pg.el
 	${DOCKER} stop ydb
 
 
-# Last tested 2024-12 with version 24.12. Very limited PostgreSQL support: there is no pg_type
+# Last tested 2025-01 with version 24.12. Very limited PostgreSQL support: there is no pg_type
 # table so we can't retrieve information regarding the OID of builtin types. During our
 # initialization sequence we send the query "SET datestyle = 'ISO'", which fails and causes the
 # network connection to be reset (!).
@@ -653,7 +658,7 @@ test-clickhouse: test-pg.el
 
 # https://docs.greptime.com/getting-started/installation/greptimedb-standalone
 #
-# Tested 2024-12 version 0.12.0. This database implements quite a lot of the PostgreSQL wire
+# Tested 2025-02 version 0.12.0. This database implements quite a lot of the PostgreSQL wire
 # protocol, but the names it uses for types in the pg_catalog.pg_types table are not the same as
 # PostgreSQL, so our parsing machinery does not work (we see 42 returned as "42").
 #
@@ -672,7 +677,7 @@ test-greptimedb: test-pg.el
 	${DOCKER} stop greptimedb
 
 
-# RisingWave event streaming database. Last tested 2024-12 with v2.1.0.
+# RisingWave event streaming database. Last tested 2025-02 with v2.2.0.
 # https://github.com/risingwavelabs/risingwave
 # https://docs.risingwave.com/get-started/quickstart
 #
