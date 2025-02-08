@@ -38,7 +38,7 @@ PostgreSQL or a compatible database.
 - Connections over TCP or (on Unix machines) a local Unix socket.
 ~~~
 
-The code has been tested with **PostgreSQL versions** 17.0, 16.3, 15.4, 13.8, 11.17, and 10.22 on
+The code has been tested with **PostgreSQL versions** 17.2, 16.3, 15.4, 13.8, 11.17, and 10.22 on
 Linux. It is also tested via GitHub actions on MacOS and Microsoft Windows. This library also works,
 to a variable extent, against other databases that implement the PostgreSQL wire protocol:
 
@@ -49,6 +49,13 @@ to a variable extent, against other databases that implement the PostgreSQL wire
 
 - [IvorySQL](https://www.ivorysql.org/) version 3.4 works perfectly (this fork of PostgreSQL adds
   some features for compatibility with Oracle).
+
+- The [CitusDB](https://github.com/citusdata/citus) extension for sharding PostgreSQL over multiple
+  hosts works perfectly (last tested with Citus version 12.1.5, which is based on PostgreSQL 16.6).
+
+- The [Microsoft DocumentDB](https://github.com/microsoft/documentdb) extension for MongoDB-like
+  queries works perfectly (last tested 2025-02 with version 16.6). Note that this is not the same
+  product as Amazon DocumentDB.
 
 - The [Timescale DB](https://www.timescale.com/) extension for time series data works perfectly
   (tested with version 2.16.1).
@@ -108,8 +115,32 @@ to a variable extent, against other databases that implement the PostgreSQL wire
   machinery does not work.
 
 - Untested but likely to work: Amazon RDS, Google Cloud SQL, Azure Database for PostgreSQL, Amazon
-  Auroa, Materialize, CitusData. You may however encounter difficulties with TLS connections, as
+  Auroa, Materialize. You may however encounter difficulties with TLS connections, as
   noted above.
+
+The generic function `pg-do-variant-specific-setup` allows you to specify setup operations to
+run for a particular semi-compatible PostgreSQL variant. You can specialize it on the symbol name of the
+variant, currently one of `postgresql`, `alloydb`, `cratedb`, `cockroachdb`, `yugabyte`, `questdb`,
+`greptimedb`, `risingwave`, `immudb`, `timescaledb`, `ydb`, `orioledb`, `xata`, `spanner`,
+`ivorydb`. As an example, the following specializer is already defined to run for AlloyDB variants:
+
+```lisp
+;; Register the OIDs associated with these OmniDB-specific types, so that their types appear in
+;; column metadata listings.
+(cl-defmethod pg-do-variant-specific-setup ((con pgcon) (_variant (eql 'alloydb)))
+  (message "pg-el: running variant-specific setup for AlloyDB Omni")
+  ;; These type names are in the google_ml schema
+  (pg-register-parser "model_family_type" #'pg-text-parser)
+  (pg-register-parser "model_family_info" #'pg-text-parser)
+  (pg-register-parser "model_provider" #'pg-text-parser)
+  (pg-register-parser "model_type" #'pg-text-parser)
+  (pg-register-parser "auth_type" #'pg-text-parser)
+  (pg-register-parser "auth_info" #'pg-text-parser)
+  (pg-register-parser "models" #'pg-text-parser)
+  (pg-initialize-parsers con))
+```
+
+
 
 
 Tested with **Emacs versions** 30-pre-release, 29.4, 28.2, 27.2 and 26.3. Emacs versions older than
