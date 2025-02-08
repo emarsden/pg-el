@@ -449,6 +449,9 @@ Uses connection CON. The variant can be accessed by `pgcon-server-variant'."
              ((let ((res (pg-exec con "SELECT current_setting('omni_disk_cache_enabled', true)")))
                 (stringp (cl-first (pg-result res :tuple 0))))
               (setf (pgcon-server-variant con) 'alloydb))
+             ;; TODO: we could also detect CitusDB in the same way by checking for citus.cluter_name
+             ;; setting for example, but in practice it is very PostgreSQL compatible so identifying
+             ;; it as a variant doesn't seem mandatory.
              ((let* ((sql "SELECT 1 FROM information_schema.schemata WHERE schema_name=$1")
                      (res (pg-exec-prepared con sql '(("_timescaledb_catalog" . "text")))))
                 (pg-result res :tuples))
@@ -677,7 +680,13 @@ To use client certificates to authenticate the TLS connection,
 use a value of TLS-OPTIONS of the form `(:keylist ((,key
 ,cert)))', where `key' is the filename of the client certificate
 private key and `cert' is the filename of the client certificate.
-These are passed to GnuTLS."
+These are passed to GnuTLS.
+
+Variable SERVER-VARIANT can be used to specify that we are
+connecting to a specific semi-compatible PostgreSQL variant. This
+may be useful if the variant cannot be autodetected by pg-el but
+you would like to run specific code in
+`pg-do-variant-specific-setup'"
   (let* ((buf (generate-new-buffer " *PostgreSQL*"))
          (process (open-network-stream "postgres" buf host port
                                        :coding nil
@@ -686,6 +695,9 @@ These are passed to GnuTLS."
          (con (make-pgcon :dbname dbname :process process)))
     (when server-variant
       (setf (pgcon-server-variant con) server-variant))
+    ;; Emacs supports disabling the Nagle algorithm, i.e. enabling TCP_NODELAY on this connection as
+    ;; of version 31.x. We do that if possible as it leads to a huge performance improvement for TCP
+    ;; connections (increasing throughput by a factor of 12 in our test suite, for example).
     (when (featurep 'make-network-process :nodelay)
       (set-network-process-option process :nodelay t))
     (unless (zerop pg-connect-timeout)
