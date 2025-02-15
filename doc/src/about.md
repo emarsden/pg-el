@@ -38,7 +38,7 @@ PostgreSQL or a compatible database.
 - Connections over TCP or (on Unix machines) a local Unix socket.
 ~~~
 
-The code has been tested with **PostgreSQL versions** 17.2, 16.3, 15.4, 13.8, 11.17, and 10.22 on
+The code has been tested with **PostgreSQL versions** 17.3, 16.3, 15.4, 13.8, 11.17, and 10.22 on
 Linux. It is also tested via GitHub actions on MacOS and Microsoft Windows. This library also works,
 to a variable extent, against other databases that implement the PostgreSQL wire protocol:
 
@@ -56,6 +56,9 @@ to a variable extent, against other databases that implement the PostgreSQL wire
 - The [Microsoft DocumentDB](https://github.com/microsoft/documentdb) extension for MongoDB-like
   queries works perfectly (last tested 2025-02 with version 16.6). Note that this is not the same
   product as Amazon DocumentDB.
+
+- The [Hydra Columnar](https://github.com/hydradatabase/columnar) extension for column-oriented
+  storage and parallel queries works perfectly (last tested 2025-02).
 
 - The [Timescale DB](https://www.timescale.com/) extension for time series data works perfectly
   (tested with version 2.16.1).

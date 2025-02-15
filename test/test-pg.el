@@ -30,18 +30,28 @@
 ;;
 ;; This formats SQL where %s is replaced by the appropriate SERIAL/AUTOINCREMENT type, or returns
 ;; NIL if this variant does not support an autoincrementing integer type.
-(defun pgtest-serialize (con sql)
-  (let ((syn (pcase (pgcon-server-variant con)
-               ('postgresql
-                (if (< (pgcon-server-version-major con) 12)
-                    "SERIAL"
-                  "BIGINT GENERATED ALWAYS AS IDENTITY"))
-               ('cratedb nil)
-               ('risingwave nil)
-               ('questdb "SERIAL")
-               (_ "SERIAL"))))
-    (when syn
-      (format sql syn))))
+(cl-defun pgtest-massage (con sql &rest fmt-args)
+  (let ((serial (pcase (pgcon-server-variant con)
+                  ('postgresql
+                   (if (< (pgcon-server-version-major con) 12)
+                       "SERIAL"
+                     "BIGINT GENERATED ALWAYS AS IDENTITY"))
+                  ;; FIXME check these three nils, two of them should be "SERIAL" ?
+                  ('cratedb nil)
+                  ('risingwave nil)
+                  ('questdb nil)
+                  (_ "SERIAL")))
+        (pk (pcase (pgcon-server-variant con)
+              ('materialize "")
+              (_ "PRIMARY KEY"))))
+    (when (cl-search "SERIAL" sql)
+      (if serial
+          (setq sql (string-replace "SERIAL" serial sql))
+        ;; If serial is nil, this variant doesn't implement an equivalent to SERIAL
+        (cl-return-from pgtest-massage nil)))
+    (setq sql (string-replace "PRIMARY KEY" pk sql))
+    (apply #'format (cons sql fmt-args))))
+
 
 ;; Some PostgreSQL variants that focus on high-performance distributed operation operate with
 ;; "eventually consistent" semantics, and require an explict sync-like operation to ensure that
@@ -208,7 +218,7 @@
              (row (pg-result res :tuple 0)))
         (message "Backend compiled with SSL library %s" (cl-first row)))))
   (unless (member (pgcon-server-variant con)
-                  '(questdb cratedb ydb xata greptimedb risingwave clickhouse))
+                  '(questdb cratedb ydb xata greptimedb risingwave clickhouse materialize))
     (let* ((res (pg-exec con "SHOW ssl"))
            (row (pg-result res :tuple 0)))
       (message "PostgreSQL connection TLS: %s" (cl-first row))))
@@ -262,18 +272,18 @@
     (pg-test-metadata con)
     ;; CrateDB doesn't support the JSONB type. CockroachDB doesn't support casting to JSON.
     (pg-test-json con))
-  (unless (member (pgcon-server-variant con) '(xata cratedb))
+  (unless (member (pgcon-server-variant con) '(xata cratedb risingwave))
     (pg-test-schemas con))
   (pg-test-hstore con)
   ;; Xata doesn't support extensions, but doesn't signal an SQL error when we attempt to load the
   ;; pgvector extension, so our test fails despite being intended to be robust.
   (unless (member (pgcon-server-variant con) '(xata cratedb))
     (pg-test-vector con))
-  (unless (member (pgcon-server-variant con) '(xata cratedb cockroachdb))
+  (unless (member (pgcon-server-variant con) '(xata cratedb cockroachdb risingwave))
     (pg-test-tsvector con)
     (pg-test-geometric con)
     (pg-test-gis con))
-  (unless (member (pgcon-server-variant con) '(spanner ydb cratedb))
+  (unless (member (pgcon-server-variant con) '(spanner ydb cratedb risingwave))
     (pg-test-copy con)
     (pg-test-copy-large con))
   ;; Apparently Xata does not support CREATE DATABASE
@@ -281,12 +291,13 @@
     (pg-test-createdb con))
   (unless (member (pgcon-server-variant con) '(xata cratedb cockroachdb risingwave))
     (pg-test-unicode-names con))
-  (pg-test-returning con)
-  (unless (member (pgcon-server-variant con) '(cratedb))
+  (unless (member (pgcon-server-variant con) '(risingwave))
+    (pg-test-returning con))
+  (unless (member (pgcon-server-variant con) '(cratedb risingwave))
     (pg-test-parameter-change-handlers con))
   (pg-test-errors con)
   (pg-test-notice con)
-  (unless (member (pgcon-server-variant con) '(cratedb cockroachdb))
+  (unless (member (pgcon-server-variant con) '(cratedb cockroachdb risingwave))
     (pg-test-notify con))
   ;; (message "Testing large-object routines...")
   ;; (pg-test-lo-read)
@@ -626,11 +637,11 @@ bar$$"))))
     (let ((count 100))
       (when (member "count_test" (pg-tables con))
         (pg-exec con "DROP TABLE count_test"))
-      (pg-exec con
-               (format "CREATE TABLE count_test(key INT PRIMARY KEY, val INT) %s"
-                       (if (eq 'orioledb (pgcon-server-variant con))
-                           " USING orioledb"
-                         "")))
+      (let ((sql (pgtest-massage con "CREATE TABLE count_test(key INT PRIMARY KEY, val INT) %s"
+                                 (if (eq 'orioledb (pgcon-server-variant con))
+                                     " USING orioledb"
+                                   ""))))
+        (pg-exec con sql))
       (should (member "count_test" (pg-tables con)))
       (should (member "val" (pg-columns con "count_test")))
       (unless (member (pgcon-server-variant con) '(cratedb xata ydb))
@@ -659,7 +670,8 @@ bar$$"))))
                for sql = (format "INSERT INTO count_test VALUES(%s, %s)"
                                  i (* i i))
                do (pg-exec con sql))
-      (pg-exec con "VACUUM ANALYZE count_test")
+      (unless (member (pgcon-server-variant con) '(cratedb cockroachdb ydb risingwave))
+        (pg-exec con "VACUUM ANALYZE count_test"))
       (pgtest-flush-table con "count_test")
       (should (eql count (scalar "SELECT count(*) FROM count_test")))
       (should (eql (/ (* count (1+ count)) 2) (scalar "SELECT sum(key) FROM count_test")))
@@ -668,7 +680,7 @@ bar$$"))))
     ;; Test for specific bugs when we have a table name and column names of length 1 (could be
     ;; interpreted as a character rather than as a string).
     (pg-exec con "DROP TABLE IF EXISTS w")
-    (when-let* ((sql (pgtest-serialize con "CREATE TABLE w(i %s PRIMARY KEY, v TEXT)")))
+    (when-let* ((sql (pgtest-massage con "CREATE TABLE w(i SERIAL PRIMARY KEY, v TEXT)")))
       (pg-exec con sql)
       (unless (member (pgcon-server-variant con) '(ydb))
         (setf (pg-table-comment con "w") "c"))
@@ -685,7 +697,7 @@ bar$$"))))
     (let ((count 100))
       (when (member "count_test" (pg-tables con))
         (pg-exec con "DROP TABLE count_test"))
-      (pg-exec con "CREATE TABLE count_test(key INT PRIMARY KEY, val INT)")
+      (pg-exec con "CREATE TABLE count_test(key INT, val INT)")
       (should (member "count_test" (pg-tables con)))
       (should (member "val" (pg-columns con "count_test")))
       ;; CrateDB does not implement TRUNCATE TABLE
@@ -748,13 +760,13 @@ bar$$"))))
     (with-environment-variables (("TZ" "UTC-01:00"))
       (pg-exec con "SET TimeZone = 'UTC-01:00'")
       (pg-exec con "DROP TABLE IF EXISTS date_test")
-      (pg-exec con "CREATE TABLE date_test(
+      (pg-exec con (pgtest-massage con "CREATE TABLE date_test(
            id INTEGER PRIMARY KEY,
            ts TIMESTAMP,
            tstz TIMESTAMPTZ,
            t TIME,
            ttz TIMETZ,
-           d DATE)")
+           d DATE)"))
       (unless (member (pgcon-server-variant con) '(cockroachdb))
         (unwind-protect
             (progn
@@ -824,6 +836,8 @@ bar$$"))))
       ;; In this test, we have ensured that the PostgreSQL session timezone is the same as the
       ;; timezone used by Emacs for encode-time. Passing ZONE=nil means using Emacs' interpretation
       ;; of local time, which should correspond to that of PostgreSQL.
+      ;;
+      ;; 2025-02: this test is failing on YDB v23.4
       (should (equal (scalar "SELECT '2010-04-05 14:42:21'::timestamp with time zone")
                      ;; SECOND MINUTE HOUR DAY MONTH YEAR IGNORED DST ZONE
                      (encode-time (list 21 42 14 5 4 2010 nil -1 "UTC-01:00"))))
@@ -1007,7 +1021,7 @@ bar$$"))))
 ;; tests for BYTEA type (https://www.postgresql.org/docs/15/functions-binarystring.html)
 (defun pg-test-bytea (con)
   (pg-exec con "DROP TABLE IF EXISTS byteatest")
-  (pg-exec con "CREATE TABLE byteatest(id INT PRIMARY KEY, blob BYTEA)")
+  (pg-exec con "CREATE TABLE byteatest(id INT, blob BYTEA)")
   (pg-exec con "INSERT INTO byteatest VALUES(1, 'warning\\000'::bytea)")
   (pg-exec con "INSERT INTO byteatest VALUES(2, '\\001\\002\\003'::bytea)")
   (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0))))
@@ -1090,7 +1104,7 @@ bar$$"))))
   ;; nodes to ingest data in parallel.
   (unless (member (pgcon-server-variant con) '(cratedb))
     (pg-exec con "DROP TABLE IF EXISTS coldefault")
-    (pg-exec con "CREATE TABLE coldefault(id SERIAL PRIMARY KEY, comment TEXT)")
+    (pg-exec con "CREATE TABLE coldefault(id SERIAL, comment TEXT)")
     ;; note that the id column has a DEFAULT value due to the SERIAL (this is not present for a
     ;; GENERATED ALWAYS AS INTEGER column).
     (pg-exec con "INSERT INTO coldefault(comment) VALUES ('foobles')")
@@ -1103,7 +1117,7 @@ bar$$"))))
   (when (and (not (member (pgcon-server-variant con) '(questdb)))
              (> (pgcon-server-version-major con) 11))
     (pg-exec con "DROP TABLE IF EXISTS colgen_id")
-    (pg-exec con "CREATE TABLE colgen_id(id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, comment TEXT)")
+    (pg-exec con "CREATE TABLE colgen_id(id BIGINT GENERATED ALWAYS AS IDENTITY, comment TEXT)")
     (pg-exec con "INSERT INTO colgen_id(comment) VALUES('bizzles')")
     ;; A generated column does not have a DEFAULT, in the PostgreSQL sense
     (should (not (pg-column-default con "colgen_id" "id")))
@@ -1128,7 +1142,8 @@ bar$$"))))
 (defun pg-test-schemas (con)
   (let ((res (pg-exec con "CREATE SCHEMA IF NOT EXISTS custom")))
     (should (string-prefix-p "CREATE" (pg-result res :status))))
-  (let ((res (pg-exec con "CREATE TABLE IF NOT EXISTS custom.newtable(id INT4 PRIMARY KEY)")))
+  (let* ((sql (pgtest-massage con "CREATE TABLE IF NOT EXISTS custom.newtable(id INT4 PRIMARY KEY)"))
+         (res (pg-exec con sql)))
     (should (string-prefix-p "CREATE" (pg-result res :status))))
   (let ((tables (pg-tables con)))
     (should (cl-find "newtable" tables
@@ -1140,9 +1155,9 @@ bar$$"))))
   (let* ((sql (format "CREATE SCHEMA IF NOT EXISTS %s" (pg-escape-identifier "fan.cy")))
          (res (pg-exec con sql)))
     (should (zerop (cl-search "CREATE" (pg-result res :status)))))
-  (let* ((sql (format "CREATE TABLE IF NOT EXISTS %s.%s(id INT4 PRIMARY KEY)"
-                      (pg-escape-identifier "fan.cy")
-                      (pg-escape-identifier "re'ally")))
+  (let* ((sql (pgtest-massage con "CREATE TABLE IF NOT EXISTS %s.%s(id INT4 PRIMARY KEY)"
+                              (pg-escape-identifier "fan.cy")
+                              (pg-escape-identifier "re'ally")))
          (res (pg-exec con sql)))
     (should (zerop (cl-search "CREATE" (pg-result res :status)))))
   (let ((tables (pg-tables con)))
@@ -1151,9 +1166,9 @@ bar$$"))))
                      :key (lambda (tbl) (if (pg-qualified-name-p tbl)
                                             (pg-qualified-name-name tbl)
                                           tbl)))))
-  (let* ((sql (format "CREATE TABLE IF NOT EXISTS %s.%s(id INT4 PRIMARY KEY)"
-                      (pg-escape-identifier "fan.cy")
-                      (pg-escape-identifier "en-ough")))
+  (let* ((sql (pgtest-massage con "CREATE TABLE IF NOT EXISTS %s.%s(id INT4 PRIMARY KEY)"
+                              (pg-escape-identifier "fan.cy")
+                              (pg-escape-identifier "en-ough")))
          (res (pg-exec con sql)))
     (should (zerop (cl-search "CREATE" (pg-result res :status)))))
   (let ((tables (pg-tables con)))
@@ -1163,8 +1178,8 @@ bar$$"))))
                                             (pg-qualified-name-name tbl)
                                           tbl)))))
   (let* ((qn (make-pg-qualified-name :schema "fan.cy" :name "tri\"cks"))
-         (sql (format "CREATE TABLE IF NOT EXISTS %s(id INT4 PRIMARY KEY)"
-                      (pg-print-qualified-name qn)))
+         (sql (pgtest-massage con "CREATE TABLE IF NOT EXISTS %s(id INT4 PRIMARY KEY)"
+                              (pg-print-qualified-name qn)))
          (res (pg-exec con sql)))
     (should (zerop (cl-search "CREATE" (pg-result res :status)))))
   (let ((tables (pg-tables con)))
@@ -1243,7 +1258,7 @@ bar$$"))))
     (pg-exec con "CREATE TYPE rating AS ENUM('ungood', 'good', 'plusgood',"
              "'doubleplusgood', 'plusungood', 'doubleplusungood')")
     (pg-exec con "DROP TABLE IF EXISTS act")
-    (pg-exec con "CREATE TABLE act(name TEXT PRIMARY KEY, value RATING)")
+    (pg-exec con (pgtest-massage con "CREATE TABLE act(name TEXT PRIMARY KEY, value RATING)"))
     (pg-exec con "INSERT INTO act VALUES('thoughtcrime', 'doubleplusungood')")
     (pg-exec con "INSERT INTO act VALUES('thinkpol', 'doubleplusgood')")
     (pg-exec-prepared con "INSERT INTO act VALUES('blackwhite', $1)" `(("good" . "rating")))
@@ -1384,7 +1399,7 @@ bar$$"))))
         (should (string= (gethash "ą" hs) "é")))
       ;; now test serialization support
       (pg-exec con "DROP TABLE IF EXISTS hstored")
-      (pg-exec con "CREATE TABLE hstored(id INT8 PRIMARY KEY, meta HSTORE)")
+      (pg-exec con (pgtest-massage con "CREATE TABLE hstored(id INT8 PRIMARY KEY, meta HSTORE)"))
       (dotimes (i 10)
         (let ((hs (make-hash-table :test #'equal)))
           (puthash (format "foobles-%d" i) (format "bazzles-%d" i) hs)
@@ -1428,7 +1443,10 @@ bar$$"))))
         (should (eql 0.0e+NaN d)))
       (when (pg-function-p con "gen_random_uuid")
         (pg-exec con "DROP TABLE IF EXISTS items")
-        (pg-exec con "CREATE TABLE items (id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY, embedding vector(4))")
+        (let ((sql (pgtest-massage con "CREATE TABLE items (
+               id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+               embedding vector(4))")))
+          (pg-exec con sql))
         (dotimes (_ 1000)
           (let ((new (vector (random 55) (random 66) (random 77) (random 88))))
             (pg-exec-prepared con "INSERT INTO items(embedding) VALUES($1)"
@@ -1500,7 +1518,9 @@ bar$$"))))
       (should (approx= 91.0 (cdr point))))
     (when (pg-function-p con "gen_random_uuid")
       (pg-exec con "DROP TABLE IF EXISTS with_point")
-      (pg-exec con "CREATE TABLE with_point(id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY, p POINT)")
+      (pg-exec con (pgtest-massage con "CREATE TABLE with_point(
+            id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+            p POINT)"))
       (pg-exec con "INSERT INTO with_point(p) VALUES('(33,44)')")
       (pg-exec con "INSERT INTO with_point(p) VALUES('(33.1,4.4)')")
       (pg-exec con "INSERT INTO with_point(p) VALUES('(1,0)')")
@@ -1525,7 +1545,9 @@ bar$$"))))
       (let ((l1 (pg--line-parser "{45.6,1.11,-2.9}" nil)))
         (should (<= 45 (aref l1 0) 46)))
       (pg-exec con "DROP TABLE IF EXISTS with_line")
-      (pg-exec con "CREATE TABLE with_line(id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY, ln LINE)")
+      (pg-exec con (pgtest-massage con "CREATE TABLE with_line(
+           id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+           ln LINE)"))
       (pg-exec con "INSERT INTO with_line(ln) VALUES('{1,2,3}')")
       (pg-exec con "INSERT INTO with_line(ln) VALUES('{-1,2,-3}')")
       (pg-exec con "INSERT INTO with_line(ln) VALUES('{1.55,-0.234,3e6}')")
@@ -1550,7 +1572,9 @@ bar$$"))))
         (should (eql 4 (car (aref lseg 0))))
         (should (approx= 4e1 (cdr (aref lseg 1)))))
       (pg-exec con "DROP TABLE IF EXISTS with_lseg")
-      (pg-exec con "CREATE TABLE with_lseg(id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY, ls LSEG)")
+      (pg-exec con (pgtest-massage con "CREATE TABLE with_lseg(
+             id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+             ls LSEG)"))
       (pg-exec con "INSERT INTO with_lseg(ls) VALUES('[(4,5), (6.6,7.7)]')")
       (let* ((ls (vector (cons 2 3) (cons 55.5 66.6)))
              (res (pg-exec-prepared con "SELECT $1" `((,ls . "lseg"))))
@@ -1563,7 +1587,9 @@ bar$$"))))
         (should (eql 4 (car (aref box 0))))
         (should (eql -66 (car (aref box 1)))))
       (pg-exec con "DROP TABLE IF EXISTS with_box")
-      (pg-exec con "CREATE TABLE with_box(id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY, bx BOX)")
+      (pg-exec con (pgtest-massage con "CREATE TABLE with_box(
+              id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+              bx BOX)"))
       (pg-exec con "INSERT INTO with_box(bx) VALUES('(33.3,5),(5,-67e1)')")
       (let* ((bx (vector (cons 2 3) (cons 55.6 -23.2)))
              (res (pg-exec-prepared con "SELECT $1" `((,bx . "box"))))
@@ -1579,7 +1605,9 @@ bar$$"))))
         (should (eql 4 (length points)))
         (should (eql 7 (cdr (nth 1 points)))))
       (pg-exec con "DROP TABLE IF EXISTS with_path")
-      (pg-exec con "CREATE TABLE with_path(id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY, pt PATH)")
+      (pg-exec con (pgtest-massage con "CREATE TABLE with_path(
+             id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+             pt PATH)"))
       (pg-exec con "INSERT INTO with_path(pt) VALUES('[(22,33.3), (4.5,1)]')")
       (pg-exec con "INSERT INTO with_path(pt) VALUES('[(22,33.3), (4.5,1),(-66,-1)]')")
       (pg-exec con "INSERT INTO with_path(pt) VALUES('((22,33.3),(4.5,1),(0,0),(0,0))')")
@@ -1600,7 +1628,9 @@ bar$$"))))
         (should (eql 5 (cdr (cl-first points))))
         (should (eql 0 (car (car (last points))))))
       (pg-exec con "DROP TABLE IF EXISTS with_polygon")
-      (pg-exec con "CREATE TABLE with_polygon(id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY, pg POLYGON)")
+      (pg-exec con (pgtest-massage con "CREATE TABLE with_polygon(
+               id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+               pg POLYGON)"))
       (pg-exec con "INSERT INTO with_polygon(pg) VALUES('((3,4),(5,6),(44.4,55.5))')")
       (let* ((pg (make-pg-geometry-polygon :points '((2 . 3) (3 . 4) (4 . 5) (6.6 . 7.77))))
              (res (pg-exec-prepared con "SELECT $1" `((,pg . "polygon"))))
@@ -1748,7 +1778,7 @@ bar$$"))))
 (defun pg-test-result (con)
   (message "Testing field extraction routines...")
   (pg-exec con "DROP TABLE IF EXISTS resulttest")
-  (let ((r1 (pg-exec con "CREATE TABLE resulttest (a INT PRIMARY KEY, b VARCHAR(4))"))
+  (let ((r1 (pg-exec con (pgtest-massage con "CREATE TABLE resulttest (a INT PRIMARY KEY, b VARCHAR(4))")))
         (r2 (pg-exec con "INSERT INTO resulttest VALUES (3, 'zae')"))
         (r3 (pg-exec con "INSERT INTO resulttest VALUES (66, 'poiu')"))
         (_ (pgtest-flush-table con "resulttest"))
@@ -1840,14 +1870,14 @@ bar$$"))))
   (should (member "pgeltestextra" (pg-databases con)))
   ;; CockroachDB and YugabyteDB don't implement REINDEX. Also, REINDEX at the database level is
   ;; disabled on certain installations (e.g. Supabase), so we check reindexing of a table.
-  (unless (or (pg-test-is-cockroachdb con)
-              (pg-test-is-yugabyte con))
+  (unless (member (pgcon-server-variant con) '(cockroachdb yugabyte))
     (pg-exec con "DROP TABLE IF EXISTS foobles")
-    (pg-exec con "CREATE TABLE foobles(a INTEGER PRIMARY KEY, b TEXT)")
+    (pg-exec con (pgtest-massage con "CREATE TABLE foobles(a INTEGER PRIMARY KEY, b TEXT)"))
     (pg-exec con "CREATE INDEX idx_foobles ON foobles(a)")
     (pg-exec con "INSERT INTO foobles VALUES (42, 'foo')")
     (pg-exec con "INSERT INTO foobles VALUES (66, 'bizzle')")
-    (when (> (pgcon-server-version-major con) 11)
+    (when (and (> (pgcon-server-version-major con) 11)
+               (not (member (pgcon-server-variant con) '(risingwave))))
       (pg-exec con "REINDEX TABLE CONCURRENTLY foobles"))
     (pg-exec con "DROP TABLE foobles"))
   (let* ((r (pg-exec con "SHOW ALL"))
@@ -1869,13 +1899,15 @@ bar$$"))))
   (let ((r (pg-exec con "SELECT * FROM pgel😏")))
     (should (eql 1 (length (pg-result r :tuples)))))
   (pg-exec-prepared con "CREATE SCHEMA IF NOT EXISTS un␂icode" nil)
-  (pg-exec-prepared con "CREATE TABLE IF NOT EXISTS un␂icode.ma🪄c(data TEXT PRIMARY KEY)" nil)
+  (pg-exec-prepared con
+                    (pgtest-massage con "CREATE TABLE IF NOT EXISTS un␂icode.ma🪄c(data TEXT PRIMARY KEY)")
+                    nil)
   (pg-exec-prepared con "INSERT INTO un␂icode.ma🪄c VALUES($1)" '(("hi" . "text")))
   (let ((r (pg-exec con "SELECT * FROM un␂icode.ma🪄c")))
     (should (eql 1 (length (pg-result r :tuples)))))
   (pg-exec con "DROP TABLE un␂icode.ma🪄c")
   (pg-exec con "DROP SCHEMA un␂icode")
-  (pg-exec con "CREATE TEMPORARY TABLE pgeltestunicode(pg→el TEXT PRIMARY KEY)")
+  (pg-exec con (pgtest-massage con "CREATE TEMPORARY TABLE pgeltestunicode(pg→el TEXT PRIMARY KEY)"))
   (pg-exec con "INSERT INTO pgeltestunicode(pg→el) VALUES ('Foobles')")
   (pg-exec con "INSERT INTO pgeltestunicode(pg→el) VALUES ('Bizzles')")
   (let ((r (pg-exec con "SELECT pg→el FROM pgeltestunicode")))
@@ -1893,7 +1925,7 @@ bar$$"))))
 (defun pg-test-returning (con)
   (when (member "pgeltestr" (pg-tables con))
     (pg-exec con "DROP TABLE pgeltestr"))
-  (pg-exec con "CREATE TABLE pgeltestr(id INTEGER NOT NULL PRIMARY KEY, data TEXT)")
+  (pg-exec con (pgtest-massage con "CREATE TABLE pgeltestr(id INTEGER NOT NULL PRIMARY KEY, data TEXT)"))
   (let* ((res (pg-exec con "INSERT INTO pgeltestr VALUES (1, 'Foobles') RETURNING id"))
          (id (cl-first (pg-result res :tuple 0)))
          (_ (pgtest-flush-table con "pgeltestr"))
@@ -2035,7 +2067,7 @@ bar$$"))))
 (defun pg-run-tz-tests (con)
   (message "Testing timezone handling ...")
   (pg-exec con "DROP TABLE IF EXISTS tz_test")
-  (pg-exec con "CREATE TABLE tz_test(id INTEGER PRIMARY KEY, ts TIMESTAMP, tstz TIMESTAMPTZ)")
+  (pg-exec con (pgtest-massage con "CREATE TABLE tz_test(id INTEGER PRIMARY KEY, ts TIMESTAMP, tstz TIMESTAMPTZ)"))
   ;; This is the same as CET: in a Posix time zone specification, a positive sign is used for zones
   ;; west of Greenwich, which is the opposite (!) of the ISO-8601 sign convention used when printing
   ;; timestamps. However, Emacs on certain platforms like Windows has a very limited ability to

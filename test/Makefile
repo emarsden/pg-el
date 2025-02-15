@@ -419,6 +419,23 @@ test-paradedb: test-pg.el
 	PGEL_PORT=5441 $(MAKE) test
 	${DOCKER} stop paradedb
 
+# Hydra Columnar database
+# https://github.com/hydradatabase/columnar?tab=readme-ov-file
+test-hydra: test-pg.el
+	${DOCKER} run --rm --name hydra \
+	  --publish 5167:5167 \
+          -e POSTGRES_DB=pgeltestdb \
+          -e POSTGRESQL_PORT_NUMBER=5167 \
+          -e PGPORT=5167 \
+          -e POSTGRESQL_MASTER_PORT_NUMBER=5167 \
+          -e POSTGRES_USER=pgeltestuser \
+          -e POSTGRES_PASSWORD=pgeltest \
+          -e POSTGRESQL_POSTGRES_PASSWORD=pgeltest \
+          -d ghcr.io/hydradatabase/hydra:15-5a258d26896de0f47b08658dc8fa914ad453eeab
+	sleep 5
+	PGURI=postgresql://pgeltestuser:pgeltest@localhost:5167/pgeltestdb $(MAKE) test
+	${DOCKER} stop hydra
+
 
 # Microsoft DocumentDB (PostgreSQL-based). This is not the same product as Amazon DocumentDB.
 #
@@ -542,6 +559,19 @@ test-yugabyte: test-pg.el
 	sleep 10
 	PGURI=postgresql://pgeltestuser@127.0.0.1:5493/pgeltestdb $(MAKE) test
 	${DOCKER} stop yugabyte
+
+
+# Materialize. This database has many compatibility limitations: no support for primary keys, unique
+# constraints, check constraints for example.
+#
+# Last tested 2025-02 with Materialize v0.132.
+test-materialize: test-pg.el
+	${DOCKER} run --rm --name materialize \
+          --publish 6875:6875 \
+          -d docker.io/materialize/materialized:latest
+	sleep 10
+	PGURI=postgresql://materialize@127.0.0.1:6875/materialize $(MAKE) test
+	${DOCKER} stop materialize
 
 
 # https://docs.immudb.io/master/running/download.html
