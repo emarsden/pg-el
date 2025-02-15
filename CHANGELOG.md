@@ -5,6 +5,9 @@
 
 - Added logic to recognize the PostgreSQL variant Materialize.
 
+- Error reporting: if the constraint name field is present, it is saved in the pgerror struct and
+  reported to the user.
+
 
 ## [0.47] - 2025-01-25
 

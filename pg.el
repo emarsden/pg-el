@@ -486,6 +486,8 @@ presented to the user."
       (push (format "dtype: %s" (pgerror-dtype e)) extra))
     (when (pgerror-where e)
       (push (format "where: %s" (pgerror-where e)) extra))
+    (when (pgerror-constraint e)
+      (push (format "constraint name: %s" (pgerror-constraint e)) extra))
     ;; Now read the ReadyForQuery message. We don't always receive this immediately; for example if
     ;; an incorrect username is sent during startup, PostgreSQL sends an ErrorMessage then an
     ;; AuthenticationSASL message. In that case, unread the message type octet so that it can
@@ -3241,7 +3243,7 @@ that will be read."
            concat (byte-to-string ch)))
 
 (cl-defstruct pgerror
-  severity sqlstate message detail hint table column dtype file line routine where)
+  severity sqlstate message detail hint table column dtype file line routine where constraint)
 
 (defun pg-read-error-response (con)
   (let* ((response-len (pg-read-net-int con 4))
@@ -3289,7 +3291,9 @@ that will be read."
                   (?c
                    (setf (pgerror-column err) val))
                   (?d
-                   (setf (pgerror-dtype err) val))))
+                   (setf (pgerror-dtype err) val))
+                  (?n
+                   (setf (pgerror-constraint err) val))))
     err))
 
 (defun pg-log-notice (notice)
