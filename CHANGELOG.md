@@ -1,6 +1,11 @@
 # Changelog
 
 
+## [0.48] - Unreleased
+
+- Added logic to recognize the PostgreSQL variant Materialize.
+
+
 ## [0.47] - 2025-01-25
 
 - New variable `pg-new-connection-hook` contains a list of functions to be run when a new PostgreSQL

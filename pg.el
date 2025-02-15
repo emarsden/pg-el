@@ -443,6 +443,8 @@ Uses connection CON. The variant can be accessed by `pgcon-server-variant'."
               (setf (pgcon-server-variant con) 'risingwave))
              ((cl-search "implemented by immudb" version)
               (setf (pgcon-server-variant con) 'immudb))
+             ((cl-search "(Materialize " version)
+              (setf (pgcon-server-variant con) 'materialize))
              ;; A more expensive test is needed for Google AlloyDB. If this parameter is defined,
              ;; the query will return "on" or "off" as a string, and if the parameter is not defined
              ;; the query (second argument meaning no-error) will return '((nil)).

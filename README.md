@@ -41,7 +41,7 @@ This library has support for:
 - Connections over TCP or (on Unix machines) a local Unix socket.
 
 
-Tested **PostgreSQL versions**: The code has been tested with versions 17.2, 16.4, 15.4, 13.8,
+Tested **PostgreSQL versions**: The code has been tested with versions 17.3, 16.4, 15.4, 13.8,
 11.17, and 10.22 on Linux. It is also tested via GitHub actions on MacOS and Windows. This library
 also works, more or less, against other “PostgreSQL-compatible” databases. There are four main points
 where this compatibility may be problematic: 
@@ -81,6 +81,9 @@ The following PostgreSQL-compatible databases have been tested:
   queries works perfectly (last tested 2025-02 with version 16.6). Note that this is not the same
   product as Amazon DocumentDB.
 
+- The [Hydra Columnar](https://github.com/hydradatabase/columnar) extension for column-oriented
+  storage and parallel queries works perfectly (last tested 2025-02).
+
 - The [PgBouncer](https://www.pgbouncer.org/) connection pooler for PostgreSQL works fine (last
   tested with version 1.23 in the default session pooling mode).
 
@@ -100,10 +103,10 @@ The following PostgreSQL-compatible databases have been tested:
   pgvector, however.
 
 - The [RisingWave](https://github.com/risingwavelabs/risingwave) event streaming database is mostly
-  working. It does not support `GENERATED ALWAYS AS IDENTITY` or `SERIAL` columns. Last tested
-  2025-02 with v2.2.0.
+  working. It does not support `GENERATED ALWAYS AS IDENTITY` or `SERIAL` columns, nor `VACUUM
+  ANALYZE`. Last tested 2025-02 with v2.2.0.
 
-- [CrateDB](https://crate.io/): last tested 2025-02 with version 5.9.8. CrateDB does not support
+- [CrateDB](https://crate.io/): last tested 2025-02 with version 5.9.9. CrateDB does not support
   rows (e.g. `SELECT (1,2)`), does not support the `time`, `varbit`, `bytea`, `jsonb` and `hstore`
   types, does not handle a query which only contains an SQL comment, does not handle various
   PostgreSQL functions such as `factorial`, does not return a correct type OID for text columns in
