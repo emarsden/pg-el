@@ -38,7 +38,7 @@ PostgreSQL or a compatible database.
 - Connections over TCP or (on Unix machines) a local Unix socket.
 ~~~
 
-The code has been tested with **PostgreSQL versions** 17.3, 16.3, 15.4, 13.8, 11.17, and 10.22 on
+The code has been tested with **PostgreSQL versions** 17.4, 16.3, 15.4, 13.8, 11.17, and 10.22 on
 Linux. It is also tested via GitHub actions on MacOS and Microsoft Windows. This library also works,
 to a variable extent, against other databases that implement the PostgreSQL wire protocol:
 
@@ -84,7 +84,7 @@ to a variable extent, against other databases that implement the PostgreSQL wire
   It does not support the XML type. It does not support `LISTEN`/`NOTIFY`.
 
 - The [RisingWave](https://github.com/risingwavelabs/risingwave) event streaming database is mostly
-  working. It does not support `GENERATED ALWAYS AS IDENTITY` columns. Last tested 2025-01 with v2.1.0.
+  working. It does not support `GENERATED ALWAYS AS IDENTITY` columns. Last tested 2025-02 with v2.1.2.
 
 - [CrateDB](https://crate.io/): last tested 2025-02 with version 5.9.9. There are limitations in
   this database's emulation of the PostgreSQL system tables: for example, it's not possible to query
@@ -103,9 +103,20 @@ to a variable extent, against other databases that implement the PostgreSQL wire
   PostgreSQL-compatible: it fails on the SQL query `SELECT 1::integer` because it doesn't recognize
   integer as a type. It doesn't support `DELETE` statements.
 
+- [Google Spanner](https://cloud.google.com/spanner): tested with the Spanner emulator (that reports
+  itself as `PostgreSQL 14.1`) and the PGAdapter library that enables support for the PostgreSQL
+  wire protocol. Spanner has very limited PostgreSQL compatibility, for example refusing to create
+  tables that do not have a primary key. It does not recognize basic PostgreSQL types such as `INT2`.
+  It also does not for example support the `CHR` and `MD5` functions, row expressions, and WHERE
+  clauses without a FROM clause.
+
+- [YDB by Yandex](https://ydb.tech/docs/en/postgresql/docker-connect) last tested with version 23-4.
+  Has very limited PostgreSQL compatibility. For example, an empty query string leads to a hung
+  connection, and the `bit` type is returned as a string with the wrong oid.
+
 - The [Materialize](https://materialize.com/) operational database (a proprietary differential
   dataflow database) has many limitations in its PostgreSQL compatibility: no support for primary
-  keys, unique constraints, check constraints, for the 'bit' type for example. It works with these
+  keys, unique constraints, check constraints, for the `bit` type for example. It works with these
   limitations with pg-el (last tested 2025-02 with Materialize v0.133).
 
 - [ClickHouse](https://clickhouse.com/) doesn't work with pg-el. Their version 24.5 has a very basic
