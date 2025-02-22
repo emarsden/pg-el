@@ -3,6 +3,10 @@
 
 ## [0.48] - Unreleased
 
+- The error hierarchy has been enriched with many subclasses of `pg-error`, distinguishing between
+  an SQL syntax error, a division by zero, a numerical overflow, and so on. See the pg-el manual for
+  details.
+
 - Added logic to recognize the PostgreSQL variant Materialize.
 
 - Error reporting: if the constraint name field is present, it is saved in the pgerror struct and

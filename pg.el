@@ -133,14 +133,43 @@ semi-compatible PostgreSQL variants, which sometimes requires additional
 SQL queries. To avoid this overhead on establishing a connection, remove
 `pg-detect-server-variant' from this list.")
 
+;; See https://www.postgresql.org/docs/17/errcodes-appendix.html
 (define-error 'pg-error "PostgreSQL error" 'error)
 (define-error 'pg-user-error "pg-el user error" 'pg-error)
 (define-error 'pg-protocol-error "PostgreSQL protocol error" 'pg-error)
+(define-error 'pg-connection-error "PostgreSQL connection failure" 'pg-error)
+(define-error 'pg-invalid-password "PostgreSQL invalid password" 'pg-error)
+(define-error 'pg-feature-not-supported "PostgreSQL feature not supported" 'pg-error)
+(define-error 'pg-syntax-error "PostgreSQL syntax error" 'pg-error)
+(define-error 'pg-undefined-table "PostgreSQL undefined table" 'pg-error)
+(define-error 'pg-undefined-column "PostgreSQL undefined column" 'pg-error)
+(define-error 'pg-undefined-function "PostgreSQL undefined function" 'pg-error)
 (define-error 'pg-copy-failed "PostgreSQL COPY failed" 'pg-error)
 (define-error 'pg-connect-timeout "PostgreSQL connection attempt timed out" 'pg-error)
 (define-error 'pg-type-error
               "Incorrect type in binding PostgreSQL prepared statement"
               'pg-user-error)
+(define-error 'pg-numeric-value-out-of-range "PostgreSQL numeric value out of range" 'pg-error)
+(define-error 'pg-division-by-zero "PostgreSQL division by zero" 'pg-error)
+(define-error 'pg-floating-point-exception "PostgreSQL floating point exception" 'pg-error)
+(define-error 'pg-array-subscript-error "PostgreSQL array subscript error" 'pg-error)
+(define-error 'pg-datetime-field-overflow "PostgreSQL datetime field overflow" 'pg-error)
+(define-error 'pg-invalid-text-representation "Invalid text representation" 'pg-error)
+(define-error 'pg-invalid-binary-representation "Invalid binary representation" 'pg-error)
+(define-error 'pg-datatype-mismatch "PostgreSQL datatype mismatch" 'pg-error)
+(define-error 'pg-json-error "PostgreSQL JSON-related error" 'pg-error)
+(define-error 'pg-integrity-constraint-violation "PostgreSQL integrity constraint violation" 'pg-error)
+(define-error 'pg-restrict-violation "PostgreSQL restrict violation" 'pg-error)
+(define-error 'pg-not-null-violation "PostgreSQL non NULL violation" 'pg-error)
+(define-error 'pg-foreign-key-violation "PostgreSQL FOREIGN KEY violation" 'pg-error)
+(define-error 'pg-unique-violation "PostgreSQL UNIQUE violation" 'pg-error)
+(define-error 'pg-check-violation "PostgreSQL CHECK violation" 'pg-error)
+(define-error 'pg-exclusion-violation "PostgreSQL exclusion violation" 'pg-error)
+(define-error 'pg-transaction-timeout "PostgreSQL transaction timeout" 'pg-error)
+(define-error 'pg-insufficient-resources "PostgreSQL insufficient resources" 'pg-error)
+(define-error 'pg-disk-full "PostgreSQL disk full error" 'pg-error)
+(define-error 'pg-too-many-connections "PostgreSQL too many connections" 'pg-error)
+(define-error 'pg-internal-error "PostgreSQL internal error" 'pg-error)
 
 (defun pg-signal-type-error (fmt &rest arguments)
   (let ((msg (apply #'format fmt arguments)))
@@ -505,8 +534,46 @@ presented to the user."
                        (pgerror-severity e)
                        (if context (concat " " context) "")
                        (pgerror-message e)
-                       (string-join extra ", "))))
-      (signal 'pg-error (list msg)))))
+                       (string-join extra ", ")))
+          ;; https://www.postgresql.org/docs/17/errcodes-appendix.html
+          (error-type (pcase (pgerror-sqlstate e)
+                        ("0A000" 'pg-feature-not-supported)
+                        ("08006" 'pg-connection-error)
+                        ("08000" 'pg-connection-error)
+                        ("08001" 'pg-connection-error)
+                        ("08004" 'pg-connection-error)
+                        ("28P01" 'pg-invalid-password)
+                        ("28000" 'pg-invalid-password)
+                        ("22003" 'pg-numeric-value-out-of-range)
+                        ("2202E" 'pg-array-subscript-error)
+                        ("22008" 'pg-datetime-field-overflow)
+                        ("22012" 'pg-division-by-zero)
+                        ("22P01" 'pg-floating-point-exception)
+                        ("2201E" 'pg-floating-point-exception)
+                        ("2201F" 'pg-floating-point-exception)
+                        ((pred (lambda (v) (string-prefix-p "2203" v))) 'pg-json-error)
+                        ("22P02" 'pg-invalid-text-representation)
+                        ("22P03" 'pg-invalid-binary-representation)
+                        ("23000" 'pg-integrity-constraint-violation)
+                        ("23001" 'pg-restrict-violation)
+                        ("23502" 'pg-not-null-violation)
+                        ("23503" 'pg-foreign-key-violation)
+                        ("23505" 'pg-unique-violation)
+                        ("23514" 'pg-check-violation)
+                        ("23P01" 'pg-exclusion-violation)
+                        ("25P04" 'pg-transaction-timeout)
+                        ("42000" 'pg-syntax-error)
+                        ("42601" 'pg-syntax-error)
+                        ("42P01" 'pg-undefined-table)
+                        ("42703" 'pg-undefined-column)
+                        ("42804" 'pg-datatype-mismatch)
+                        ("42883" 'pg-undefined-function)
+                        ("53000" 'pg-insufficient-resources)
+                        ("53100" 'pg-disk-full)
+                        ("53300" 'pg-too-many-connections)
+                        ("XX000" 'pg-internal-error)
+                        (_ 'pg-error))))
+      (signal error-type (list msg)))))
 
 ;; Run the startup interaction with the PostgreSQL database. Authenticate and read the connection
 ;; parameters. This function allows us to share code common to TCP and Unix socket connections to
@@ -2679,8 +2746,6 @@ Respects floating-point infinities and NaN."
 
 ;; FIXME probably we should be encoding this.
 (defun pg--serialize-json (json _encoding)
-  (unless (hash-table-p json)
-    (pg-signal-type-error "Expecting a hash-table, got %s" json))
   (if (fboundp 'json-serialize)
       (json-serialize json)
     (require 'json)
@@ -2982,18 +3047,18 @@ Uses database connection CON."
 (defun pg--tables-information-schema (con)
   "List of the tables present in the database we are connected to via CON.
 Queries the information schema."
-  (let ((default-schema (if (eq (pgcon-server-variant con) 'cratedb)
-                            "postgres"
-                          "public")))
-    (let ((res (pg-exec con "SELECT table_schema,table_name FROM information_schema.tables
+  (let* ((default-schema (if (eq (pgcon-server-variant con) 'cratedb)
+                             "postgres"
+                           "public"))
+         (res (pg-exec con "SELECT table_schema,table_name FROM information_schema.tables
                 WHERE table_schema NOT IN ('pg_catalog', 'information_schema') AND table_type='BASE TABLE'")))
-      (cl-loop
-       for tuple in (pg-result res :tuples)
-       collect (let ((schema (cl-first tuple))
-                     (name (cl-second tuple)))
-                 (if (string= schema default-schema)
-                     name
-                   (make-pg-qualified-name :schema schema :name name)))))))
+    (cl-loop
+     for tuple in (pg-result res :tuples)
+     collect (let ((schema (cl-first tuple))
+                   (name (cl-second tuple)))
+               (if (string= schema default-schema)
+                   name
+                 (make-pg-qualified-name :schema schema :name name))))))
 
 ;; This method is better supported on very old PostgreSQL versions, or some semi-compatible
 ;; PostgreSQL databases that don't fully implement the information schema.
@@ -3005,6 +3070,20 @@ Queries legacy internal PostgreSQL tables."
                       "c.relname !~ '^pg_' AND "
                       "c.relname !~ '^sql_' ORDER BY relname")))
     (apply #'append (pg-result res :tuples))))
+
+;; Exclude Materialize-internal tables (which are in Materialize-specific schemata) from the list of
+;; tables returned by pg-tables.
+(defun pg--tables-materialize (con)
+  (let ((res (pg-exec con "SELECT table_schema,table_name FROM information_schema.tables
+                WHERE table_schema NOT IN ('information_schema', 'mz_catalog', 'mz_internal', 'mz_introspection')
+                AND table_type='BASE TABLE'")))
+    (cl-loop
+     for tuple in (pg-result res :tuples)
+     collect (let ((schema (cl-first tuple))
+                   (name (cl-second tuple)))
+               (if (string= schema "public")
+                   name
+                 (make-pg-qualified-name :schema schema :name name))))))
 
 ;; Exclude TimescaleDB-internal tables (which are in TimescaleDB-specific schemata) from the list of
 ;; tables returned by pg-tables.
@@ -3039,25 +3118,27 @@ Only tables to which the current user has access are listed."
            (pg--tables-timescaledb con))
           ((eq (pgcon-server-variant con) 'cratedb)
            (pg--tables-cratedb con))
+          ((eq (pgcon-server-variant con) 'materialize)
+           (pg--tables-materialize con))
           ((> (pgcon-server-version-major con) 11)
            (pg--tables-information-schema con))
           (t
            (pg--tables-legacy con))))
 
 (defun pg--columns-information-schema (con table)
-  (let ((default-schema (if (eq (pgcon-server-variant con) 'cratedb)
-                            "postgres"
-                          "public")))
-    (let* ((schema (if (pg-qualified-name-p table)
-                       (pg-qualified-name-schema table)
-                     default-schema))
-           (tname (if (pg-qualified-name-p table)
-                      (pg-qualified-name-name table)
-                    table))
-           (sql "SELECT column_name FROM information_schema.columns
-                      WHERE table_schema=$1 AND table_name = $2")
-           (res (pg-exec-prepared con sql `((,schema . "text") (,tname . "text")))))
-      (apply #'append (pg-result res :tuples)))))
+  (let* ((default-schema (if (eq (pgcon-server-variant con) 'cratedb)
+                             "postgres"
+                           "public"))
+         (schema (if (pg-qualified-name-p table)
+                     (pg-qualified-name-schema table)
+                   default-schema))
+         (tname (if (pg-qualified-name-p table)
+                    (pg-qualified-name-name table)
+                  table))
+         (sql "SELECT column_name FROM information_schema.columns
+               WHERE table_schema=$1 AND table_name = $2")
+         (res (pg-exec-prepared con sql `((,schema . "text") (,tname . "text")))))
+    (apply #'append (pg-result res :tuples))))
 
 (defun pg--columns-legacy (con table)
   (let* ((sql (format "SELECT * FROM %s WHERE 0 = 1" table))
