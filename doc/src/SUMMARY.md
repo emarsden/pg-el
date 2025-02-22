@@ -11,6 +11,7 @@
 - [Collation support](./collation.md)
 - [The COPY protocol](./copy-protocol.md)
 - [Using schema-qualified names](./schemas.md)
+- [Error handling](./error-handling.md)
 - [Special pg-el features](./special-features.md)
 - [API](./API.md)
 - [Feedback](./feedback.md)

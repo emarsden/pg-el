@@ -86,10 +86,10 @@ to a variable extent, against other databases that implement the PostgreSQL wire
 - The [RisingWave](https://github.com/risingwavelabs/risingwave) event streaming database is mostly
   working. It does not support `GENERATED ALWAYS AS IDENTITY` columns. Last tested 2025-01 with v2.1.0.
 
-- [CrateDB](https://crate.io/): last tested with version 5.9.6. There are limitations in this database's
-  emulation of the PostgreSQL system tables: for example, it's not possible to query the owner of a
-  table (function `pg-table-owner`). It doesn't accept SQL statements that only include an SQL
-  comment. It doesn't support setting comments on SQL tables. As
+- [CrateDB](https://crate.io/): last tested 2025-02 with version 5.9.9. There are limitations in
+  this database's emulation of the PostgreSQL system tables: for example, it's not possible to query
+  the owner of a table (function `pg-table-owner`). It doesn't accept SQL statements that only
+  include an SQL comment. It doesn't support setting comments on SQL tables. As
   [documented](https://cratedb.com/docs/crate/reference/en/latest/interfaces/postgres.html), CrateDB
   does not support the `TIME` type without a time zone. It doesn't support casting integers to bits.
   It doesn't support the `VARBIT` type. It has no support for the COPY protocol.
@@ -102,6 +102,11 @@ to a variable extent, against other databases that implement the PostgreSQL wire
 - [QuestDB](https://questdb.io/): tested against version 6.5.4. This is not very
   PostgreSQL-compatible: it fails on the SQL query `SELECT 1::integer` because it doesn't recognize
   integer as a type. It doesn't support `DELETE` statements.
+
+- The [Materialize](https://materialize.com/) operational database (a proprietary differential
+  dataflow database) has many limitations in its PostgreSQL compatibility: no support for primary
+  keys, unique constraints, check constraints, for the 'bit' type for example. It works with these
+  limitations with pg-el (last tested 2025-02 with Materialize v0.133).
 
 - [ClickHouse](https://clickhouse.com/) doesn't work with pg-el. Their version 24.5 has a very basic
   implementation of the PostgreSQL wire protocol. It doesn’t support the `pg_type` system table
@@ -118,8 +123,7 @@ to a variable extent, against other databases that implement the PostgreSQL wire
   machinery does not work.
 
 - Untested but likely to work: Amazon RDS, Google Cloud SQL, Azure Database for PostgreSQL, Amazon
-  Auroa, Materialize. You may however encounter difficulties with TLS connections, as
-  noted above.
+  Auroa. You may however encounter difficulties with TLS connections, as noted above.
 
 The generic function `pg-do-variant-specific-setup` allows you to specify setup operations to
 run for a particular semi-compatible PostgreSQL variant. You can specialize it on the symbol name of the
