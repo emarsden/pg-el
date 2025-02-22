@@ -394,7 +394,7 @@ test-ivorysql: test-pg.el
 	  -e IVORYSQL_DB=pgeltestdb \
 	  -e IVORYSQL_USER=pgeltestuser \
 	  -e IVORYSQL_PASSWORD=pgeltest \
-	  -d docker.io/ivorysql/ivorysql:3.4-ubi8
+	  -d docker.io/ivorysql/ivorysql:4.2-ubi8
 	sleep 5
 	PGEL_PORT=5437 $(MAKE) test
 	${DOCKER} stop ivorydb
@@ -561,10 +561,13 @@ test-yugabyte: test-pg.el
 	${DOCKER} stop yugabyte
 
 
-# Materialize. This database has many compatibility limitations: no support for primary keys, unique
-# constraints, check constraints for example.
+# Materialize (here the "Materialize emulator" running in Docker). This proprietary differential
+# dataflow database has many limitations in its PostgreSQL compatibility: no support for primary
+# keys, unique constraints, check constraints, for the 'bit' type for example.
 #
-# Last tested 2025-02 with Materialize v0.132.
+# https://materialize.com/blog/postgres-compatibility/
+#
+# Last tested 2025-02 with Materialize v0.133.
 test-materialize: test-pg.el
 	${DOCKER} run --rm --name materialize \
           --publish 6875:6875 \
@@ -572,6 +575,29 @@ test-materialize: test-pg.el
 	sleep 10
 	PGURI=postgresql://materialize@127.0.0.1:6875/materialize $(MAKE) test
 	${DOCKER} stop materialize
+
+
+# Yellowbrick Database Community Edition (requires Kubernetes, currently untested)
+#
+# https://docs.yellowbrick.com/7.1.0/platforms/cloud/ce/docker/ce_cloud_docker.html
+# https://hub.docker.com/r/yellowbrickdata/ybd-ce-k0s-amd64
+test-yellowbrick: test-pg.el
+	${DOCKER} volume ls --format '{{ .Name }}' | grep -qw ybd-storage-rfs || podman volume create ybd-storage-rfs
+	${DOCKER} volume ls --format '{{ .Name }}' | grep -qw ybd-storage-lfs || podman volume create ybd-storage-lfs
+	mkdir -p /tmp/yellowbrick
+	${DOCKER} run --rm --name yellowbrick \
+	  --cgroupns=host \
+	  -v ybd-storage-rfs:/var/lib/k0s \
+	  -v ybd-storage-lfs:/tmp/yellowbrick \
+	  -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
+	  --publish 5689:5432 \
+          -d docker.io/yellowbrickdata/ybd-ce-k0s-amd64:stable
+	sleep 10
+	PGURI=postgresql://postgres@127.0.0.1:5689/postgres $(MAKE) test
+	${DOCKER} stop yellowbrick
+	${DOCKER} volume rm ybd-storage-rfs
+	${DOCKER} volume rm ybd-storage-lfs
+
 
 
 # https://docs.immudb.io/master/running/download.html
@@ -660,13 +686,10 @@ test-ydb: test-pg.el
 	${DOCKER} stop ydb
 
 
-# Last tested 2025-01 with version 24.12. Very limited PostgreSQL support: there is no pg_type
-# table so we can't retrieve information regarding the OID of builtin types. During our
-# initialization sequence we send the query "SET datestyle = 'ISO'", which fails and causes the
-# network connection to be reset (!).
-#
-# We could detect ClickHouse with the query "SELECT * FROM system.build_options"
-#
+# Last tested 2025-02 with version 25.1. Very limited PostgreSQL support: there is no pg_type table
+# so we can't retrieve information regarding the OID of builtin types. We have to be careful during
+# the initialization sequence not to send the query "SET datestyle = 'ISO'", which would fail and cause
+# the network connection to be reset (!).
 # Default values for config.xml file at
 # https://github.com/ClickHouse/ClickHouse/blob/c7996d54536492ebd4f436672e466464e8474ff9/programs/server/config.xml
 test-clickhouse: test-pg.el
@@ -688,7 +711,7 @@ test-clickhouse: test-pg.el
 
 # https://docs.greptime.com/getting-started/installation/greptimedb-standalone
 #
-# Tested 2025-02 version 0.12.0. This database implements quite a lot of the PostgreSQL wire
+# Last tested 2025-02 version 0.12.0. This database implements quite a lot of the PostgreSQL wire
 # protocol, but the names it uses for types in the pg_catalog.pg_types table are not the same as
 # PostgreSQL, so our parsing machinery does not work (we see 42 returned as "42").
 #
@@ -725,8 +748,8 @@ test-risingwave: test-pg.el
 	${DOCKER} stop risingwave
 
 
-# Google AlloyDB Omni. This is PostgreSQL with Google-developed extensions, including a columnar
-# storage extension, adaptive autovacuum, and an index advisor.
+# Google AlloyDB Omni. This is PostgreSQL with proprietary Google-developed extensions, including a
+# columnar storage extension, adaptive autovacuum, and an index advisor.
 #
 # https://cloud.google.com/alloydb/omni/docs/quickstart
 # https://hub.docker.com/r/google/alloydbomni
@@ -789,12 +812,12 @@ setup-chinook:
 # Testing the asynchronous notification support implemented in v0.24 to run a publish-subcribe test.
 # We run 4 separate Emacs instances, and one central PostgreSQL used as a "message broker" or "event
 # bus". Note that CPU usage in this simple demo is very low.
-pubsub: notification-subscriber.el notification-publisher.el
-	${EMACS} -Q --batch -l ../pg.el -l notification-subscriber.el -f do-listener &
-	${EMACS} -Q --batch -l ../pg.el -l notification-subscriber.el -f do-listener &
-	${EMACS} -Q --batch -l ../pg.el -l notification-subscriber.el -f do-listener &
+pubsub: notification-subscriber.el notification-publisher.el install-deps
+	${EMACS} -Q --batch -L .. -L . -l load-deps.el -l ../pg.el -l notification-subscriber.el -f do-listener &
+	${EMACS} -Q --batch -L .. -L . -l load-deps.el -l ../pg.el -l notification-subscriber.el -f do-listener &
+	${EMACS} -Q --batch -L .. -L . -l load-deps.el -l ../pg.el -l notification-subscriber.el -f do-listener &
 	sleep 1
-	${EMACS} -Q --batch -l ../pg.el -l notification-publisher.el -f do-publisher
+	${EMACS} -Q --batch -L .. -L . -l load-deps.el -l ../pg.el -l notification-publisher.el -f do-publisher
 
 
 bench-uncompiled: test-pg.el install-deps
