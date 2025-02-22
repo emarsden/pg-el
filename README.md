@@ -68,7 +68,7 @@ The following PostgreSQL-compatible databases have been tested:
 - [ParadeDB](https://www.paradedb.com/) version 0.13.1 works perfectly (it's really a PostgreSQL
   extension rather than a distinct database implementation).
 
-- [IvorySQL](https://www.ivorysql.org/) version 3.4 works perfectly (this fork of PostgreSQL adds
+- [IvorySQL](https://www.ivorysql.org/) version 4.2 works perfectly (this fork of PostgreSQL adds
   some features for compatibility with Oracle).
 
 - The [Timescale DB](https://www.timescale.com/) extension for time series data works perfectly
@@ -106,7 +106,7 @@ The following PostgreSQL-compatible databases have been tested:
   working. It does not support `GENERATED ALWAYS AS IDENTITY` or `SERIAL` columns, nor `VACUUM
   ANALYZE`. Last tested 2025-02 with v2.2.0.
 
-- [CrateDB](https://crate.io/): last tested 2025-02 with version 5.9.9. CrateDB does not support
+- [CrateDB](https://crate.io/): last tested 2025-02 with version 5.10.1. CrateDB does not support
   rows (e.g. `SELECT (1,2)`), does not support the `time`, `varbit`, `bytea`, `jsonb` and `hstore`
   types, does not handle a query which only contains an SQL comment, does not handle various
   PostgreSQL functions such as `factorial`, does not return a correct type OID for text columns in
@@ -133,6 +133,11 @@ The following PostgreSQL-compatible databases have been tested:
   Has very limited PostgreSQL compatibility. For example, an empty query string leads to a hung
   connection, and the `bit` type is returned as a string with the wrong oid.
 
+- The [Materialize](https://materialize.com/) operational database (a proprietary differential
+  dataflow database) has many limitations in its PostgreSQL compatibility: no support for primary
+  keys, unique constraints, check constraints, for the 'bit' type for example. It works with these
+  limitations with pg-el (last tested 2025-02 with Materialize v0.133).
+
 - [GreptimeDB](https://github.com/GrepTimeTeam/greptimedb): this time series database implements
   quite a lot of the PostgreSQL wire protocol, but the names it uses for types in the
   `pg_catalog.pg_types` table are not the same as those used by PostgreSQL (e.g. `Int64` instead of
@@ -144,7 +149,7 @@ The following PostgreSQL-compatible databases have been tested:
   works fine.
 
 - Untested but likely to work: Amazon RDS, Google Cloud SQL, Azure Database for PostgreSQL, Amazon
-  Auroa, Materialize. You may however encounter difficulties with TLS connections, as noted above.
+  Auroa. You may however encounter difficulties with TLS connections, as noted above.
 
 It does not work with the ClickHouse database, whose PostgreSQL support is too limited. As of
 version 25.1 in 2025-02, there is no implementation of the `pg_types` system table, no support for
