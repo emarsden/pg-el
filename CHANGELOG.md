@@ -1,7 +1,7 @@
 # Changelog
 
 
-## [0.48] - Unreleased
+## [0.48] - 2025-02-22
 
 - The error hierarchy has been enriched with many subclasses of `pg-error`, distinguishing between
   an SQL syntax error, a division by zero, a numerical overflow, and so on. See the pg-el manual for
