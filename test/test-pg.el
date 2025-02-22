@@ -36,10 +36,10 @@
                    (if (< (pgcon-server-version-major con) 12)
                        "SERIAL"
                      "BIGINT GENERATED ALWAYS AS IDENTITY"))
-                  ;; FIXME check these three nils, two of them should be "SERIAL" ?
                   ('cratedb nil)
                   ('risingwave nil)
                   ('questdb nil)
+                  ('materialize nil)
                   (_ "SERIAL")))
         (pk (pcase (pgcon-server-variant con)
               ('materialize "")
@@ -233,10 +233,10 @@
   (pg-test-basic con)
   (pg-test-insert con)
   ;; RisingWave is not able to parse a TZ value of "UTC-01:00" (POSIX format).
-  (unless (or (member (pgcon-server-variant con) '(cratedb risingwave))
+  (unless (or (member (pgcon-server-variant con) '(cratedb risingwave materialize))
               (version< emacs-version "29.1"))
     (pg-test-date con))
-  (unless (member (pgcon-server-variant con) '(risingwave))
+  (unless (member (pgcon-server-variant con) '(risingwave materialize))
     (pg-run-tz-tests con))
   (pg-test-numeric con)
   (unless (member (pgcon-server-variant con) '(xata cratedb cockroachdb ydb risingwave))
@@ -268,7 +268,7 @@
     (pg-test-array con)
     (pg-test-enums con)
     (pg-test-server-prepare con))
-  (unless (member (pgcon-server-variant con) '(cratedb cockroachdb risingwave))
+  (unless (member (pgcon-server-variant con) '(cratedb cockroachdb risingwave materialize))
     (pg-test-metadata con)
     ;; CrateDB doesn't support the JSONB type. CockroachDB doesn't support casting to JSON.
     (pg-test-json con))
@@ -296,6 +296,10 @@
   (unless (member (pgcon-server-variant con) '(cratedb risingwave))
     (pg-test-parameter-change-handlers con))
   (pg-test-errors con)
+  ;; CrateDB and Risingwave signal all errors as SQLSTATE XX000 meaning "internal error", rather
+  ;; than returning a more granular error code.
+  (unless (member (pgcon-server-variant con) '(cratedb risingwave))
+    (pg-test-error-sqlstate con))
   (pg-test-notice con)
   (unless (member (pgcon-server-variant con) '(cratedb cockroachdb risingwave))
     (pg-test-notify con))
@@ -373,7 +377,7 @@
     (should (equal nil (scalar "SELECT NULL" (list))))
     (unless (member (pgcon-server-variant con) '(ydb))
       (should (equal nil (scalar "" (list)))))
-    (unless (member (pgcon-server-variant con) '(cratedb risingwave))
+    (unless (member (pgcon-server-variant con) '(cratedb risingwave materialize))
       (let ((bv1 (make-bool-vector 1 nil))
             (bv2 (make-bool-vector 1 t)))
         (should (equal bv1 (scalar "SELECT $1::bit" `((,bv1 . "bit")))))
@@ -420,8 +424,8 @@
     (unless (or (member (pgcon-server-variant con) '(cratedb))
                 (zerop (scalar "SELECT COUNT(*) FROM pg_collation WHERE collname='fr_FR'" nil)))
       (should (string= "12 foé£èüñ¡" (scalar "SELECT lower($1) COLLATE \"fr_FR\"" '(("12 FOÉ£ÈÜÑ¡" . "text"))))))
-    ;; Risingwave failed to parse the PT12S 
-    (unless (member (pgcon-server-variant con) '(risingwave))
+    ;; Risingwave failed to parse the PT12S
+    (unless (member (pgcon-server-variant con) '(risingwave materialize))
       (should (equal "00:00:12" (scalar "SELECT $1::interval" '(("PT12S" . "text"))))))
     (should (equal -1 (scalar "SELECT $1::int" '((-1 . "int4")))))
     (should (eql 1.0e+INF (scalar "SELECT $1::float4" '((1.0e+INF . "float4")))))
@@ -439,13 +443,13 @@
       (should (equal (decode-hex-string "DEADBEEF")
                      (scalar "SELECT $1" `((,(decode-hex-string "DEADBEEF") . "bytea"))))))
     ;; Risingwave does not support casting to JSON.
-    (unless (member (pgcon-server-variant con) '(risingwave))
+    (unless (member (pgcon-server-variant con) '(risingwave materialize))
       (let ((json (scalar "SELECT $1::json" '(("[66.7,-42.0,8]" . "text")))))
         (should (approx= 66.7 (aref json 0)))
         (should (approx= -42.0 (aref json 1)))))
     ;; CrateDB does not support the JSONB type, not casting {foo=bar} syntax to JSON. CockroachDB
     ;; supports JSONB but not JSON.
-    (unless (member (pgcon-server-variant con) '(cratedb cockroachdb risingwave))
+    (unless (member (pgcon-server-variant con) '(cratedb cockroachdb risingwave materialize))
       (let ((json (scalar "SELECT $1::jsonb" '(("[66.7,-42.0,8]" . "text")))))
         (should (approx= 66.7 (aref json 0)))
         (should (approx= -42.0 (aref json 1))))
@@ -457,7 +461,7 @@
              (json (scalar "SELECT $1::json" `((,ht . "json")))))
         (should (equal "foobles" (gethash "say" json)))
         (should (equal 42 (gethash "biz" json)))))
-    (unless (member (pgcon-server-variant con) '(cratedb cockroachdb risingwave))
+    (unless (member (pgcon-server-variant con) '(cratedb cockroachdb risingwave materialize))
       (let ((ht (make-hash-table)))
         (puthash "biz" 45 ht)
         (puthash "boz" -5.5 ht)
@@ -506,6 +510,7 @@
     (pg-sync con)))
 
 
+;; Materialize is returning incorrect values here, failing the test.
 (cl-defun pg-test-prepared/multifetch (con &optional (rows 1000))
   (message "Running multiple fetch/suspended portal test")
   (let* ((res (pg-exec-prepared con "" nil))
@@ -603,6 +608,8 @@ bar$$"))))
       (should (string= "gday" (scalar "SELECT 'gday'::varchar(20)"))))
     ;; CockroachDB is returning these byteas in a non-BYTEA format so they are twice as long as
     ;; expected. CrateDB does not implement the sha256 and sha512 functions.
+    ;;
+    ;; Could use digest('foobles', 'sha1') if we loaded the pgcrypto extension.
     (unless (member (pgcon-server-variant con) '(cratedb cockroachdb))
       (should (eql 32 (length (scalar "SELECT sha256('foobles')"))))
       (should (eql 64 (length (scalar "SELECT sha512('foobles')")))))
@@ -670,7 +677,7 @@ bar$$"))))
                for sql = (format "INSERT INTO count_test VALUES(%s, %s)"
                                  i (* i i))
                do (pg-exec con sql))
-      (unless (member (pgcon-server-variant con) '(cratedb cockroachdb ydb risingwave))
+      (unless (member (pgcon-server-variant con) '(cratedb cockroachdb ydb risingwave materialize))
         (pg-exec con "VACUUM ANALYZE count_test"))
       (pgtest-flush-table con "count_test")
       (should (eql count (scalar "SELECT count(*) FROM count_test")))
@@ -863,7 +870,7 @@ bar$$"))))
     (should (eql -1 (scalar "SELECT -1::int8")))
     (should (eql 42 (scalar "SELECT '42'::smallint")))
     ;; CrateDB doesn't support the OID type, nor casting integers to bits.
-    (unless (member (pgcon-server-variant con) '(cratedb risingwave))
+    (unless (member (pgcon-server-variant con) '(cratedb risingwave materialize))
       (should (eql 123 (scalar "SELECT 123::oid")))
       (should (equal (make-bool-vector 1 nil) (scalar "SELECT 0::bit")))
       (should (equal (make-bool-vector 1 t) (scalar "SELECT 1::bit")))
@@ -876,13 +883,13 @@ bar$$"))))
     ;; Emacs version prior to 27 can't coerce to bool-vector type
     (when (> emacs-major-version 26)
       ;; RisingWave does not implement the bit type
-      (unless (member (pgcon-server-variant con) '(risingwave))
+      (unless (member (pgcon-server-variant con) '(risingwave materialize))
         (should (equal (cl-coerce (vector t nil t nil) 'bool-vector)
                        (scalar "SELECT '1010'::bit(4)"))))
-      (unless (member (pgcon-server-variant con) '(cockroachdb risingwave))
+      (unless (member (pgcon-server-variant con) '(cockroachdb risingwave materialize))
         (should (equal (cl-coerce (vector t nil nil t nil nil nil) 'bool-vector)
                        (scalar "SELECT b'1001000'"))))
-      (unless (member (pgcon-server-variant con) '(cratedb risingwave))
+      (unless (member (pgcon-server-variant con) '(cratedb risingwave materialize))
         (should (equal (cl-coerce (vector t nil t t t t) 'bool-vector)
                        (scalar "SELECT '101111'::varbit(6)")))))
     ;; (should (eql 66 (scalar "SELECT 66::money")))
@@ -893,10 +900,11 @@ bar$$"))))
     (unless (member (pgcon-server-variant con) '(cockroachdb))
       (should (approx= (scalar "SELECT log(100)") 2))
       ;; bignums only supported from Emacs 27.2 onwards
-      (unless (member (pgcon-server-variant con) '(cratedb risingwave))
+      (unless (member (pgcon-server-variant con) '(cratedb risingwave materialize))
         (when (fboundp 'bignump)
           (should (eql (scalar "SELECT factorial(25)") 15511210043330985984000000)))))
-    (should (approx= (scalar "SELECT pi()") 3.1415626))
+    (unless (member (pgcon-server-variant con) '(materialize))
+      (should (approx= (scalar "SELECT pi()") 3.1415626)))
     (should (approx= (scalar "SELECT -5.0") -5.0))
     (should (approx= (scalar "SELECT 5e-14") 5e-14))
     (should (approx= (scalar "SELECT 55.678::float4") 55.678))
@@ -911,7 +919,7 @@ bar$$"))))
     (should (isnan (scalar "SELECT 'NaN'::float4")))
     (should (isnan (scalar "SELECT 'NaN'::float8")))
     (should (string= (scalar "SELECT 42::decimal::text") "42"))
-    (unless (member (pgcon-server-variant con) '(cratedb cockroachdb risingwave))
+    (unless (member (pgcon-server-variant con) '(cratedb cockroachdb risingwave materialize))
       (should (string= (scalar "SELECT macaddr '08002b:010203'") "08:00:2b:01:02:03")))
     (should (eql (scalar "SELECT char_length('foo')") 3))
     (should (string= (scalar "SELECT lower('FOO')") "foo"))
@@ -1090,6 +1098,9 @@ bar$$"))))
       ;; this is returning _bpchar.
       (should (equal (vector ?a ?b ?c) (scalar "SELECT CAST('{a,b,c}' AS CHAR[])"))))
     (should (equal (vector "foo" "bar") (scalar "SELECT '{foo, bar}'::text[]")))
+;;     (let* ((res (pg-exec-prepared con "SELECT $1" '(("{1,2,3}" . "_int4"))))
+;;            (row (pg-result res :tuple 0)))
+;;       (should (equal (vector 1 2 3) (cl-first row))))
     (let ((vec (scalar "SELECT ARRAY[44.3, 8999.5]")))
       (should (equal 2 (length vec)))
       (should (approx= 44.3 (aref vec 0)))
@@ -1964,10 +1975,76 @@ bar$$"))))
                        (pg-exec con "SELECT ###")
                      (pg-error 2))))
     ;; PostgreSQL should signal numerical overflow
-    (should-error (pg-exec con "SELECT 2147483649::int4"))
+    (should-error (scalar "SELECT 2147483649::int4"))
     (should (eql -42 (scalar "SELECT -42")))
-    (should-error (pg-exec con "SELECT 'foobles'::unexistingtype"))
+    (should-error (scalar "SELECT 'foobles'::unexistingtype"))
     (should (eql -55 (scalar "SELECT -55")))))
+
+;; Here we test that the SQLSTATE component of errors signaled by the backend is valid.
+(defun pg-test-error-sqlstate (con)
+  (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "SELECT 42/0")
+                       (pg-division-by-zero 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "SELECT sqrt(-5.0)")
+                       (pg-floating-point-exception 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "SELECT log(-2.1)")
+                       (pg-floating-point-exception 'ok))))
+    (should (eql 'ok (condition-case nil
+                         ;; numerical overflow
+                         (scalar "SELECT 2147483649::int4")
+                       (pg-numeric-value-out-of-range 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "SELECT happiness(42)")
+                       (pg-undefined-function 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "SELECTING 42")
+                       (pg-syntax-error 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "SELECT '[1,2,3]'::json ->> {}")
+                       (pg-syntax-error 'ok))))
+    (unless (member (pgcon-server-variant con) '(cockroachdb))
+      (should (eql 'ok (condition-case nil
+                           (scalar "SELECT jsonb_path_query('{\"a\":42}'::jsonb, '$$.foo')")
+                         (pg-syntax-error 'ok)))))
+    ;; The json_serialize() function is new in PostgreSQL 17
+    (unless (or (member (pgcon-server-variant con) '(cockroachdb yugabyte))
+                (< (pgcon-server-version-major con) 17))
+      (should (eql 'ok (condition-case nil
+                           (scalar "SELECT json_serialize('{\"a\": \"foo\", 42: 43 }')")
+                         (pg-invalid-text-representation 'ok)))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "SELECT * FROM nonexistent_table")
+                       (pg-undefined-table 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "SELECT unexist FROM pg_catalog.pg_type")
+                       (pg-undefined-column 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "SELECTING incorrect-syntax")
+                       (pg-syntax-error 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "SELECT * FRÖM VALUES(1,2)")
+                       (pg-syntax-error 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "SELECT '[1,2,3]'::json ->> gg")
+                       (pg-undefined-column 'ok))))
+    ;; The ? operator is only defined for jsonb ? text
+    (unless (member (pgcon-server-variant con) '(cockroachdb))
+      (should (eql 'ok (condition-case nil
+                           (scalar "SELECT '{\"a\":1, \"b\":2}'::jsonb ? 52")
+                         (pg-undefined-function 'ok))))
+      (should (eql 'ok (condition-case nil
+                           (pg-exec-prepared con "SELECT $1[5]" '(("[1,2,3]" . "json")))
+                         (pg-datatype-mismatch 'ok))))
+      (should (eql 'ok (condition-case nil
+                           (scalar "SELECT jsonb_path_query('{\"h\": 1.7}', '$.floor()')")
+                         (pg-json-error 'ok)))))
+;;     (should (eql 'ok (condition-case nil
+;;                          (pg-exec-prepared con "SELECT $1[-5]" '(("{1,2,3}" . "_int4")))
+;;                        (pg-syntax-error 'ok))))
+    ))
 
 ;; Check our handling of NoticeMessage messages, and the correct operation of
 ;; `pg-handle-notice-functions'.
