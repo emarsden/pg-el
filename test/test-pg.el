@@ -205,7 +205,12 @@
     (setenv "PGPASSWORD" "pgeltest")
     (let ((con (pg-connect/uri v)))
       (should (process-live-p (pgcon-process con)))
-      (pg-disconnect con))))
+      (pg-disconnect con)))
+  (should (eql 'ok
+               (unwind-protect
+                   (pg-connect "nonexistent-db" "pgeltestuser" "pgeltest")
+                 (pg-connection-error 'ok)))))
+
 
 (defun pg-run-tests (con)
   (pg-enable-query-log con)
@@ -591,9 +596,7 @@
       (should (string= (string #x12 #x34 #x56) (scalar "SELECT '\\x123456'::bytea"))))
     (unless (pg-test-is-spanner con)
       (should (eql nil (row " SELECT 3 WHERE 1=0"))))
-    (unless (or (pg-test-is-cratedb con)
-                (pg-test-is-spanner con)
-                (pg-test-is-ydb con))
+    (unless (member (pgcon-server-variant con) '(cratedb spanner ydb))
       ;; these are row expressions, not standard SQL
       (should (string= (scalar "SELECT (1,2)") "(1,2)"))
       (should (string= (scalar "SELECT (null,1,2)") "(,1,2)")))
@@ -613,7 +616,7 @@ bar$$"))))
     (unless (member (pgcon-server-variant con) '(cratedb cockroachdb))
       (should (eql 32 (length (scalar "SELECT sha256('foobles')"))))
       (should (eql 64 (length (scalar "SELECT sha512('foobles')")))))
-    (unless (pg-test-is-spanner con)
+    (unless (member (pgcon-server-variant con) '(spanner))
       (should (string= (md5 "foobles") (scalar "SELECT md5('foobles')"))))
     (let* ((res (pg-exec con "SELECT 11 as bizzle, 15 as bazzle"))
            (attr (pg-result res :attributes))
@@ -1492,7 +1495,24 @@ bar$$"))))
       (should (cl-find (make-pg-ts :lexeme "Joe's") tsvec :test #'equal)))
     (let ((tsvec (scalar "SELECT 'The Fat Rats'::tsvector")))
       (should (cl-find (make-pg-ts :lexeme "Fat") tsvec :test #'equal))
-      (should (cl-find (make-pg-ts :lexeme "Rats") tsvec :test #'equal)))))
+      (should (cl-find (make-pg-ts :lexeme "Rats") tsvec :test #'equal)))
+    (pg-exec con "DROP TABLE IF EXISTS documents")
+    (pg-exec con "CREATE TABLE documents(id SERIAL PRIMARY KEY, content TEXT, cvec tsvector)")
+    (dolist (phrase (list "PostgreSQL is a powerful, open-source database system."
+                          "Full-text search in PostgreSQL is efficient and scalable."
+                          "ts-vector support provides reasonably good search functionality."))
+      (pg-exec-prepared con "INSERT INTO documents(content, cvec) VALUES ($1,to_tsvector($1))"
+                        `((,phrase . "text"))))
+    (pg-exec con "CREATE INDEX idx_content_vector ON documents USING GIN (cvec)")
+    ;; Query using tsvector, rank results with ts_rank, and leverage the GIN index
+    (let* ((sql "SELECT id, content, ts_rank(cvec, to_tsquery('english', 'PostgreSQL & search')) AS rank
+                 FROM documents
+                 WHERE cvec @@ to_tsquery('english', 'PostgreSQL & search')
+                 ORDER BY rank DESC")
+           (res (pg-exec con sql))
+           (best (pg-result res :tuple 0)))
+      (should (cl-search "efficient" (cl-second best))))
+    (pg-exec con "DROP TABLE documents")))
 
 (defun pg-test-geometric (con)
   (cl-labels ((row (query args) (pg-result (pg-exec-prepared con query args) :tuple 0))
@@ -1987,6 +2007,9 @@ bar$$"))))
                          (scalar "SELECT 42/0")
                        (pg-division-by-zero 'ok))))
     (should (eql 'ok (condition-case nil
+                         (pg-exec-prepared con "SELECT 1/0" nil)
+                       (pg-division-by-zero 'ok))))
+    (should (eql 'ok (condition-case nil
                          (scalar "SELECT sqrt(-5.0)")
                        (pg-floating-point-exception 'ok))))
     (should (eql 'ok (condition-case nil
@@ -2016,6 +2039,9 @@ bar$$"))))
                            (scalar "SELECT json_serialize('{\"a\": \"foo\", 42: 43 }')")
                          (pg-invalid-text-representation 'ok)))))
     (should (eql 'ok (condition-case nil
+                         (scalar "SELECT CAST('55Y' AS INTEGER)")
+                       (pg-invalid-text-representation 'ok))))
+    (should (eql 'ok (condition-case nil
                          (scalar "SELECT * FROM nonexistent_table")
                        (pg-undefined-table 'ok))))
     (should (eql 'ok (condition-case nil
@@ -2023,6 +2049,11 @@ bar$$"))))
                        (pg-undefined-column 'ok))))
     (should (eql 'ok (condition-case nil
                          (scalar "SELECTING incorrect-syntax")
+                       (pg-syntax-error 'ok))))
+    ;; Here check that a pg-syntax-error is raised when using the extended query protocol, in
+    ;; addition to the simple query protocol.
+    (should (eql 'ok (condition-case nil
+                         (pg-exec-prepared con "SELECTING incorrect-syntax" nil)
                        (pg-syntax-error 'ok))))
     (should (eql 'ok (condition-case nil
                          (scalar "SELECT * FRÖM VALUES(1,2)")
@@ -2041,6 +2072,82 @@ bar$$"))))
       (should (eql 'ok (condition-case nil
                            (scalar "SELECT jsonb_path_query('{\"h\": 1.7}', '$.floor()')")
                          (pg-json-error 'ok)))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "SELECT E'\\xDEADBEEF'")
+                       ;; "Invalid byte sequence for encoding"
+                       (pg-character-not-in-repertoire 'ok)
+                       ;; CockroachDB reports this as a syntax error (different SQLSTATE value)
+                       (pg-syntax-error 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "SELECT '2024-15-01'::date")
+                       (pg-datetime-field-overflow 'ok))))
+    (should (eql 'ok
+                 (unwind-protect
+                     (progn
+                       (pg-exec con "CREATE TABLE pgtest_notnull(a INTEGER NOT NULL PRIMARY KEY)")
+                       (pg-exec con "INSERT INTO pgtest_notnull(a) VALUES (6)")
+                       (condition-case nil
+                           (pg-exec con "INSERT INTO pgtest_notnull(a) VALUES (NULL)")
+                         (pg-not-null-violation 'ok)))
+                   (pg-exec con "DROP TABLE pgtest_notnull"))))
+    (should (eql 'ok
+                 (unwind-protect
+                     (progn
+                       (pg-exec con "CREATE TABLE pgtest_unique(a INTEGER PRIMARY KEY)")
+                       (pg-exec con "INSERT INTO pgtest_unique(a) VALUES (6)")
+                       (condition-case nil
+                           (pg-exec con "INSERT INTO pgtest_unique(a) VALUES (6)")
+                         (pg-unique-violation 'ok)))
+                   (pg-exec con "DROP TABLE pgtest_unique"))))
+    (should (eql 'ok
+                 (unwind-protect
+                     (progn
+                       (pg-exec con "CREATE TABLE pgtest_check(a INTEGER PRIMARY KEY CHECK (a > 0))")
+                       (pg-exec con "INSERT INTO pgtest_check(a) VALUES (6)")
+                       (condition-case nil
+                           (pg-exec con "INSERT INTO pgtest_check(a) VALUES (-2)")
+                         (pg-check-violation 'ok)))
+                   (pg-exec con "DROP TABLE pgtest_check"))))
+    ;; As of 2025-02, yugabyte and CockroachDB do not implement EXCLUDE constraints.
+    (unless (member (pgcon-server-variant con) '(yugabyte cockroachdb))
+      (should (eql 'ok
+                   (unwind-protect
+                       (progn
+                         (pg-exec con "CREATE TABLE pgtest_exclude(a INTEGER, EXCLUDE (a WITH =))")
+                         (pg-exec con "INSERT INTO pgtest_exclude(a) VALUES (6)")
+                         (condition-case nil
+                             (pg-exec con "INSERT INTO pgtest_exclude(a) VALUES (6)")
+                           (pg-exclusion-violation 'ok)))
+                   (pg-exec con "DROP TABLE pgtest_exclude")))))
+    (unwind-protect
+        (progn
+          (pg-exec con "DROP TABLE IF EXISTS pgtest_referencing")
+          (pg-exec con "DROP TABLE IF EXISTS pgtest_referenced")
+          (pg-exec con "CREATE TABLE pgtest_referenced(a INTEGER PRIMARY KEY)")
+          (pg-exec con "CREATE TABLE pgtest_referencing(a INTEGER NOT NULL REFERENCES pgtest_referenced(a))")
+          (pg-exec con "INSERT INTO pgtest_referenced(a) VALUES (6)")
+          (pg-exec con "INSERT INTO pgtest_referencing(a) VALUES (6)")
+          (should (eql 'ok
+                       (condition-case nil
+                           (pg-exec con "INSERT INTO pgtest_referencing(a) VALUES (1)")
+                         (pg-foreign-key-violation 'ok)))))
+      (pg-exec con "DROP TABLE pgtest_referencing")
+      (pg-exec con "DROP TABLE pgtest_referenced"))
+    ;; handler-bind is new in Emacs 30. Here we check the printed representation of our
+    ;; pg-undefined-function error class.
+    (when (fboundp 'handler-bind)
+      (should (eql 'ok
+                   (catch 'pgtest-undefined-function
+                     (handler-bind
+                         ((pg-undefined-function
+                           (lambda (e)
+                             (should (cl-search "undef" (prin1-to-string e)))
+                             (throw 'pgtest-undefined-function 'ok)))
+                          (pg-error
+                           (lambda (e)
+                             (error "Unexpected error class"))))
+                       (scalar "SELECT undef(42)"))
+                     'nok))))
 ;;     (should (eql 'ok (condition-case nil
 ;;                          (pg-exec-prepared con "SELECT $1[-5]" '(("{1,2,3}" . "_int4")))
 ;;                        (pg-syntax-error 'ok))))
