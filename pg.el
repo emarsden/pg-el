@@ -6,7 +6,7 @@
 ;; Version: 0.48
 ;; Keywords: data comm database postgresql
 ;; URL: https://github.com/emarsden/pg-el
-;; Package-Requires: ((emacs "28.1") (peg "1.0"))
+;; Package-Requires: ((emacs "28.1") (peg "1.0.1"))
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 ;;
 ;; This file is free software: you can redistribute it and/or modify
@@ -154,21 +154,24 @@ SQL queries. To avoid this overhead on establishing a connection, remove
 (define-error 'pg-floating-point-exception "PostgreSQL floating point exception" 'pg-error)
 (define-error 'pg-array-subscript-error "PostgreSQL array subscript error" 'pg-error)
 (define-error 'pg-datetime-field-overflow "PostgreSQL datetime field overflow" 'pg-error)
+(define-error 'pg-character-not-in-repertoire "PostgreSQL character not in repertoire" 'pg-error)
 (define-error 'pg-invalid-text-representation "Invalid text representation" 'pg-error)
 (define-error 'pg-invalid-binary-representation "Invalid binary representation" 'pg-error)
 (define-error 'pg-datatype-mismatch "PostgreSQL datatype mismatch" 'pg-error)
 (define-error 'pg-json-error "PostgreSQL JSON-related error" 'pg-error)
 (define-error 'pg-integrity-constraint-violation "PostgreSQL integrity constraint violation" 'pg-error)
 (define-error 'pg-restrict-violation "PostgreSQL restrict violation" 'pg-error)
-(define-error 'pg-not-null-violation "PostgreSQL non NULL violation" 'pg-error)
+(define-error 'pg-not-null-violation "PostgreSQL not NULL violation" 'pg-error)
 (define-error 'pg-foreign-key-violation "PostgreSQL FOREIGN KEY violation" 'pg-error)
 (define-error 'pg-unique-violation "PostgreSQL UNIQUE violation" 'pg-error)
 (define-error 'pg-check-violation "PostgreSQL CHECK violation" 'pg-error)
 (define-error 'pg-exclusion-violation "PostgreSQL exclusion violation" 'pg-error)
 (define-error 'pg-transaction-timeout "PostgreSQL transaction timeout" 'pg-error)
+(define-error 'pg-insufficient-privilege "PostgreSQL insufficient privilege" 'pg-error)
 (define-error 'pg-insufficient-resources "PostgreSQL insufficient resources" 'pg-error)
 (define-error 'pg-disk-full "PostgreSQL disk full error" 'pg-error)
 (define-error 'pg-too-many-connections "PostgreSQL too many connections" 'pg-error)
+(define-error 'pg-plpgsql-error "PostgreSQL PLPgSQL error" 'pg-error)
 (define-error 'pg-internal-error "PostgreSQL internal error" 'pg-error)
 
 (defun pg-signal-type-error (fmt &rest arguments)
@@ -551,6 +554,7 @@ presented to the user."
                         ("22P01" 'pg-floating-point-exception)
                         ("2201E" 'pg-floating-point-exception)
                         ("2201F" 'pg-floating-point-exception)
+                        ("22021" 'pg-character-not-in-repertoire)
                         ((pred (lambda (v) (string-prefix-p "2203" v))) 'pg-json-error)
                         ("22P02" 'pg-invalid-text-representation)
                         ("22P03" 'pg-invalid-binary-representation)
@@ -568,9 +572,11 @@ presented to the user."
                         ("42703" 'pg-undefined-column)
                         ("42804" 'pg-datatype-mismatch)
                         ("42883" 'pg-undefined-function)
+                        ("42501" 'pg-insufficient-privilege)
                         ("53000" 'pg-insufficient-resources)
                         ("53100" 'pg-disk-full)
                         ("53300" 'pg-too-many-connections)
+                        ("P0000" 'pg-plpgsql-error)
                         ("XX000" 'pg-internal-error)
                         (_ 'pg-error))))
       (signal error-type (list msg)))))
@@ -1020,9 +1026,9 @@ sslmode (partial support) and application_name."
     ;; FIXME unfortunately the url-host is being downcased by url-generic-parse-url, which is
     ;; incorrect when the hostname is specifying a local path.
     (let* ((host (url-unhex-string (url-host parsed)))
-           (user (or (url-user parsed)
+           (user (or (url-unhex-string (url-user parsed))
                      (getenv "PGUSER")))
-           (password (or (url-password parsed)
+           (password (or (url-unhex-string (url-password parsed))
                          (getenv "PGPASSWORD")))
            (port (or (url-portspec parsed)
                      (getenv "PGPORT")
