@@ -107,7 +107,7 @@ The following PostgreSQL-compatible databases have been tested:
   working. It does not support `GENERATED ALWAYS AS IDENTITY` or `SERIAL` columns, nor `VACUUM
   ANALYZE`. Last tested 2025-02 with v2.2.0.
 
-- [CrateDB](https://crate.io/): last tested 2025-02 with version 5.10.1. CrateDB does not support
+- [CrateDB](https://crate.io/): last tested 2025-03 with version 5.10.2. CrateDB does not support
   rows (e.g. `SELECT (1,2)`), does not support the `time`, `varbit`, `bytea`, `jsonb` and `hstore`
   types, does not handle a query which only contains an SQL comment, does not handle various
   PostgreSQL functions such as `factorial`, does not return a correct type OID for text columns in
@@ -157,14 +157,20 @@ version 25.1 in 2025-02, there is no implementation of the `pg_types` system tab
 basic PostgreSQL-flavoured SQL commands such as `SET`, no support for the extended query mechanism.
 
 
-Tested **Emacs versions**: Tested with versions 30-prerelease, 29.4, 28.2, 27.2 and 26.3. Emacs
-versions older than 26.1 will not work against a recent PostgreSQL version (whose default
-configuration requires SCRAM-SHA-256 authentication), because they don’t include the GnuTLS support
-which we use to calculate HMACs. They may however work against a database set up to allow
-unauthenticated local connections. Emacs versions older than 28.1 (from April 2022) will not be able
-to use the extended query protocol (prepared statements), because they don’t have the necessary
-bindat functionality. It should however be easy to update the installed version of bindat.el for
-these older versions.
+Tested **Emacs versions**: mostly tested with versions 31 pre-release, 30.1 and 29.4. Emacs versions
+older than 26.1 will not work against a recent PostgreSQL version (whose default configuration
+requires SCRAM-SHA-256 authentication), because they don’t include the GnuTLS support which we use
+to calculate HMACs. They may however work against a database set up to allow unauthenticated local
+connections. Emacs versions older than 28.1 (from April 2022) will not be able to use the extended
+query protocol (prepared statements), because they don’t have the necessary bindat functionality. It
+should however be easy to update the installed version of bindat.el for these older versions.
+
+> [!TIP]
+> Emacs 31 (in pre-release) has support for disabling the Nagle algorithm on TCP network
+> connections (`TCP_NODELAY`). This leads to far better performance for PostgreSQL connections, in
+> particular on Unix platforms. This performance difference does not apply when you connect to
+> PostgreSQL over a local Unix socket connection.
+
 
 You may be interested in an alternative library [emacs-libpq](https://github.com/anse1/emacs-libpq)
 that enables access to PostgreSQL from Emacs by binding to the libpq library.
