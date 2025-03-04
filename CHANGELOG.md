@@ -1,6 +1,13 @@
 # Changelog
 
 
+## [0.49] - Unreleased
+
+- Implement hex-decoding for the username and password in `pg-connect/uri`.
+
+- New error classes `pg-character-not-in-repertoire` and `pg-plpgsl-error`.
+
+
 ## [0.48] - 2025-02-22
 
 - The error hierarchy has been enriched with many subclasses of `pg-error`, distinguishing between
