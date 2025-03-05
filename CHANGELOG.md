@@ -7,6 +7,8 @@
 
 - New error classes `pg-character-not-in-repertoire` and `pg-plpgsl-error`.
 
+- Filter out system-internal tables in the list returned by `pg-tables` for the Clickhouse variant.
+
 
 ## [0.48] - 2025-02-22
 

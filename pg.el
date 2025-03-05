@@ -3134,13 +3134,23 @@ Queries legacy internal PostgreSQL tables."
                   (string= "sys" (pg-qualified-name-schema tbl)))))
     (cl-delete-if #'cratedb-name-p (pg--tables-information-schema con))))
 
-;; TODO: if we are able to detect Clickhouse and survive the startup sequence, list of tables is
+;; Exclude Clickhouse-internal tables from the list of tables returned by pg-tables.
+;;
+;; We could also use the query
 ;;   SELECT name FROM system.tables WHERE database == currentDatabase()
+(defun pg--tables-clickhouse (con)
+  (cl-labels ((clickhouse-name-p (tbl)
+                (when (pg-qualified-name-p tbl)
+                  (string= "system" (pg-qualified-name-schema tbl)))))
+    (cl-delete-if #'clickhouse-name-p (pg--tables-information-schema con))))
+
 
 (defun pg-tables (con)
   "List of the tables present in the database we are connected to via CON.
 Only tables to which the current user has access are listed."
     (cond ((eq (pgcon-server-variant con) 'ydb)
+           ;; YDB is providing incorrect information here: newly created databases don't appear here,
+           ;; nor in the information_schema views.
            (pg--tables-legacy con))
           ((eq (pgcon-server-variant con) 'timescaledb)
            (pg--tables-timescaledb con))
@@ -3148,6 +3158,8 @@ Only tables to which the current user has access are listed."
            (pg--tables-cratedb con))
           ((eq (pgcon-server-variant con) 'materialize)
            (pg--tables-materialize con))
+          ((eq (pgcon-server-variant con) 'clickhouse)
+           (pg--tables-clickhouse con))
           ((> (pgcon-server-version-major con) 11)
            (pg--tables-information-schema con))
           (t
