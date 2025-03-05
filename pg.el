@@ -3058,6 +3058,18 @@ Uses database connection CON."
   (let ((res (pg-exec con "SELECT datname FROM pg_catalog.pg_database")))
     (apply #'append (pg-result res :tuples))))
 
+(defun pg-current-schema (con)
+  "Return the current schema in the PostgreSQL server we are connected to via CON."
+  (pcase (pgcon-server-variant con)
+    ('clickhouse
+     (let* ((res (pg-exec con "SELECT currentDatabase()"))
+            (row (pg-result res :tuple 0)))
+       (cl-first row)))
+    (_
+     (let* ((res (pg-exec con "SELECT current_schema()"))
+            (row (pg-result res :tuple 0)))
+       (cl-first row)))))
+
 ;; Possible alternative query:
 ;;   SELECT nspname FROM pg_namespace
 (defun pg-schemas (con)

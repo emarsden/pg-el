@@ -9,6 +9,9 @@
 
 - Filter out system-internal tables in the list returned by `pg-tables` for the Clickhouse variant.
 
+- New function `pg-current-schema` which returns the value of `current_schema()` (or equivalent on
+  PostgreSQL variants that do not implement that function).
+
 
 ## [0.48] - 2025-02-22
 
