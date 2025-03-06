@@ -3018,8 +3018,27 @@ Uses database connection CON."
 TABLE can be a string or a schema-qualified name. Uses database connection CON."
   (pcase (pgcon-server-variant con)
     ('cratedb nil)
-    ;; Our standard query below triggers an internal exception in CockroachDB
-    ('cockroachdb nil)
+    ;; Our query below using PostgreSQL system tables triggers an internal exception in CockroachDB,
+    ;; so we use their non-standard "SHOW TABLES" query. The SHOW TABLES command does not accept a
+    ;; WHERE clause.
+    ('cockroachdb
+     (let* ((table-name (if (pg-qualified-name-p table) (pg-qualified-name-name table) table))
+            (schema-name (when (pg-qualified-name-p table) (pg-qualified-name-schema table)))
+            (res (pg-exec con "SHOW TABLES WITH COMMENT"))
+            (tuples (pg-result res :tuples))
+            (column-names (mapcar #'cl-first (pg-result res :attributes)))
+            (table-name-pos (or (cl-position "table_name" column-names :test #'string=)
+                                (error "Expecting table_name in SHOW TABLES output")))
+            (table-schema-pos (or (cl-position "schema_name" column-names :test #'string=)
+                                  (error "Expecting schema_name in SHOW TABLES output")))
+            (comment-pos (or (cl-position "comment" column-names :test #'string=)
+                             (error "Expecting comment in SHOW TABLES output"))))
+       (cl-loop
+        for tuple in tuples
+        when (and (string= table-name (nth table-name-pos tuple))
+                  (or (not schema-name)
+                      (string= schema-name (nth schema-name-pos tuple))))
+        return (nth comment-pos tuple))))
     (_ (let* ((t-id (pg-escape-identifier table))
               (sql "SELECT obj_description($1::regclass::oid, 'pg_class')")
               (res (pg-exec-prepared con sql `((,t-id . "text"))))

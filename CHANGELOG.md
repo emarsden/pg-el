@@ -12,6 +12,9 @@
 - New function `pg-current-schema` which returns the value of `current_schema()` (or equivalent on
   PostgreSQL variants that do not implement that function).
 
+- Implement custom logic for `pg-table-comment` for the semi-compatible PostgreSQL variant
+  CockroachDB.
+
 
 ## [0.48] - 2025-02-22
 
