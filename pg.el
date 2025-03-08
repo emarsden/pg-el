@@ -3,7 +3,7 @@
 ;; Copyright: (C) 1999-2002, 2022-2025  Eric Marsden
 
 ;; Author: Eric Marsden <eric.marsden@risk-engineering.org>
-;; Version: 0.48
+;; Version: 0.49
 ;; Keywords: data comm database postgresql
 ;; URL: https://github.com/emarsden/pg-el
 ;; Package-Requires: ((emacs "28.1") (peg "1.0.1"))
@@ -180,7 +180,7 @@ SQL queries. To avoid this overhead on establishing a connection, remove
 (define-error 'pg-insufficient-resources "PostgreSQL insufficient resources" 'pg-operational-error)
 (define-error 'pg-disk-full "PostgreSQL disk full error" 'pg-operational-error)
 (define-error 'pg-too-many-connections "PostgreSQL too many connections" 'pg-operational-error)
-(define-error 'pg-plpgsql-error "PostgreSQL PLPgSQL error" 'pg-programming-error)
+(define-error 'pg-plpgsql-error "PostgreSQL PL/pgSQL error" 'pg-programming-error)
 
 (defun pg-signal-type-error (fmt &rest arguments)
   (let ((msg (apply #'format fmt arguments)))
@@ -475,7 +475,7 @@ Uses connection CON. The variant can be accessed by `pgcon-server-variant'."
               (setf (pgcon-server-variant con) 'cockroachdb))
              ((cl-search "-YB-" version)
               (setf (pgcon-server-variant con) 'yugabyte))
-             ((cl-search "Visual C++ build 1914" version)
+             ((cl-search "QuestDB" version)
               (setf (pgcon-server-variant con) 'questdb))
              ((cl-search "GreptimeDB" version)
               (setf (pgcon-server-variant con) 'greptimedb))
@@ -3039,6 +3039,7 @@ TABLE can be a string or a schema-qualified name. Uses database connection CON."
                   (or (not schema-name)
                       (string= schema-name (nth schema-name-pos tuple))))
         return (nth comment-pos tuple))))
+    ;; Possibly some other variants use the syntax "COMMENT ON TABLE tname" to query the comment.
     (_ (let* ((t-id (pg-escape-identifier table))
               (sql "SELECT obj_description($1::regclass::oid, 'pg_class')")
               (res (pg-exec-prepared con sql `((,t-id . "text"))))
@@ -3241,6 +3242,10 @@ Using connection to PostgreSQL CON."
          (ps-name (pg-ensure-prepared-statement con "QRY-column-default" sql argument-types))
          (res (pg-fetch-prepared con ps-name params)))
     (caar (pg-result res :tuples))))
+
+;; TODO: could add function (pg-column-comment con table column)
+;; with a possible implementation of COMMENT ON COLUMN tab.col
+;; and a setf "COMMENT ON COLUMN tab.col IS 'foobles'
 
 (defun pg-column-default (con table column)
   "Return the default value for COLUMN in PostgreSQL TABLE.

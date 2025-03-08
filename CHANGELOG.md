@@ -1,11 +1,17 @@
 # Changelog
 
 
-## [0.49] - Unreleased
+## [0.49] - 2025-03-08
 
 - Implement hex-decoding for the username and password in `pg-connect/uri`.
 
 - New error classes `pg-character-not-in-repertoire` and `pg-plpgsl-error`.
+
+- New error subclasses of `pg-error`: `pg-database-error`, `pg-operational-error`,
+ `pg-programming-error`, `pg-data-error`, `pg-integrity-error`. These are superclasses of some of
+ the leaf error subclasses: for example the errors related to integrity violations
+ `pg-restrict-violation`, `pg-not-null-violation` and `pg-foreign-key-violation` are all subclasses
+ of `pg-integrity-error`.
 
 - Filter out system-internal tables in the list returned by `pg-tables` for the Clickhouse variant.
 
