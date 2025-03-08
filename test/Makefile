@@ -494,10 +494,10 @@ test-pgbouncer: test-pg.el
 	${DOCKER} stop pgbouncer
 
 
-# Last tested 2024-12 with cratedb v5.9.5. CrateDB uses a default database name of "doc" that we
-# can't set via Docker. Doesn't get very far through the tests: CrateDB doesn't accept a query which
-# only contains an SQL comment, and doesn't implement the BYTEA, JSON, JSONB and HSTORE types,
-# doesn't support COPY, doesn't support Unicode identifiers.
+# CrateDB uses a default database name of "doc" that we can't set via Docker. Doesn't get very far
+# through the tests: CrateDB doesn't accept a query which only contains an SQL comment, and doesn't
+# implement the BYTEA, JSON, JSONB and HSTORE types, doesn't support COPY, doesn't support Unicode
+# identifiers.
 #
 # It even seems to lose some INSERT statements (failing in pg-test-insert on the count of rows
 # inserted into the row_count table).
@@ -584,8 +584,6 @@ test-yugabyte: test-pg.el
 # keys, unique constraints, check constraints, for the 'bit' type for example.
 #
 # https://materialize.com/blog/postgres-compatibility/
-#
-# Last tested 2025-02 with Materialize v0.133.
 test-materialize: test-pg.el
 	${DOCKER} run --rm --name materialize \
           --publish 6875:6875 \
