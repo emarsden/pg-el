@@ -24,8 +24,11 @@
 (declare-function pg-register-parser "pg" (type-name parser))
 (declare-function pg-register-textual-serializer "pg" (type-name serializer))
 (declare-function pg-exec "pg" (con &rest args))
+(declare-function pg-exec-prepared "pg" (con query typed-arguments &rest args))
+(declare-function pg-result "pg" (result what &rest arg))
 (declare-function pg-initialize-parsers "pg" (con))
-(declare-function pg--serialize-text (object encoding))
+(declare-function pg-text-parser "pg" (str encoding))
+(declare-function pg--serialize-text "pg" (object encoding))
 
 
 (defun pg--bm25-register-serializers ()
