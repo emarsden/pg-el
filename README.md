@@ -37,7 +37,7 @@ This library has support for:
 
 - Parsing various PostgreSQL types including integers, floats, array types, numerical ranges, JSON
   and JSONB objects into their native Emacs Lisp equivalents. The parsing support is
-  user-extensible. Support for the HSTORE, pgvector and PostGIS extensions.
+  user-extensible. Support for the HSTORE, pgvector, PostGIS, BM25 extensions.
 
 - Connections over TCP or (on Unix machines) a local Unix socket.
 
@@ -91,7 +91,7 @@ The following PostgreSQL-compatible databases have been tested:
 
 - [Google AlloyDB Omni](https://cloud.google.com/alloydb/omni/docs/quickstart) is a proprietary fork
   of PostgreSQL with Google-developed extensions, including a columnar storage extension, adaptive
-  autovacuum, and an index advisor. It works perfectly with pg-el as of 2025-02 (version that
+  autovacuum, and an index advisor. It works perfectly with pg-el as of 2025-03 (version that
   reports itself as "15.7").
 
 - [Xata](https://xata.io/) “serverless PostgreSQL” has many limitations including lack of support

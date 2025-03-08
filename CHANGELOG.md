@@ -15,6 +15,10 @@
 - Implement custom logic for `pg-table-comment` for the semi-compatible PostgreSQL variant
   CockroachDB.
 
+- Provide parsing and serialization support for the types defined by the vchord_bm25 extension,
+  which implements the BM25 ranking algorithm that is useful for information retrieval applications.
+  See file `pg-bm25.el`.
+
 
 ## [0.48] - 2025-02-22
 
