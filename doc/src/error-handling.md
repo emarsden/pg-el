@@ -37,6 +37,7 @@ https://www.postgresql.org/docs/17/errcodes-appendix.html).
 | pg-datetime-field-overflow        | Overflow in a datetime field                                                    |
 | pg-invalid-text-representation    | Invalid text representation                                                     |
 | pg-invalid-binary-representation  | Invalid binary representation                                                   |
+| pg-character-not-in-repertoire    | Character not in repertoire                                                     |
 | pg-datatype-mismatch              | Datatype mismatch                                                               |
 | pg-json-error                     | JSON-related error                                                              |
 | pg-integrity-constraint-violation | Violation of an integrity constraint                                            |
@@ -46,11 +47,13 @@ https://www.postgresql.org/docs/17/errcodes-appendix.html).
 | pg-unique-violation               | Violation of a UNIQUE constraint                                                |
 | pg-check-violation                | Violation of a CHECK constraint                                                 |
 | pg-exclusion-violation            | Violation of an exclusion constraint                                            |
+| pg-plpgsql-error                  | PL/pgSQL error                                                                  |
 | pg-transaction-timeout            | Transaction timeout                                                             |
 | pg-insufficient-resources         | Insufficient resources on the backend server (eg. memory full)                  |
 | pg-disk-full                      | Disk full on the backend server                                                 |
 | pg-too-many-connections           | Too many connections to the backend                                             |
 | pg-internal-error                 | Internal error in the backend                                                   |
+
 
 
 You can undertake error handling for specific error categories as shown in the example below:
@@ -68,5 +71,5 @@ ELISP> (condition-case nil
 
 
 Please note that some semi-compatible PostgreSQL variants do not implement fine-grained SQLSTATE
-error reporting, simply returning all errors as an “internal error” (this is the case of CrateDB in
+error reporting, simply returning most errors as an “internal error” (this is the case of CrateDB in
 2025-02, for example).
