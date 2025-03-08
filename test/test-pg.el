@@ -9,6 +9,7 @@
 (require 'pg)
 (require 'pg-geometry)
 (require 'pg-gis)
+(require 'pg-bm25)
 (require 'ert)
 
 
@@ -63,6 +64,20 @@
     ('risingwave
      (pg-exec con "FLUSH"))))
 
+(cl-defun pgtest-have-table (con table)
+  (let* ((cs (pg-current-schema con))
+         (qtable (if (pg-qualified-name-p table)
+                     table
+                   (make-pg-qualified-name :schema cs :name table))))
+    (cl-flet ((matches (target)
+                (let ((qtarget (if (pg-qualified-name-p target)
+                                   target
+                                 (make-pg-qualified-name :schema cs :name target))))
+                  (equal qtarget qtable))))
+      (dolist (tbl (pg-tables con))
+       (when (matches tbl)
+         (cl-return-from pgtest-have-table t)))
+      nil)))
 
 
 (defmacro with-pgtest-connection (con &rest body)
@@ -211,107 +226,130 @@
                    (pg-connect "nonexistent-db" "pgeltestuser" "pgeltest")
                  (pg-connection-error 'ok)))))
 
-
 (defun pg-run-tests (con)
-  (pg-enable-query-log con)
-  (message "Backend major-version is %s" (pgcon-server-version-major con))
-  (message "Detected backend variant: %s" (pgcon-server-variant con))
-  (unless (member (pgcon-server-variant con)
-                  '(cockroachdb cratedb yugabyte ydb xata greptimedb risingwave clickhouse))
-    (when (> (pgcon-server-version-major con) 11)
-      (let* ((res (pg-exec con "SELECT current_setting('ssl_library')"))
-             (row (pg-result res :tuple 0)))
-        (message "Backend compiled with SSL library %s" (cl-first row)))))
-  (unless (member (pgcon-server-variant con)
-                  '(questdb cratedb ydb xata greptimedb risingwave clickhouse materialize))
-    (let* ((res (pg-exec con "SHOW ssl"))
-           (row (pg-result res :tuple 0)))
-      (message "PostgreSQL connection TLS: %s" (cl-first row))))
-  (message "List of schemas in db: %s" (pg-schemas con))
-  (message "List of tables in db: %s" (pg-tables con))
-  (when (eq 'orioledb (pgcon-server-variant con))
-    (pg-exec con "CREATE EXTENSION orioledb"))
-  (unless (member (pgcon-server-variant con) '(clickhouse))
-    (pg-setup-postgis con))
-  (unless (member (pgcon-server-variant con) '(clickhouse))
-    (pg-vector-setup con))
-  (pg-test-basic con)
-  (pg-test-insert con)
-  ;; RisingWave is not able to parse a TZ value of "UTC-01:00" (POSIX format).
-  (unless (or (member (pgcon-server-variant con) '(cratedb risingwave materialize))
-              (version< emacs-version "29.1"))
-    (pg-test-date con))
-  (unless (member (pgcon-server-variant con) '(risingwave materialize))
-    (pg-run-tz-tests con))
-  (pg-test-numeric con)
-  (unless (member (pgcon-server-variant con) '(xata cratedb cockroachdb ydb risingwave))
-    (pg-test-numeric-range con))
-  (when (>= emacs-major-version 28)
-    (pg-test-prepared con)
-    ;; Risingwave v2.2.0 panics on this test (https://github.com/risingwavelabs/risingwave/issues/20367)
-    (unless (member (pgcon-server-variant con) '(risingwave))
-      (pg-test-prepared/multifetch con))
-    (pg-test-insert/prepared con)
-    ;; Risingwave v2.2.0 raises a spurious error "Duplicated portal name" here
-    (unless (member (pgcon-server-variant con) '(risingwave))
-      (pg-test-ensure-prepared con)))
-  (unless (member (pgcon-server-variant con) '(xata cratedb))
-    (pg-test-collation con))
-  (unless (member (pgcon-server-variant con) '(xata))
-    (pg-test-xml con))
-  (unless (member (pgcon-server-variant con) '(cratedb risingwave))
-    (pg-test-uuid con))
-  ;; Risingwave doesn't support VARCHAR(N) type
-  (unless (member (pgcon-server-variant con) '(risingwave))
-    (pg-test-result con))
-  (unless (member (pgcon-server-variant con) '(xata cratedb cockroachdb risingwave))
-    (pg-test-cursors con))
-  ;; CrateDB does not support the BYTEA type (!), nor sequences.
-  (unless (member (pgcon-server-variant con) '(cratedb risingwave))
-    (pg-test-bytea con)
-    (pg-test-sequence con)
-    (pg-test-array con)
-    (pg-test-enums con)
-    (pg-test-server-prepare con))
-  (unless (member (pgcon-server-variant con) '(cratedb cockroachdb risingwave materialize))
-    (pg-test-metadata con)
-    ;; CrateDB doesn't support the JSONB type. CockroachDB doesn't support casting to JSON.
-    (pg-test-json con))
-  (unless (member (pgcon-server-variant con) '(xata cratedb risingwave))
-    (pg-test-schemas con))
-  (pg-test-hstore con)
-  ;; Xata doesn't support extensions, but doesn't signal an SQL error when we attempt to load the
-  ;; pgvector extension, so our test fails despite being intended to be robust.
-  (unless (member (pgcon-server-variant con) '(xata cratedb))
-    (pg-test-vector con))
-  (unless (member (pgcon-server-variant con) '(xata cratedb cockroachdb risingwave))
-    (pg-test-tsvector con)
-    (pg-test-geometric con)
-    (pg-test-gis con))
-  (unless (member (pgcon-server-variant con) '(spanner ydb cratedb risingwave))
-    (pg-test-copy con)
-    (pg-test-copy-large con))
-  ;; Apparently Xata does not support CREATE DATABASE
-  (unless (member (pgcon-server-variant con) '(xata cratedb))
-    (pg-test-createdb con))
-  (unless (member (pgcon-server-variant con) '(xata cratedb cockroachdb risingwave))
-    (pg-test-unicode-names con))
-  (unless (member (pgcon-server-variant con) '(risingwave))
-    (pg-test-returning con))
-  (unless (member (pgcon-server-variant con) '(cratedb risingwave))
-    (pg-test-parameter-change-handlers con))
-  (pg-test-errors con)
-  ;; CrateDB and Risingwave signal all errors as SQLSTATE XX000 meaning "internal error", rather
-  ;; than returning a more granular error code.
-  (unless (member (pgcon-server-variant con) '(cratedb risingwave))
-    (pg-test-error-sqlstate con))
-  (pg-test-notice con)
-  (unless (member (pgcon-server-variant con) '(cratedb cockroachdb risingwave))
-    (pg-test-notify con))
-  ;; (message "Testing large-object routines...")
-  ;; (pg-test-lo-read)
-  ;; (pg-test-lo-import)
-  (message "Tests passed"))
+  (let ((tests (list)))
+    (cl-flet ((pgtest-add (fun &key skip-variants need-emacs)
+                (unless (member (pgcon-server-variant con) skip-variants)
+                  (when (if need-emacs (version< emacs-version need-emacs) t)
+                    (push fun tests)))))
+      (pg-enable-query-log con)
+      (message "Backend major-version is %s" (pgcon-server-version-major con))
+      (message "Detected backend variant: %s" (pgcon-server-variant con))
+      (unless (member (pgcon-server-variant con)
+                      '(cockroachdb cratedb yugabyte ydb xata greptimedb risingwave clickhouse))
+        (when (> (pgcon-server-version-major con) 11)
+          (let* ((res (pg-exec con "SELECT current_setting('ssl_library')"))
+                 (row (pg-result res :tuple 0)))
+            (message "Backend compiled with SSL library %s" (cl-first row)))))
+      (unless (member (pgcon-server-variant con)
+                      '(questdb cratedb ydb xata greptimedb risingwave clickhouse materialize))
+        (let* ((res (pg-exec con "SHOW ssl"))
+               (row (pg-result res :tuple 0)))
+          (message "PostgreSQL connection TLS: %s" (cl-first row))))
+      (message "Current schema: %s" (pg-current-schema con))
+      (message "List of schemas in db: %s" (pg-schemas con))
+      (message "List of tables in db: %s" (pg-tables con))
+      (when (eq 'orioledb (pgcon-server-variant con))
+        (pg-exec con "CREATE EXTENSION orioledb"))
+      (unless (member (pgcon-server-variant con) '(clickhouse))
+        (pg-setup-postgis con))
+      (unless (member (pgcon-server-variant con) '(clickhouse))
+        (pg-vector-setup con))
+      (pgtest-add #'pg-test-basic)
+      (pgtest-add #'pg-test-insert)
+      ;; RisingWave is not able to parse a TZ value of "UTC-01:00" (POSIX format).
+      (pgtest-add #'pg-test-date
+                  :skip-variants '(cratedb risingwave materialize ydb)
+                  :need-emacs "29.1")
+      (pgtest-add #'pg-run-tz-tests
+                  :skip-variants '(risingwave materialize ydb clickhouse))
+      (pgtest-add #'pg-test-numeric)
+      (pgtest-add #'pg-test-numeric-range
+                  :skip-variants '(xata cratedb cockroachdb ydb risingwave questdb clickhouse greptimedb))
+      (pgtest-add #'pg-test-prepared
+                  :skip-variants '(ydb)
+                  :need-emacs "28")
+      ;; Risingwave v2.2.0 panics on this test (https://github.com/risingwavelabs/risingwave/issues/20367)
+      (pgtest-add #'pg-test-prepared/multifetch
+                  :skip-variants '(risingwave ydb)
+                  :need-emacs "28")
+      (pgtest-add #'pg-test-insert/prepared
+                  :skip-variants '(ydb)
+                  :need-emacs "28")
+      ;; Risingwave v2.2.0 raises a spurious error "Duplicated portal name" here
+      (pgtest-add #'pg-test-ensure-prepared
+                  :skip-variants '(risingwave ydb)
+                  :need-emacs "28")
+      (pgtest-add #'pg-test-collation
+                  :skip-variants '(xata cratedb questdb clickhouse greptimedb))
+      (pgtest-add #'pg-test-xml
+                  :skip-variants '(xata ydb cockroachdb yugabyte clickhouse))
+      (pgtest-add #'pg-test-uuid
+                  :skip-variants '(cratedb risingwave ydb clickhouse greptimedb))
+      ;; Risingwave doesn't support VARCHAR(N) type. YDB doesn't support SELECT generate_series().
+      (pgtest-add #'pg-test-result
+                  :skip-variants  '(risingwave ydb))
+      (pgtest-add #'pg-test-cursors
+                  :skip-variants '(xata cratedb cockroachdb risingwave questdb greptimedb))
+      ;; CrateDB does not support the BYTEA type (!), nor sequences.
+      (pgtest-add #'pg-test-bytea
+                  :skip-variants '(cratedb risingwave))
+      (pgtest-add #'pg-test-sequence
+                  :skip-variants '(cratedb risingwave questdb materialize greptimedb))
+      (pgtest-add #'pg-test-array
+                  :skip-variants '(cratedb risingwave questdb))
+      (pgtest-add #'pg-test-enums
+                  :skip-variants '(cratedb risingwave questdb greptimedb))
+      (pgtest-add #'pg-test-server-prepare
+                  :skip-variants '(cratedb risingwave questdb greptimedb))
+      (pgtest-add #'pg-test-metadata
+                  :skip-variants '(cratedb cockroachdb risingwave materialize questdb greptimedb))
+      ;; CrateDB doesn't support the JSONB type. CockroachDB doesn't support casting to JSON.
+      (pgtest-add #'pg-test-json
+                  :skip-variants '(xata cratedb risingwave questdb greptimedb))
+      (pgtest-add #'pg-test-schemas
+                  :skip-variants '(xata cratedb risingwave questdb))
+      (pgtest-add #'pg-test-hstore)
+      ;; Xata doesn't support extensions, but doesn't signal an SQL error when we attempt to load the
+      ;; pgvector extension, so our test fails despite being intended to be robust.
+      (pgtest-add #'pg-test-vector
+                  :skip-variants '(xata cratedb))
+      (pgtest-add #'pg-test-tsvector
+                  :skip-variants '(xata cratedb cockroachdb risingwave questdb greptimedb))
+      (pgtest-add #'pg-test-bm25
+                  :skip-variants '(xata cratedb cockroachdb risingwave))
+      (pgtest-add #'pg-test-geometric
+                  :skip-variants '(xata cratedb cockroachdb risingwave))
+      (pgtest-add #'pg-test-gis
+                  :skip-variants '(xata cratedb cockroachdb risingwave))
+      (pgtest-add #'pg-test-copy
+                  :skip-variants '(spanner ydb cratedb risingwave))
+      ;; QuestDB fails due to lack of support for the NUMERIC type
+      (pgtest-add #'pg-test-copy-large
+                  :skip-variants '(spanner ydb cratedb risingwave questdb))
+      ;; Apparently Xata does not support CREATE DATABASE
+      (pgtest-add #'pg-test-createdb
+                  :skip-variants '(xata cratedb questdb))
+      (pgtest-add #'pg-test-unicode-names
+                  :skip-variants '(xata cratedb cockroachdb risingwave questdb))
+      (pgtest-add #'pg-test-returning
+                  :skip-variants '(risingwave))
+      (pgtest-add #'pg-test-parameter-change-handlers
+                  :skip-variants '(cratedb risingwave))
+      (pgtest-add #'pg-test-errors)
+      ;; CrateDB and Risingwave signal all errors as SQLSTATE XX000 meaning "internal error", rather
+      ;; than returning a more granular error code.
+      (pgtest-add #'pg-test-error-sqlstate
+                  :skip-variants '(cratedb risingwave))
+      (pgtest-add #'pg-test-notice)
+      (pgtest-add #'pg-test-notify
+                  :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb))
+      (dolist (test (reverse tests))
+        (message "== Running test %s" test)
+        (condition-case err
+            (funcall test con)
+          (error (message "Test failed: %s" err)))
+        (ignore-errors (pg-exec con "SELECT 42"))))))
 
 
 (defun pg-test-note-param-change (con name value)
@@ -381,8 +419,12 @@
     (should (approx= 42.0 (scalar "SELECT 42.00" (list))))
     (should (equal nil (scalar "SELECT NULL" (list))))
     (unless (member (pgcon-server-variant con) '(ydb))
-      (should (equal nil (scalar "" (list)))))
-    (unless (member (pgcon-server-variant con) '(cratedb risingwave materialize))
+      (should (equal nil (scalar "" (list))))
+      (pg-exec con "PREPARE pgtest_foobles(integer) AS SELECT $1 + 1")
+      (let* ((res (pg-exec con "EXECUTE pgtest_foobles(41)"))
+             (row (pg-result res :tuple 0)))
+        (should (eql 42 (cl-first row)))))
+    (unless (member (pgcon-server-variant con) '(cratedb risingwave materialize ydb))
       (let ((bv1 (make-bool-vector 1 nil))
             (bv2 (make-bool-vector 1 t)))
         (should (equal bv1 (scalar "SELECT $1::bit" `((,bv1 . "bit")))))
@@ -573,13 +615,13 @@
     ;; IS checks for NULL identity
     (should (eql t (scalar "SELECT NULL IS NULL")))
     ;; This leads to a timeout with YDB
-    (unless (pg-test-is-ydb con)
+    (unless (member (pgcon-server-variant con) '(ydb))
       (should (equal nil (row ""))))
-    (unless (pg-test-is-cratedb con)
-      (should (equal nil (row "-- comment"))))
+    (unless (member (pgcon-server-variant con) '(cratedb))
+      (should (eql nil (row "-- comment")))
+      (should (eql nil (row "  /* only a comment */ "))))
     (should (equal (list 1 nil "all") (row "SELECT 1,NULL,'all'")))
-    (unless (or (pg-test-is-questdb con)
-                (pg-test-is-spanner con))
+    (unless (member (pgcon-server-variant con) '(questdb spanner))
       (should (string= "Z" (scalar "SELECT chr(90)"))))
     (should (eql 12 (scalar "SELECT length('(╯°□°)╯︵ ┻━┻')")))
     (should (string= "::!!::" (scalar "SELECT '::!!::'::varchar")))
@@ -604,6 +646,7 @@
       (should (string= "foo\nbar" (scalar "SELECT $$foo
 bar$$"))))
     (should (string= "foo\tbar" (scalar "SELECT 'foo\tbar'")))
+    (should (string= "foo\rbar\nbiz" (scalar "SELECT 'foo\rbar\nbiz'")))
     (should (string= "abcdef" (scalar "SELECT 'abc' || 'def'")))
     (should (string= "howdy" (scalar "SELECT 'howdy'::text")))
     ;; RisingWave does not support the VARCHAR(N) syntax.
@@ -645,14 +688,14 @@ bar$$"))))
   (message "Testing insertions...")
   (cl-flet ((scalar (sql) (cl-first (pg-result (pg-exec con sql) :tuple 0))))
     (let ((count 100))
-      (when (member "count_test" (pg-tables con))
+      (when (pgtest-have-table con "count_test")
         (pg-exec con "DROP TABLE count_test"))
       (let ((sql (pgtest-massage con "CREATE TABLE count_test(key INT PRIMARY KEY, val INT) %s"
                                  (if (eq 'orioledb (pgcon-server-variant con))
                                      " USING orioledb"
                                    ""))))
         (pg-exec con sql))
-      (should (member "count_test" (pg-tables con)))
+      (should (pgtest-have-table con "count_test"))
       (should (member "val" (pg-columns con "count_test")))
       (unless (member (pgcon-server-variant con) '(cratedb xata ydb))
         (let ((user (or (nth 4 (pgcon-connect-info con))
@@ -686,7 +729,7 @@ bar$$"))))
       (should (eql count (scalar "SELECT count(*) FROM count_test")))
       (should (eql (/ (* count (1+ count)) 2) (scalar "SELECT sum(key) FROM count_test")))
       (pg-exec con "DROP TABLE count_test")
-      (should (not (member "count_test" (pg-tables con)))))
+      (should (not (pgtest-have-table con "count_test"))))
     ;; Test for specific bugs when we have a table name and column names of length 1 (could be
     ;; interpreted as a character rather than as a string).
     (pg-exec con "DROP TABLE IF EXISTS w")
@@ -705,13 +748,13 @@ bar$$"))))
 (defun pg-test-insert/prepared (con)
   (cl-flet ((scalar (sql) (cl-first (pg-result (pg-exec con sql) :tuple 0))))
     (let ((count 100))
-      (when (member "count_test" (pg-tables con))
+      (when (pgtest-have-table con "count_test")
         (pg-exec con "DROP TABLE count_test"))
-      (pg-exec con "CREATE TABLE count_test(key INT, val INT)")
-      (should (member "count_test" (pg-tables con)))
+      (pg-exec con "CREATE TABLE count_test(key INT PRIMARY KEY, val INT)")
+      (should (pgtest-have-table con "count_test"))
       (should (member "val" (pg-columns con "count_test")))
       ;; CrateDB does not implement TRUNCATE TABLE
-      (unless (member (pgcon-server-variant con) '(cratedb risingwave))
+      (unless (member (pgcon-server-variant con) '(cratedb risingwave ydb))
         (pg-exec con "TRUNCATE TABLE count_test"))
       (dotimes (i count)
         (pg-exec-prepared con "INSERT INTO count_test VALUES($1, $2)"
@@ -720,7 +763,7 @@ bar$$"))))
       (should (eql count (scalar "SELECT COUNT(*) FROM count_test")))
       (should (eql (/ (* (1- count) count) 2) (scalar "SELECT sum(key) FROM count_test")))
       (pg-exec con "DROP TABLE count_test")
-      (should (not (member "count_test" (pg-tables con)))))))
+      (should (not (pgtest-have-table con "count_test"))))))
 
 ;; Check the mixing of prepared queries, cached prepared statements, normal simple queries, to check
 ;; that the cache works as expected and that the backend retains prepared statements. TODO: should
@@ -734,7 +777,7 @@ bar$$"))))
               (let ((res (pg-fetch-prepared con ps-name args)))
                 (cl-first (pg-result res :tuple 0)))))
     (pg-exec con "DROP TABLE IF EXISTS prep")
-    (pg-exec con "CREATE TABLE prep(a INTEGER, b INTEGER)")
+    (pg-exec con "CREATE TABLE prep(a INTEGER PRIMARY KEY, b INTEGER)")
     (dotimes (i 10)
       (pg-exec-prepared con "INSERT INTO prep VALUES($1, $2)"
                         `((,i . "int4") (,(* i i) . "int4"))))
@@ -973,13 +1016,23 @@ bar$$"))))
 ;; XML support, so check for that first.
 (defun pg-test-xml (con)
   (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0))))
-    (unless (or (pg-test-is-cockroachdb con)
-                (pg-test-is-yugabyte con))
-      (unless (zerop (scalar "SELECT COUNT(*) FROM pg_type WHERE typname='xml'"))
-        (should (string= "<foo attr=\"45\">bar</foo>"
-                         (scalar "SELECT XMLPARSE (CONTENT '<foo attr=\"45\">bar</foo>')")))
-        (should (string= (scalar "SELECT xmlforest('abc' AS foo, 123 AS bar)")
-                         "<foo>abc</foo><bar>123</bar>"))))))
+    (unless (zerop (scalar "SELECT COUNT(*) FROM pg_type WHERE typname='xml'"))
+      (should (string= "<foo attr=\"45\">bar</foo>"
+                       (scalar "SELECT xmlparse(CONTENT '<foo attr=\"45\">bar</foo>')")))
+      (should (string= (scalar "SELECT xmlforest('abc' AS foo, 123 AS bar)")
+                       "<foo>abc</foo><bar>123</bar>"))
+      (should (string= "" (scalar "SELECT xmlparse(CONTENT '<?xml version=\"1.0\"?>')")))
+      (should (cl-search "Foobles" (scalar "SELECT xmlcomment('Foobles')")))
+      (should (eql 'ok (condition-case nil
+                           (scalar "SELECT xmlparse(CONTENT '<')")
+                         (pg-xml-error 'ok))))
+      (should (eql 'ok (condition-case nil
+                           (scalar "SELECT xmlparse(DOCUMENT '<?xml version=\"1.0\" bizzles=\"bazzles\"?><foo/>')")
+                         (pg-xml-error 'ok))))
+      (should (eql 'ok (condition-case nil
+                           (scalar "SELECT xmlparse(CONTENT '<foo/><bar></baz>')")
+                         (pg-xml-error 'ok)))))))
+
 
 ;; https://www.postgresql.org/docs/current/datatype-uuid.html
 (defun pg-test-uuid (con)
@@ -1321,8 +1374,9 @@ bar$$"))))
       (let* ((res (pg-exec con "SELECT jsonb_array_elements('[true,false,42]'::jsonb)"))
              (rows (pg-result res :tuples)))
         (should (equal '((t) (:false) (42)) rows)))
-      (let ((json (scalar "SELECT json_object_agg(42, 66)")))
-        (should (eql 66 (gethash "42" json))))
+      (unless (member (pgcon-server-variant con) '(cockroachdb))
+        (let ((json (scalar "SELECT json_object_agg(42, 66)")))
+          (should (eql 66 (gethash "42" json)))))
       (let ((json (scalar "SELECT '{\"a\":1,\"b\":-22}'::json")))
         (should (eql 1 (gethash "a" json)))
         (should (eql -22 (gethash "b" json))))
@@ -1331,44 +1385,45 @@ bar$$"))))
       (let ((json (scalar "SELECT '{\"a\": [0,1,2,null]}'::json")))
         (should (eql 2 (aref (gethash "a" json) 2)))))
     (when (> (pgcon-server-version-major con) 11)
-      (should (string= "true" (scalar "SELECT 'true'::jsonpath")))
-      (should (string= "$[*]?(@ < 1 || @ > 5)" (scalar "SELECT '$[*] ? (@ < 1 || @ > 5)'::jsonpath")))
-      (let* ((sql "SELECT jsonb_path_query($1::jsonb, $2)")
-             (res (pg-exec-prepared con sql `(("{\"h\": 9.2}" . "text") ("$.h.floor()" . "jsonpath"))))
-             (row (pg-result res :tuple 0)))
-        (should (eql 9 (cl-first row))))
-      (let* ((sql "SELECT jsonb_path_query($1, $2)")
-             (dict (make-hash-table :test #'equal))
-             (_ (puthash "h" 5.6 dict))
-             (params `((,dict . "jsonb") ("$.h.floor()" . "jsonpath")))
-             (res (pg-exec-prepared con sql params))
-             (row (pg-result res :tuple 0)))
-        (should (eql 5 (cl-first row)))))
-    (when (>= (pgcon-server-version-major con) 17)
-      ;; The json_scalar function is new in PostgreSQL 17.0, as is the .bigint() JSON path function
-      (let* ((sql "SELECT jsonb_path_query(to_jsonb($1), $2)")
-             (big 12567833445508910)
-             (query "$.bigint()")
-             (res (pg-exec-prepared con sql `((,big . "int8") (,query . "jsonpath"))))
-             (row (pg-result res :tuple 0)))
-        (should (eql big (cl-first row))))
-      (let* ((sql "SELECT jsonb_path_query(cast(json_scalar($1) as jsonb), $2)")
-             (tstamp "12:34:56.789 +05:30")
-             (query "$.time_tz(2)")
-             (res (pg-exec-prepared con sql `((,tstamp . "text") (,query . "jsonpath"))))
-             (row (pg-result res :tuple 0)))
-        (should (string= "12:34:56.79+05:30" (cl-first row))))
-      ;; The json_array function is new in PostgreSQL 17.0
-      (let* ((sql "SELECT json_array('pg-el', NULL, 42)")
-	     (res (pg-exec con sql))
-	     (row (pg-result res :tuple 0)))
-	;; Default is to drop nulls in the input list
-	(should (equal (vector "pg-el" 42) (cl-first row))))
-      (let* ((sql "SELECT json_array('pg-el', NULL, 42 NULL ON NULL)")
-	     (res (pg-exec con sql))
-	     (row (pg-result res :tuple 0)))
-	;; Default is to drop nulls in the input list
-	(should (equal (vector "pg-el" :null 42) (cl-first row)))))))
+      (unless (member (pgcon-server-variant con) '(cockroachdb))
+        (should (string= "true" (scalar "SELECT 'true'::jsonpath")))
+        (should (string= "$[*]?(@ < 1 || @ > 5)" (scalar "SELECT '$[*] ? (@ < 1 || @ > 5)'::jsonpath")))
+        (let* ((sql "SELECT jsonb_path_query($1::jsonb, $2)")
+               (res (pg-exec-prepared con sql `(("{\"h\": 9.2}" . "text") ("$.h.floor()" . "jsonpath"))))
+               (row (pg-result res :tuple 0)))
+          (should (eql 9 (cl-first row))))
+        (let* ((sql "SELECT jsonb_path_query($1, $2)")
+               (dict (make-hash-table :test #'equal))
+               (_ (puthash "h" 5.6 dict))
+               (params `((,dict . "jsonb") ("$.h.floor()" . "jsonpath")))
+               (res (pg-exec-prepared con sql params))
+               (row (pg-result res :tuple 0)))
+          (should (eql 5 (cl-first row)))))
+      (when (>= (pgcon-server-version-major con) 17)
+        ;; The json_scalar function is new in PostgreSQL 17.0, as is the .bigint() JSON path function
+        (let* ((sql "SELECT jsonb_path_query(to_jsonb($1), $2)")
+               (big 12567833445508910)
+               (query "$.bigint()")
+               (res (pg-exec-prepared con sql `((,big . "int8") (,query . "jsonpath"))))
+               (row (pg-result res :tuple 0)))
+          (should (eql big (cl-first row))))
+        (let* ((sql "SELECT jsonb_path_query(cast(json_scalar($1) as jsonb), $2)")
+               (tstamp "12:34:56.789 +05:30")
+               (query "$.time_tz(2)")
+               (res (pg-exec-prepared con sql `((,tstamp . "text") (,query . "jsonpath"))))
+               (row (pg-result res :tuple 0)))
+          (should (string= "12:34:56.79+05:30" (cl-first row))))
+        ;; The json_array function is new in PostgreSQL 17.0
+        (let* ((sql "SELECT json_array('pg-el', NULL, 42)")
+	       (res (pg-exec con sql))
+	       (row (pg-result res :tuple 0)))
+	  ;; Default is to drop nulls in the input list
+	  (should (equal (vector "pg-el" 42) (cl-first row))))
+        (let* ((sql "SELECT json_array('pg-el', NULL, 42 NULL ON NULL)")
+	       (res (pg-exec con sql))
+	       (row (pg-result res :tuple 0)))
+	  ;; Default is to drop nulls in the input list
+	  (should (equal (vector "pg-el" :null 42) (cl-first row))))))))
 
 
 
@@ -1513,6 +1568,44 @@ bar$$"))))
            (best (pg-result res :tuple 0)))
       (should (cl-search "efficient" (cl-second best))))
     (pg-exec con "DROP TABLE documents")))
+
+;; Specific tests for the VectorChord BM25 extension.
+;;
+;; https://github.com/tensorchord/VectorChord-bm25/
+(defun pg-test-bm25 (con)
+  (when (pg-setup-bm25 con)
+    (message "Testing Vectorchord BM25 extension support")
+    (should (member "bm25_catalog" (pg-schemas con)))
+    (let* ((sql "SELECT tokenize('A quick brown fox jumps over the lazy dog.', 'Bert')")
+           (res (pg-exec con sql))
+           (out (cl-first (pg-result res :tuple 0))))
+      ;; or the form "{2474:1, 2829:1, 3899:1, 4248:1, 4419:1, 5376:1, 5831:1}"
+      (should (eql ?{ (aref out 0)))
+      (should (eql ?} (aref out (1- (length out))))))
+    (pg-exec con "DROP TABLE IF EXISTS documents")
+    (let* ((sql "CREATE TABLE documents(id SERIAL PRIMARY KEY, passage TEXT, embedding bm25vector)")
+           (res (pg-exec con sql)))
+      (should (string-prefix-p "CREATE" (pg-result res :status))))
+    (dolist (text (list "PostgreSQL is a powerful, open-source object-relational database system. It has over 15 years of active development."
+                        "Full-text search is a technique for searching in plain-text documents or textual database fields. PostgreSQL supports this with tsvector."
+                        "BM25 is a ranking function used by search engines to estimate the relevance of documents to a given search query."
+                        "PostgreSQL provides many advanced features like full-text search, window functions, and more."
+                        "Search and ranking in databases are important in building effective information retrieval systems."
+                        "The BM25 ranking algorithm is derived from the probabilistic retrieval framework."
+                        "Full-text search indexes documents to allow fast text queries. PostgreSQL supports this through its GIN and GiST indexes."
+                        "The PostgreSQL community is active and regularly improves the database system."
+                        "Relational databases such as PostgreSQL can handle both structured and unstructured data."
+                        "Effective search ranking algorithms, such as BM25, improve search results by understanding relevance."))
+      (pg-exec-prepared con "INSERT INTO documents(passage) VALUES ($1)"
+                        `((,text . "text"))))
+    (pg-exec con "UPDATE documents SET embedding = tokenize(passage, 'Bert')")
+    (pg-exec con "CREATE INDEX documents_embedding_bm25 ON documents USING bm25 (embedding bm25_ops)")
+    (let* ((sql "SELECT id, passage, embedding <&> to_bm25query('documents_embedding_bm25', 'PostgreSQL', 'Bert') AS rank
+                 FROM documents
+                 ORDER BY rank
+                 LIMIT 3")
+           (row (pg-result (pg-exec con sql) :tuple 0)))
+      (should (cl-search "PostgreSQL community" (cl-second row))))))
 
 (defun pg-test-geometric (con)
   (cl-labels ((row (query args) (pg-result (pg-exec-prepared con query args) :tuple 0))
@@ -1863,7 +1956,7 @@ bar$$"))))
      (let ((res (pg-exec con "EXECUTE ps42")))
        (should (eql 42 (car (pg-result res :tuple 0)))))
      (pg-exec con "DEALLOCATE ps42"))
-   (unless (member (pgcon-server-variant con) '(xata))
+   (unless (member (pgcon-server-variant con) '(xata materialize))
      (let ((res (pg-exec con "EXPLAIN ANALYZE SELECT 42")))
        ;; CrateDB returns "EXPLAIN 1". The output from EXPLAIN ANALYZE is returned as a hash table.
        (unless (member (pgcon-server-variant con) '(cratedb))
@@ -1954,7 +2047,7 @@ bar$$"))))
     (should (eql nil (cl-first (pg-result r :tuple 0))))))
 
 (defun pg-test-returning (con)
-  (when (member "pgeltestr" (pg-tables con))
+  (when (pgtest-have-table con "pgeltestr")
     (pg-exec con "DROP TABLE pgeltestr"))
   (pg-exec con (pgtest-massage con "CREATE TABLE pgeltestr(id INTEGER NOT NULL PRIMARY KEY, data TEXT)"))
   (let* ((res (pg-exec con "INSERT INTO pgeltestr VALUES (1, 'Foobles') RETURNING id"))
@@ -2081,6 +2174,16 @@ bar$$"))))
     (should (eql 'ok (condition-case nil
                          (scalar "SELECT '2024-15-01'::date")
                        (pg-datetime-field-overflow 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "CREATE TABLE pgtest_dupcol(a INTEGER PRIMARY KEY, a VARCHAR)")
+                       (pg-programming-error 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "CREATE TABLE -----(a INTEGER PRIMARY KEY)")
+                       (pg-programming-error 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "CREATE TABLE table(a INTEGER PRIMARY KEY)")
+                       (pg-reserved-name 'ok)
+                       (pg-syntax-error 'ok))))
     (should (eql 'ok
                  (unwind-protect
                      (progn
@@ -2183,7 +2286,7 @@ bar$$"))))
     ;; The function pg_notify is an alternative to the LISTEN statement, and more flexible if your
     ;; channel name is determined by a variable. It is not implemented in all
     ;; PostgreSQL-semi-compatible databases.
-    (unless (pg-test-is-xata con)
+    (unless (member (pgcon-server-variant con) '(xata))
       (pg-exec con "SELECT pg_notify('yourheart', 'leaving')"))
     (pg-exec con "SELECT 'ignored'")
     (pg-exec con "UNLISTEN yourheart")
