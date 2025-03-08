@@ -18,7 +18,7 @@
 (declare-function pg-register-textual-serializer "pg" (type-name serializer))
 (declare-function pg-exec "pg" (con &rest args))
 (declare-function pg-initialize-parsers "pg" (con))
-(declare-function pg--serialize-text (object encoding))
+(declare-function pg--serialize-text "pg" (object encoding))
 
 
 (defvar pg-gis-use-geosop t
