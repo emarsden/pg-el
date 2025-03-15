@@ -3,6 +3,8 @@
 
 ## [0.50] - Unreleased
 
+- Implement new function `pg-column-comment` with a defsetf.
+
 - Improve `cl-print-object` for a connection object when the pid and database slots are unbound.
 
 - Further workarounds in `pg-table-comment` for QuestDB and Spanner variants.

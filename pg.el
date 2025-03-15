@@ -3060,7 +3060,8 @@ TABLE can be a string or a schema-qualified name. Uses database connection CON."
      (_
       (let* ((sql (format "COMMENT ON TABLE %s IS %s"
                           (pg-escape-identifier ,table)
-                          (pg-escape-literal ,comment))))
+                          (if ,comment (pg-escape-literal ,comment)
+                            "NULL"))))
         ;; We can't use a prepared statement in this situation.
         (pg-exec ,con sql)
         ,comment))))
@@ -3259,9 +3260,38 @@ Using connection to PostgreSQL CON."
          (res (pg-fetch-prepared con ps-name params)))
     (caar (pg-result res :tuples))))
 
-;; TODO: could add function (pg-column-comment con table column)
-;; with a possible implementation of COMMENT ON COLUMN tab.col
-;; and a setf "COMMENT ON COLUMN tab.col IS 'foobles'
+(defun pg-column-comment (con table column)
+  "Return the comment on COLUMN in TABLE in a PostgreSQL database.
+TABLE can be a string or a schema-qualified name. Uses database connection CON."
+  (pcase (pgcon-server-variant con)
+    (_ (let* ((t-id (pg-escape-identifier table))
+              (res (pg-exec con (format "SELECT * FROM %s LIMIT 0" t-id)))
+              (column-number (or (cl-position column (pg-result res :attributes)
+                                              :key #'cl-first
+                                              :test #'string=)
+                                 (signal 'pg-user-error (list (format "Column %s not found in table %s"
+                                                                      column table)))))
+              (sql "SELECT pg_catalog.col_description($1::regclass::oid, $2)")
+              (res (pg-exec-prepared con sql `((,t-id . "text") (,(1+ column-number) . "int4"))))
+              (tuples (pg-result res :tuples)))
+         (when tuples
+           (caar tuples))))))
+
+(gv-define-setter pg-column-comment (comment con table column)
+  `(pcase (pgcon-server-variant con)
+     ('cratedb nil)
+     ('questdb nil)
+     ('spanner nil)
+     (_
+      (let* ((sql (format "COMMENT ON COLUMN %s.%s IS %s"
+                          (pg-escape-identifier ,table)
+                          (pg-escape-identifier ,column)
+                          (if ,comment (pg-escape-literal ,comment)
+                            "NULL"))))
+        ;; We can't use a prepared statement in this situation.
+        (pg-exec ,con sql)
+        ,comment))))
+
 
 (defun pg-column-default (con table column)
   "Return the default value for COLUMN in PostgreSQL TABLE.
