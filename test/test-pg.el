@@ -257,6 +257,8 @@
         (pg-vector-setup con))
       (pgtest-add #'pg-test-basic)
       (pgtest-add #'pg-test-insert)
+      (pgtest-add #'pg-test-procedures
+                  :skip-variants '(cratedb risingwave materialize ydb))
       ;; RisingWave is not able to parse a TZ value of "UTC-01:00" (POSIX format).
       (pgtest-add #'pg-test-date
                   :skip-variants '(cratedb risingwave materialize ydb)
@@ -290,32 +292,32 @@
       (pgtest-add #'pg-test-result
                   :skip-variants  '(risingwave ydb))
       (pgtest-add #'pg-test-cursors
-                  :skip-variants '(xata cratedb cockroachdb risingwave questdb greptimedb))
+                  :skip-variants '(xata cratedb cockroachdb risingwave questdb greptimedb ydb))
       ;; CrateDB does not support the BYTEA type (!), nor sequences.
       (pgtest-add #'pg-test-bytea
                   :skip-variants '(cratedb risingwave))
       (pgtest-add #'pg-test-sequence
-                  :skip-variants '(cratedb risingwave questdb materialize greptimedb))
+                  :skip-variants '(cratedb risingwave questdb materialize greptimedb ydb))
       (pgtest-add #'pg-test-array
                   :skip-variants '(cratedb risingwave questdb))
       (pgtest-add #'pg-test-enums
-                  :skip-variants '(cratedb risingwave questdb greptimedb))
+                  :skip-variants '(cratedb risingwave questdb greptimedb ydb))
       (pgtest-add #'pg-test-server-prepare
-                  :skip-variants '(cratedb risingwave questdb greptimedb))
+                  :skip-variants '(cratedb risingwave questdb greptimedb ydb))
       (pgtest-add #'pg-test-metadata
-                  :skip-variants '(cratedb cockroachdb risingwave materialize questdb greptimedb))
+                  :skip-variants '(cratedb cockroachdb risingwave materialize questdb greptimedb ydb))
       ;; CrateDB doesn't support the JSONB type. CockroachDB doesn't support casting to JSON.
       (pgtest-add #'pg-test-json
-                  :skip-variants '(xata cratedb risingwave questdb greptimedb))
+                  :skip-variants '(xata cratedb risingwave questdb greptimedb ydb))
       (pgtest-add #'pg-test-schemas
-                  :skip-variants '(xata cratedb risingwave questdb))
+                  :skip-variants '(xata cratedb risingwave questdb ydb))
       (pgtest-add #'pg-test-hstore)
       ;; Xata doesn't support extensions, but doesn't signal an SQL error when we attempt to load the
       ;; pgvector extension, so our test fails despite being intended to be robust.
       (pgtest-add #'pg-test-vector
                   :skip-variants '(xata cratedb))
       (pgtest-add #'pg-test-tsvector
-                  :skip-variants '(xata cratedb cockroachdb risingwave questdb greptimedb))
+                  :skip-variants '(xata cratedb cockroachdb risingwave questdb greptimedb ydb))
       (pgtest-add #'pg-test-bm25
                   :skip-variants '(xata cratedb cockroachdb risingwave))
       (pgtest-add #'pg-test-geometric
@@ -329,9 +331,9 @@
                   :skip-variants '(spanner ydb cratedb risingwave questdb))
       ;; Apparently Xata does not support CREATE DATABASE
       (pgtest-add #'pg-test-createdb
-                  :skip-variants '(xata cratedb questdb))
+                  :skip-variants '(xata cratedb questdb ydb))
       (pgtest-add #'pg-test-unicode-names
-                  :skip-variants '(xata cratedb cockroachdb risingwave questdb))
+                  :skip-variants '(xata cratedb cockroachdb risingwave questdb ydb))
       (pgtest-add #'pg-test-returning
                   :skip-variants '(risingwave))
       (pgtest-add #'pg-test-parameter-change-handlers
@@ -343,7 +345,7 @@
                   :skip-variants '(cratedb risingwave))
       (pgtest-add #'pg-test-notice)
       (pgtest-add #'pg-test-notify
-                  :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb))
+                  :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb ydb))
       (dolist (test (reverse tests))
         (message "== Running test %s" test)
         (condition-case err
@@ -675,7 +677,7 @@ bar$$"))))
     ;; version 7. The value in pgcon-server-version-major is obtained by parsing the server_version
     ;; string sent by the backend on startup. Not all servers return a value for this (for example
     ;; xata.sh servers return an empty string).
-    (unless (pg-test-is-ydb con)
+    (unless (member (pgcon-server-variant con) '(ydb))
       (let* ((version-str (car (row "SELECT current_setting('server_version_num')")))
              (version-num (and version-str (cl-parse-integer version-str))))
         (if version-str
@@ -805,6 +807,40 @@ bar$$"))))
           (should (eql v 10)))))
     (pg-exec con "DROP TABLE prep")))
 
+
+(defun pg-test-procedures (con)
+  (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0))))
+    (should (pg-function-p con "version"))
+    (scalar "DROP FUNCTION IF EXISTS pgtest_difference")
+    (let* ((sql "CREATE FUNCTION pgtest_difference(integer, integer) RETURNS integer
+                 AS 'select $1 - $2;'
+                 LANGUAGE SQL
+                 IMMUTABLE
+                 RETURNS NULL ON NULL INPUT")
+           (res (pg-exec con sql)))
+      (should (string-prefix-p "CREATE" (pg-result res :status)))
+      (should (pg-function-p con "pgtest_difference"))
+      (should (eql 5 (scalar "SELECT * FROM pgtest_difference(105, 100)")))
+      ;; Redefining an existing function should trigger an error.
+      (should (eql 'ok (condition-case nil
+                           (pg-exec con "CREATE FUNCTION pgtest_difference(integer, integer) RETURNS integer
+                                         AS 'select - ($2 - $1);'
+                                         LANGUAGE SQL
+                                         IMMUTABLE
+                                         RETURNS NULL ON NULL INPUT")
+                         (pg-programming-error 'ok))))
+      (pg-exec con "DROP FUNCTION pgtest_difference")
+      (should (not (pg-function-p con "pgtest_difference"))))
+    (scalar "DROP FUNCTION IF EXISTS pgtest_increment")
+    (let* ((sql "CREATE FUNCTION pgtest_increment(val integer) RETURNS integer AS $$
+                 BEGIN RETURN val + 1; END; $$
+                 LANGUAGE PLPGSQL")
+           (res (pg-exec con sql)))
+      (should (string-prefix-p "CREATE" (pg-result res :status)))
+      (should (pg-function-p con "pgtest_increment"))
+      (should (eql -42 (scalar "SELECT pgtest_increment(-43)")))
+      (pg-exec con "DROP FUNCTION pgtest_increment")
+      (should (not (pg-function-p con "pgtest_increment"))))))
 
 ;; Testing for the date/time handling routines.
 (defun pg-test-date (con)
@@ -1085,7 +1121,7 @@ bar$$"))))
 ;; tests for BYTEA type (https://www.postgresql.org/docs/15/functions-binarystring.html)
 (defun pg-test-bytea (con)
   (pg-exec con "DROP TABLE IF EXISTS byteatest")
-  (pg-exec con "CREATE TABLE byteatest(id INT, blob BYTEA)")
+  (pg-exec con "CREATE TABLE byteatest(id INT PRIMARY KEY, blob BYTEA)")
   (pg-exec con "INSERT INTO byteatest VALUES(1, 'warning\\000'::bytea)")
   (pg-exec con "INSERT INTO byteatest VALUES(2, '\\001\\002\\003'::bytea)")
   (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0))))
@@ -1171,7 +1207,7 @@ bar$$"))))
   ;; nodes to ingest data in parallel.
   (unless (member (pgcon-server-variant con) '(cratedb))
     (pg-exec con "DROP TABLE IF EXISTS coldefault")
-    (pg-exec con "CREATE TABLE coldefault(id SERIAL, comment TEXT)")
+    (pg-exec con "CREATE TABLE coldefault(id SERIAL PRIMARY KEY, comment TEXT)")
     ;; note that the id column has a DEFAULT value due to the SERIAL (this is not present for a
     ;; GENERATED ALWAYS AS INTEGER column).
     (pg-exec con "INSERT INTO coldefault(comment) VALUES ('foobles')")
@@ -1184,7 +1220,7 @@ bar$$"))))
   (when (and (not (member (pgcon-server-variant con) '(questdb)))
              (> (pgcon-server-version-major con) 11))
     (pg-exec con "DROP TABLE IF EXISTS colgen_id")
-    (pg-exec con "CREATE TABLE colgen_id(id BIGINT GENERATED ALWAYS AS IDENTITY, comment TEXT)")
+    (pg-exec con "CREATE TABLE colgen_id(id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY, comment TEXT)")
     (pg-exec con "INSERT INTO colgen_id(comment) VALUES('bizzles')")
     ;; A generated column does not have a DEFAULT, in the PostgreSQL sense
     (should (not (pg-column-default con "colgen_id" "id")))
@@ -1193,7 +1229,7 @@ bar$$"))))
     (should (not (pg-column-autogenerated-p con "colgen_id" "comment")))
     (pg-exec con "DROP TABLE colgen_id")
     (pg-exec con "DROP TABLE IF EXISTS colgen_expr")
-    (pg-exec con "CREATE TABLE colgen_expr(count INTEGER, double INTEGER GENERATED ALWAYS AS (count*2) STORED)")
+    (pg-exec con "CREATE TABLE colgen_expr(count INTEGER PRIMARY KEY, double INTEGER GENERATED ALWAYS AS (count*2) STORED)")
     (pg-exec con "INSERT INTO colgen_expr(count) VALUES(5)")
     (should (not (pg-column-default con "colgen_expr" "double")))
     (should (not (pg-column-default con "colgen_expr" "count")))
@@ -1972,7 +2008,7 @@ bar$$"))))
 (defun pg-test-cursors (con)
   (let ((res (pg-exec con "BEGIN")))
     (should (string= "BEGIN" (pg-result res :status))))
-  (pg-exec con "CREATE TEMPORARY TABLE cursor_test (a INTEGER, b TEXT)")
+  (pg-exec con "CREATE TEMPORARY TABLE cursor_test (a INTEGER PRIMARY KEY, b TEXT)")
   (dotimes (i 10)
     (pg-exec con (format "INSERT INTO cursor_test VALUES(%d, '%d')" i i)))
   (let ((res (pg-exec con "DECLARE crsr42 CURSOR FOR SELECT * FROM cursor_test WHERE a=2")))
