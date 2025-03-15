@@ -263,9 +263,12 @@ SQL queries. To avoid this overhead on establishing a connection, remove
 
 (cl-defmethod cl-print-object ((this pgcon) stream)
   "Printer for pgcon PostgreSQL connection objects."
-  (princ (format "#<PostgreSQL connection to %s, pid %s>"
-                 (pgcon-dbname this) (pgcon-pid this))
-         stream))
+  (let ((dbname (when (slot-boundp this 'dbname) (pgcon-dbname this)))
+        (pid (when (slot-boundp this 'pid) (pgcon-pid this))))
+    (princ (format "#<PostgreSQL connection to %s, pid %s>"
+                   (or dbname "<db not set>")
+                   (or pid "<unknown>"))
+           stream)))
 
 ;; Used to save the connection-specific position in our input buffer.
 (defvar-local pgcon--position 1)
@@ -3018,6 +3021,8 @@ Uses database connection CON."
 TABLE can be a string or a schema-qualified name. Uses database connection CON."
   (pcase (pgcon-server-variant con)
     ('cratedb nil)
+    ('questdb nil)
+    ('spanner nil)
     ;; Our query below using PostgreSQL system tables triggers an internal exception in CockroachDB,
     ;; so we use their non-standard "SHOW TABLES" query. The SHOW TABLES command does not accept a
     ;; WHERE clause.
@@ -3048,13 +3053,19 @@ TABLE can be a string or a schema-qualified name. Uses database connection CON."
            (caar tuples))))))
 
 (gv-define-setter pg-table-comment (comment con table)
-  `(let* ((sql (format "COMMENT ON TABLE %s IS %s"
-                       (pg-escape-identifier ,table)
-                       (pg-escape-literal ,comment))))
-     ;; We can't use a prepared statement in this situation.
-     (pg-exec ,con sql)
-     ,comment))
+  `(pcase (pgcon-server-variant con)
+     ('cratedb nil)
+     ('questdb nil)
+     ('spanner nil)
+     (_
+      (let* ((sql (format "COMMENT ON TABLE %s IS %s"
+                          (pg-escape-identifier ,table)
+                          (pg-escape-literal ,comment))))
+        ;; We can't use a prepared statement in this situation.
+        (pg-exec ,con sql)
+        ,comment))))
 
+;; FIXME this does not work on Risingwave: the pg_proc table is empty.
 (defun pg-function-p (con name)
   "Returns non-null when a function with NAME is defined in PostgreSQL.
 Uses database connection CON."
@@ -3176,14 +3187,19 @@ Queries legacy internal PostgreSQL tables."
                   (string= "system" (pg-qualified-name-schema tbl)))))
     (cl-delete-if #'clickhouse-name-p (pg--tables-information-schema con))))
 
+(defun pg--tables-ydb (con)
+  (let* ((sql "SELECT schemaname,tablename FROM pg_catalog.pg_tables WHERE hasindexes=true")
+         (res (pg-exec con sql))
+         (rows (pg-result res :tuples)))
+    (cl-loop
+     for row in rows
+     collect (make-pg-qualified-name :schema (cl-first row) :name (cl-second row)))))
 
 (defun pg-tables (con)
   "List of the tables present in the database we are connected to via CON.
 Only tables to which the current user has access are listed."
     (cond ((eq (pgcon-server-variant con) 'ydb)
-           ;; YDB is providing incorrect information here: newly created databases don't appear here,
-           ;; nor in the information_schema views.
-           (pg--tables-legacy con))
+           (pg--tables-ydb con))
           ((eq (pgcon-server-variant con) 'timescaledb)
            (pg--tables-timescaledb con))
           ((eq (pgcon-server-variant con) 'cratedb)

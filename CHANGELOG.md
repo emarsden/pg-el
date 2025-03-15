@@ -1,6 +1,15 @@
 # Changelog
 
 
+## [0.50] - Unreleased
+
+- Improve `cl-print-object` for a connection object when the pid and database slots are unbound.
+
+- Further workarounds in `pg-table-comment` for QuestDB and Spanner variants.
+
+- Add workaround for variant YDB in `pg-tables`.
+
+
 ## [0.49] - 2025-03-08
 
 - Implement hex-decoding for the username and password in `pg-connect/uri`.
