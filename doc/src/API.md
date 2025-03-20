@@ -168,6 +168,24 @@ information (attribute types, for example), it can be obtained from `pg-result` 
 statement for that table.
 
 
+    (pg-table-comment con table) -> opt-string
+
+Return the comment on `TABLE`, which must be a table in the database to which we are connected over
+`CON`. Return nil if no comment is defined for `TABLE`. A setf function allows you to change the
+table comment, or delete it with an argument of nil:
+
+    (setf (pg-table-comment con "table") "The comment")
+
+
+    (pg-column-comment con table column) -> opt-string
+
+Return the comment on `COLUMN` in `TABLE` in a PostgreSQL database. `TABLE` can be a string or a
+schema-qualified name. Uses database connection `CON`. Returns a string or nil if no comment is
+defined. A setf function allows you to change the column comment, or delete it with a value of nil:
+
+    (setf (pg-column-comment con "table" "column") "The comment")
+
+
     (pg-hstore-setup con)
 
 Prepare for the use of HSTORE datatypes over database connection `CON`. This function must be called
