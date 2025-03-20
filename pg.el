@@ -494,7 +494,7 @@ Uses connection CON. The variant can be accessed by `pgcon-server-variant'."
              ((let ((res (pg-exec con "SELECT current_setting('omni_disk_cache_enabled', true)")))
                 (stringp (cl-first (pg-result res :tuple 0))))
               (setf (pgcon-server-variant con) 'alloydb))
-             ;; TODO: we could also detect CitusDB in the same way by checking for citus.cluter_name
+             ;; TODO: we could also detect CitusDB in the same way by checking for citus.cluster_name
              ;; setting for example, but in practice it is very PostgreSQL compatible so identifying
              ;; it as a variant doesn't seem mandatory.
              ((let* ((sql "SELECT 1 FROM information_schema.schemata WHERE schema_name=$1")
@@ -3002,18 +3002,23 @@ Authenticate as USER with PASSWORD."
   "Return the owner of TABLE in a PostgreSQL database.
 TABLE can be a string or a schema-qualified name.
 Uses database connection CON."
-  (let* ((schema (when (pg-qualified-name-p table)
-                   (pg-qualified-name-schema table)))
-         (table-name (if (pg-qualified-name-p table)
-                         (pg-qualified-name-name table)
-                       table))
-         (schema-sql (if schema " AND schemaname=$2" ""))
-         (sql (concat "SELECT tableowner FROM pg_catalog.pg_tables WHERE tablename=$1" schema-sql))
-         (args (if schema
-                   `((,table-name . "text") (,schema . "text"))
-                 `((,table-name . "text"))))
-         (res (pg-exec-prepared con sql args)))
-    (cl-first (pg-result res :tuple 0))))
+  (pcase (pgcon-server-variant con)
+    ;; QuestDB have a notion of the current user and RBAC, but does not seem to have any information
+    ;; on the owner of a particular table.
+    ('questdb nil)
+    (_
+     (let* ((schema (when (pg-qualified-name-p table)
+                      (pg-qualified-name-schema table)))
+            (table-name (if (pg-qualified-name-p table)
+                            (pg-qualified-name-name table)
+                          table))
+            (schema-sql (if schema " AND schemaname=$2" ""))
+            (sql (concat "SELECT tableowner FROM pg_catalog.pg_tables WHERE tablename=$1" schema-sql))
+            (args (if schema
+                      `((,table-name . "text") (,schema . "text"))
+                    `((,table-name . "text"))))
+            (res (pg-exec-prepared con sql args)))
+       (cl-first (pg-result res :tuple 0))))))
 
 ;; As per https://www.postgresql.org/docs/current/sql-comment.html
 (defun pg-table-comment (con table)
@@ -3066,13 +3071,22 @@ TABLE can be a string or a schema-qualified name. Uses database connection CON."
         (pg-exec ,con sql)
         ,comment))))
 
-;; FIXME this does not work on Risingwave: the pg_proc table is empty.
 (defun pg-function-p (con name)
   "Returns non-null when a function with NAME is defined in PostgreSQL.
 Uses database connection CON."
-  (let* ((sql "SELECT * FROM pg_catalog.pg_proc WHERE proname = $1")
-         (res (pg-exec-prepared con sql `((,name . "text")))))
-    (pg-result res :tuples)))
+  (pcase (pgcon-server-variant con)
+    ;; The pg_proc table exists, but is empty.
+    ('risingwave
+     (signal 'pg-user-error (list "pg-function-p not implemented for Risingwave")))
+    ;; QuestDB does not implement the pg_proc table.
+    ('questdb
+     (let* ((res (pg-exec con "SELECT name FROM functions()"))
+            (rows (pg-result res :tuples)))
+       (cl-position name rows :key #'cl-first :test #'string=)))
+    (_
+     (let* ((sql "SELECT * FROM pg_catalog.pg_proc WHERE proname = $1")
+            (res (pg-exec-prepared con sql `((,name . "text")))))
+       (pg-result res :tuples)))))
 
 
 
@@ -3260,6 +3274,14 @@ Using connection to PostgreSQL CON."
          (res (pg-fetch-prepared con ps-name params)))
     (caar (pg-result res :tuples))))
 
+(defun pg-column-default (con table column)
+  "Return the default value for COLUMN in PostgreSQL TABLE.
+Using connection to PostgreSQL CON."
+  (pcase (pgcon-server-variant con)
+    ('cratedb nil)
+    ('questdb nil)
+    (_ (pg-column-default/full con table column))))
+
 (defun pg-column-comment (con table column)
   "Return the comment on COLUMN in TABLE in a PostgreSQL database.
 TABLE can be a string or a schema-qualified name. Uses database connection CON."
@@ -3278,7 +3300,7 @@ TABLE can be a string or a schema-qualified name. Uses database connection CON."
            (caar tuples))))))
 
 (gv-define-setter pg-column-comment (comment con table column)
-  `(pcase (pgcon-server-variant con)
+  `(pcase (pgcon-server-variant ,con)
      ('cratedb nil)
      ('questdb nil)
      ('spanner nil)
@@ -3292,21 +3314,13 @@ TABLE can be a string or a schema-qualified name. Uses database connection CON."
         (pg-exec ,con sql)
         ,comment))))
 
-
-(defun pg-column-default (con table column)
-  "Return the default value for COLUMN in PostgreSQL TABLE.
-Using connection to PostgreSQL CON."
-  (pcase (pgcon-server-variant con)
-    ('cratedb nil)
-    (_ (pg-column-default/full con table column))))
-
 ;; This returns non-nil for columns for which you can insert a row without specifying a value for
 ;; the column. That includes columns:
 ;;
 ;;    - with a specified DEFAULT (including SERIAL columns)
 ;;    - specified as "BIGINT GENERATED ALWAYS AS IDENTITY"
 ;;    - specified as "GENERATED ALWAYS AS expr STORED" (calculated from other columns)
-(defun pg-column-autogenerated-p (con table column)
+(defun pg-column-autogenerated-p/full (con table column)
   "Return non-nil if COLUMN has an SQL default value or is autogenerated.
 COLUMN is in TABLE. Uses connection to PostgreSQL CON."
   (let* ((schema (if (pg-qualified-name-p table)
@@ -3323,6 +3337,35 @@ COLUMN is in TABLE. Uses connection to PostgreSQL CON."
          (ps-name (pg-ensure-prepared-statement con "QRY-column-autogenerated" sql argument-types))
          (res (pg-fetch-prepared con ps-name params)))
     (caar (pg-result res :tuples))))
+
+;; CrateDB does not support the is_generated and is_identity columns in the
+;; information_schema.columns table.
+(defun pg-column-autogenerated-p/cratedb (con table column)
+  "Return non-nil if COLUMN has an SQL default value or is autogenerated.
+COLUMN is in TABLE. Uses connection to PostgreSQL CON."
+  (let* ((schema (if (pg-qualified-name-p table)
+                     (pg-qualified-name-schema table)
+                   "public"))
+         (tname (if (pg-qualified-name-p table)
+                    (pg-qualified-name-name table)
+                  table))
+         ;; CrateDB does not support tuple comparison WHERE (col1, col2) = (1, 2)
+         (sql "SELECT true FROM information_schema.columns
+               WHERE table_schema=$1 AND table_name=$2 AND column_name=$3
+               AND column_default IS NOT NULL")
+         (argument-types (list "text" "text" "text"))
+         (params `((,schema . "text") (,tname . "text") (,column . "text")))
+         (ps-name (pg-ensure-prepared-statement con "QRY-column-autogenerated" sql argument-types))
+         (res (pg-fetch-prepared con ps-name params)))
+    (caar (pg-result res :tuples))))
+
+(defun pg-column-autogenerated-p (con table column)
+  "Return non-nil if COLUMN has an SQL default value or is autogenerated.
+COLUMN is in TABLE. Uses connection to PostgreSQL CON."
+  (pcase (pgcon-server-variant con)
+    ('cratedb (pg-column-autogenerated-p/cratedb con table column))
+    (_ (pg-column-autogenerated-p/full con table column))))
+
 
 (defun pg-backend-version (con)
   "Version and operating environment of PostgreSQL backend.
