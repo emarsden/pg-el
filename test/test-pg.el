@@ -6,6 +6,7 @@
 
 
 (require 'cl-lib)
+(require 'hex-util)
 (require 'pg)
 (require 'pg-geometry)
 (require 'pg-gis)
@@ -37,10 +38,16 @@
                    (if (< (pgcon-server-version-major con) 12)
                        "SERIAL"
                      "BIGINT GENERATED ALWAYS AS IDENTITY"))
-                  ('cratedb nil)
-                  ('risingwave nil)
-                  ('questdb nil)
-                  ('materialize nil)
+                  ('cratedb "TEXT DEFAULT gen_random_text_uuid()")
+                  ;; https://www.cockroachlabs.com/docs/stable/serial.html#generated-values-for-mode-sql_sequence
+                  ('cockroachdb "UUID NOT NULL DEFAULT gen_random_uuid()")
+                  ('risingwave "UUID NOT NULL DEFAULT gen_random_uuid()")
+                  ('questdb "UUID NOT NULL DEFAULT gen_random_uuid()")
+                  ('materialize "UUID NOT NULL DEFAULT gen_random_uuid()")
+                  ;; ('cratedb nil)
+                  ;; ('risingwave nil)
+                  ;; ('questdb nil)
+                  ;; ('materialize nil)
                   (_ "SERIAL")))
         (pk (pcase (pgcon-server-variant con)
               ('materialize "")
@@ -258,16 +265,16 @@
       (pgtest-add #'pg-test-basic)
       (pgtest-add #'pg-test-insert)
       (pgtest-add #'pg-test-procedures
-                  :skip-variants '(cratedb risingwave materialize ydb))
+                  :skip-variants '(cratedb risingwave materialize ydb xata))
       ;; RisingWave is not able to parse a TZ value of "UTC-01:00" (POSIX format).
       (pgtest-add #'pg-test-date
                   :skip-variants '(cratedb risingwave materialize ydb)
                   :need-emacs "29.1")
       (pgtest-add #'pg-run-tz-tests
-                  :skip-variants '(risingwave materialize ydb clickhouse))
+                  :skip-variants '(risingwave materialize ydb clickhouse spanner))
       (pgtest-add #'pg-test-numeric)
       (pgtest-add #'pg-test-numeric-range
-                  :skip-variants '(xata cratedb cockroachdb ydb risingwave questdb clickhouse greptimedb))
+                  :skip-variants '(xata cratedb cockroachdb ydb risingwave questdb clickhouse greptimedb spanner))
       (pgtest-add #'pg-test-prepared
                   :skip-variants '(ydb)
                   :need-emacs "28")
@@ -287,48 +294,49 @@
       (pgtest-add #'pg-test-xml
                   :skip-variants '(xata ydb cockroachdb yugabyte clickhouse))
       (pgtest-add #'pg-test-uuid
-                  :skip-variants '(cratedb risingwave ydb clickhouse greptimedb))
+                  :skip-variants '(cratedb risingwave ydb clickhouse greptimedb spanner))
       ;; Risingwave doesn't support VARCHAR(N) type. YDB doesn't support SELECT generate_series().
       (pgtest-add #'pg-test-result
-                  :skip-variants  '(risingwave ydb))
+                  :skip-variants  '(risingwave ydb spanner))
       (pgtest-add #'pg-test-cursors
-                  :skip-variants '(xata cratedb cockroachdb risingwave questdb greptimedb ydb))
-      ;; CrateDB does not support the BYTEA type (!), nor sequences.
+                  :skip-variants '(xata cratedb cockroachdb risingwave questdb greptimedb ydb materialize spanner))
+      ;; CrateDB does not support the BYTEA type (!), nor sequences. Spanner does not support the encode() function.
       (pgtest-add #'pg-test-bytea
-                  :skip-variants '(cratedb risingwave))
+                  :skip-variants '(cratedb risingwave spanner))
+      ;; Spanner does not support the INCREMENT clause in CREATE SEQUENCE.
       (pgtest-add #'pg-test-sequence
-                  :skip-variants '(cratedb risingwave questdb materialize greptimedb ydb))
+                  :skip-variants '(cratedb risingwave questdb materialize greptimedb ydb spanner))
       (pgtest-add #'pg-test-array
                   :skip-variants '(cratedb risingwave questdb))
       (pgtest-add #'pg-test-enums
-                  :skip-variants '(cratedb risingwave questdb greptimedb ydb))
+                  :skip-variants '(cratedb risingwave questdb greptimedb ydb materialize spanner))
       (pgtest-add #'pg-test-server-prepare
                   :skip-variants '(cratedb risingwave questdb greptimedb ydb))
       (pgtest-add #'pg-test-metadata
-                  :skip-variants '(cratedb cockroachdb risingwave materialize questdb greptimedb ydb))
+                  :skip-variants '(cratedb cockroachdb risingwave materialize questdb greptimedb ydb spanner))
       ;; CrateDB doesn't support the JSONB type. CockroachDB doesn't support casting to JSON.
       (pgtest-add #'pg-test-json
-                  :skip-variants '(xata cratedb risingwave questdb greptimedb ydb))
+                  :skip-variants '(xata cratedb risingwave questdb greptimedb ydb materialize spanner))
       (pgtest-add #'pg-test-schemas
-                  :skip-variants '(xata cratedb risingwave questdb ydb))
+                  :skip-variants '(xata cratedb risingwave questdb ydb materialize))
       (pgtest-add #'pg-test-hstore)
       ;; Xata doesn't support extensions, but doesn't signal an SQL error when we attempt to load the
       ;; pgvector extension, so our test fails despite being intended to be robust.
       (pgtest-add #'pg-test-vector
                   :skip-variants '(xata cratedb))
       (pgtest-add #'pg-test-tsvector
-                  :skip-variants '(xata cratedb cockroachdb risingwave questdb greptimedb ydb))
+                  :skip-variants '(xata cratedb cockroachdb risingwave questdb greptimedb ydb materialize spanner))
       (pgtest-add #'pg-test-bm25
                   :skip-variants '(xata cratedb cockroachdb risingwave))
       (pgtest-add #'pg-test-geometric
-                  :skip-variants '(xata cratedb cockroachdb risingwave))
+                  :skip-variants '(xata cratedb cockroachdb risingwave questdb materialize spanner))
       (pgtest-add #'pg-test-gis
                   :skip-variants '(xata cratedb cockroachdb risingwave))
       (pgtest-add #'pg-test-copy
-                  :skip-variants '(spanner ydb cratedb risingwave))
+                  :skip-variants '(spanner ydb cratedb risingwave materialize))
       ;; QuestDB fails due to lack of support for the NUMERIC type
       (pgtest-add #'pg-test-copy-large
-                  :skip-variants '(spanner ydb cratedb risingwave questdb))
+                  :skip-variants '(spanner ydb cratedb risingwave questdb materialize))
       ;; Apparently Xata does not support CREATE DATABASE
       (pgtest-add #'pg-test-createdb
                   :skip-variants '(xata cratedb questdb ydb))
@@ -345,13 +353,14 @@
                   :skip-variants '(cratedb risingwave))
       (pgtest-add #'pg-test-notice)
       (pgtest-add #'pg-test-notify
-                  :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb ydb))
+                  :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb ydb questdb spanner))
       (dolist (test (reverse tests))
         (message "== Running test %s" test)
         (condition-case err
             (funcall test con)
           (error (message "Test failed: %s" err)))
-        (ignore-errors (pg-exec con "SELECT 42"))))))
+        (ignore-errors (pg-exec con "SELECT 42"))
+        (pg-sync con)))))
 
 
 (defun pg-test-note-param-change (con name value)
@@ -413,7 +422,6 @@
 
 
 (defun pg-test-prepared (con)
-  (message "Testing prepared statements")
   (cl-labels ((row (query args) (pg-result (pg-exec-prepared con query args) :tuple 0))
               (scalar (query args) (car (row query args)))
               (approx= (x y) (< (/ (abs (- x y)) (max (abs x) (abs y))) 1e-5)))
@@ -590,7 +598,6 @@
 
 
 (defun pg-test-basic (con)
-  (message "Testing basic type parsing")
   (cl-labels ((row (sql) (pg-result (pg-exec con sql) :tuple 0))
               (scalar (sql) (cl-first (pg-result (pg-exec con sql) :tuple 0))))
     (should (equal (list 42) (row "SELECT 42")))
@@ -651,6 +658,7 @@ bar$$"))))
     (should (string= "foo\rbar\nbiz" (scalar "SELECT 'foo\rbar\nbiz'")))
     (should (string= "abcdef" (scalar "SELECT 'abc' || 'def'")))
     (should (string= "howdy" (scalar "SELECT 'howdy'::text")))
+    (should (eql t (scalar "SELECT 'abc' LIKE 'a%'")))
     ;; RisingWave does not support the VARCHAR(N) syntax.
     (unless (eq 'risingwave (pgcon-server-variant con))
       (should (string= "gday" (scalar "SELECT 'gday'::varchar(20)"))))
@@ -687,7 +695,6 @@ bar$$"))))
 
 
 (defun pg-test-insert (con)
-  (message "Testing insertions...")
   (cl-flet ((scalar (sql) (cl-first (pg-result (pg-exec con sql) :tuple 0))))
     (let ((count 100))
       (when (pgtest-have-table con "count_test")
@@ -699,7 +706,7 @@ bar$$"))))
         (pg-exec con sql))
       (should (pgtest-have-table con "count_test"))
       (should (member "val" (pg-columns con "count_test")))
-      (unless (member (pgcon-server-variant con) '(cratedb xata ydb))
+      (unless (member (pgcon-server-variant con) '(cratedb xata ydb spanner))
         (let ((user (or (nth 4 (pgcon-connect-info con))
                         "pgeltestuser"))
               (owner (pg-table-owner con "count_test")))
@@ -709,7 +716,7 @@ bar$$"))))
             (should (string= user owner))
             (should (string= user (pg-table-owner con (make-pg-qualified-name :name "count_test"))))
             (should (string= user (pg-table-owner con "count_test"))))))
-      (unless (member (pgcon-server-variant con) '(ydb cratedb cockroachdb risingwave))
+      (unless (member (pgcon-server-variant con) '(ydb cratedb cockroachdb risingwave spanner))
         (pg-exec con "COMMENT ON TABLE count_test IS 'Counting squared'")
         (pg-exec con "COMMENT ON COLUMN count_test.key IS 'preciouss'")
         (let* ((res (pg-exec con "SELECT obj_description('count_test'::regclass::oid, 'pg_class')"))
@@ -717,10 +724,18 @@ bar$$"))))
           (should (cl-search "squared" comment)))
         (should (cl-search "squared" (pg-table-comment con "count_test")))
         (should (cl-search "squared" (pg-table-comment con (make-pg-qualified-name :name "count_test"))))
+        (should (cl-search "preciouss" (pg-column-comment con "count_test" "key")))
+        (should (cl-search "preciouss" (pg-column-comment con (make-pg-qualified-name :name "count_test") "key")))
         (let ((qn (make-pg-qualified-name :schema "public" :name "count_test")))
           (should (cl-search "squared" (pg-table-comment con qn))))
         (setf (pg-table-comment con "count_test") "Counting cubed")
-        (should (cl-search "cubed" (pg-table-comment con "count_test"))))
+        (should (cl-search "cubed" (pg-table-comment con "count_test")))
+        (setf (pg-table-comment con "count_test") nil)
+        (should (null (pg-table-comment con "count_test")))
+        (setf (pg-column-comment con "count_test" "key") "Oh my")
+        (should (cl-search "my" (pg-column-comment con "count_test" "key")))
+        (setf (pg-column-comment con "count_test" "key") nil)
+        (should (null (pg-column-comment con "count_test" "key"))))
       (cl-loop for i from 1 to count
                for sql = (format "INSERT INTO count_test VALUES(%s, %s)"
                                  i (* i i))
@@ -844,7 +859,6 @@ bar$$"))))
 
 ;; Testing for the date/time handling routines.
 (defun pg-test-date (con)
-  (message "Testing date routines...")
   (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0))))
     (with-environment-variables (("TZ" "UTC-01:00"))
       (pg-exec con "SET TimeZone = 'UTC-01:00'")
@@ -940,7 +954,6 @@ bar$$"))))
                      (encode-time (list 6 5 4 3 2 2001 nil -1 nil)))))))
 
 (defun pg-test-numeric (con)
-  (message "Testing numeric routines...")
   (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0)))
             (approx= (x y) (< (/ (abs (- x y)) (max (abs x) (abs y))) 1e-5)))
     (should (eql -1 (scalar "SELECT '-1'::int")))
@@ -1074,10 +1087,12 @@ bar$$"))))
 (defun pg-test-uuid (con)
   (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0)))
             (scalar/p (sql args) (car (pg-result (pg-exec-prepared con sql args) :tuple 0))))
-    (should (string= "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
-                     (scalar "SELECT 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'::uuid")))
-    (should (string= "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
-                     (scalar "SELECT 'A0EEBC99-9C0B-4EF8-BB6D-6BB9BD380A11'::uuid")))
+    (should (string-equal-ignore-case
+             "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+             (scalar "SELECT 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'::uuid")))
+    (should (string-equal-ignore-case
+             "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+             (scalar "SELECT 'A0EEBC99-9C0B-4EF8-BB6D-6BB9BD380A11'::uuid")))
     ;; Apparently only defined from PostgreSQL v13 onwards.
     (when (pg-function-p con "gen_random_uuid")
       (dotimes (_i 30)
@@ -1089,12 +1104,13 @@ bar$$"))))
                           "[[:xdigit:]]\\{12\\}\\>")))
           (should (string-match re uuid)))))
     (should
-     (string=
+     (string-equal-ignore-case
       "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
       (scalar/p "SELECT $1" `(("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11" . "uuid")))))
     (should
-     (string=
-      ;; PostgreSQL returns the UUId in canonical (lowercase) format.
+     (string-equal-ignore-case
+      ;; PostgreSQL returns the UUID in canonical (lowercase) format, but some variants such as
+      ;; QuestDB do not canonicalize.
       "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
       (scalar/p "SELECT $1" `(("A0EEBC99-9C0B-4EF8-BB6D-6BB9BD380A11" . "uuid")))))))
 
@@ -1121,7 +1137,7 @@ bar$$"))))
 ;; tests for BYTEA type (https://www.postgresql.org/docs/15/functions-binarystring.html)
 (defun pg-test-bytea (con)
   (pg-exec con "DROP TABLE IF EXISTS byteatest")
-  (pg-exec con "CREATE TABLE byteatest(id INT PRIMARY KEY, blob BYTEA)")
+  (pg-exec con (pgtest-massage con "CREATE TABLE byteatest(id INT PRIMARY KEY, blob BYTEA)"))
   (pg-exec con "INSERT INTO byteatest VALUES(1, 'warning\\000'::bytea)")
   (pg-exec con "INSERT INTO byteatest VALUES(2, '\\001\\002\\003'::bytea)")
   (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0))))
@@ -1936,7 +1952,6 @@ bar$$"))))
 ;; status of DROP is DROP
 ;; ==============================================
 (defun pg-test-result (con)
-  (message "Testing field extraction routines...")
   (pg-exec con "DROP TABLE IF EXISTS resulttest")
   (let ((r1 (pg-exec con (pgtest-massage con "CREATE TABLE resulttest (a INT PRIMARY KEY, b VARCHAR(4))")))
         (r2 (pg-exec con "INSERT INTO resulttest VALUES (3, 'zae')"))
@@ -2006,9 +2021,11 @@ bar$$"))))
 
 
 (defun pg-test-cursors (con)
+  (when (member "cursor_test" (pg-tables con))
+    (pg-exec con "DROP TABLE cursor_test"))
   (let ((res (pg-exec con "BEGIN")))
     (should (string= "BEGIN" (pg-result res :status))))
-  (pg-exec con "CREATE TEMPORARY TABLE cursor_test (a INTEGER PRIMARY KEY, b TEXT)")
+  (pg-exec con (pgtest-massage con "CREATE TABLE cursor_test (a INTEGER PRIMARY KEY, b TEXT)"))
   (dotimes (i 10)
     (pg-exec con (format "INSERT INTO cursor_test VALUES(%d, '%d')" i i)))
   (let ((res (pg-exec con "DECLARE crsr42 CURSOR FOR SELECT * FROM cursor_test WHERE a=2")))
@@ -2019,11 +2036,11 @@ bar$$"))))
   (let ((res (pg-exec con "CLOSE crsr42")))
     (should (string= "CLOSE CURSOR" (pg-result res :status))))
   (let ((res (pg-exec con "COMMIT")))
-    (should (string= "COMMIT" (pg-result res :status)))))
+    (should (string= "COMMIT" (pg-result res :status))))
+  (pg-exec con "DROP TABLE cursor_test"))
 
 
 (defun pg-test-createdb (con)
-  (message "Testing database creation")
   (when (member "pgeltestextra" (pg-databases con))
     (pg-exec con "DROP DATABASE pgeltestextra"))
   (pg-exec con "CREATE DATABASE pgeltestextra")
@@ -2048,7 +2065,6 @@ bar$$"))))
   (pg-exec con "DROP DATABASE pgeltestextra"))
 
 (defun pg-test-unicode-names (con)
-  (message "Testing unicode names for database, tables, columns")
   (when (member "pgel😎" (pg-databases con))
     (pg-exec con "DROP DATABASE pgel😎"))
   (pg-exec con "CREATE DATABASE pgel😎")
@@ -2097,7 +2113,6 @@ bar$$"))))
 ;; variable. When we change the session timezone, the backend should send us a ParameterStatus
 ;; message with TimeZone=<new-value>.
 (defun pg-test-parameter-change-handlers (con)
-  (message "Testing parameter-change-functions hook")
   (let ((handler-called nil))
     (cl-flet ((tz-handler (_con name _value)
                 (when (string= "TimeZone" name)
@@ -2113,7 +2128,6 @@ bar$$"))))
 ;; Check that we raise errors when expected, that we resync with the backend after an error so can
 ;; handle successive errors, and that we can handle errors with CONDITION-CASE.
 (defun pg-test-errors (con)
-  (message "Testing error handling")
   (pg-cancel con)
   (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0))))
     (should-error (pg-exec con "SELECT * FROM"))
@@ -2173,6 +2187,20 @@ bar$$"))))
     (should (eql 'ok (condition-case nil
                          (scalar "SELECT * FROM nonexistent_table")
                        (pg-undefined-table 'ok))))
+    (scalar "CREATE TABLE pgtest_foobles(a INTEGER PRIMARY KEY)")
+    (should (eql 'ok (condition-case nil
+                         (scalar "ALTER TABLE pgtest_foobles DROP COLUMN nonexistent")
+                       (pg-programming-error 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "CREATE INDEX pgtest_idx ON pgtest_foobles(inexist)")
+                       (pg-programming-error 'ok))))
+    (scalar "DROP TABLE pgtest_foobles")
+    (should (eql 'ok (condition-case nil
+                         (scalar "DROP INDEX nonexist_idx")
+                       (pg-programming-error 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "DROP VIEW nonexist_view")
+                       (pg-programming-error 'ok))))
     (should (eql 'ok (condition-case nil
                          (scalar "SELECT unexist FROM pg_catalog.pg_type")
                        (pg-undefined-column 'ok))))
@@ -2307,7 +2335,6 @@ bar$$"))))
 ;; is not actually relying on any asynchronous functionality; the notification is received in
 ;; response to the dummy SELECT request.
 (defun pg-test-notify (con)
-  (message "Testing LISTEN/NOTIFY")
   (cl-flet ((notification-handler (channel payload)
               (message "Async notification on %s: %s" channel payload)))
     (pg-add-notification-handler con #'notification-handler)
