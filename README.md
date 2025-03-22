@@ -96,7 +96,7 @@ The following PostgreSQL-compatible databases have been tested:
 
 - [Xata](https://xata.io/) “serverless PostgreSQL” has many limitations including lack of support
   for `CREATE DATABASE`, `CREATE COLLATION`, for XML processing, for temporary tables, for cursors,
-  for `EXPLAIN`, for `CREATE EXTENSION`, for functions such as `pg_notify`.
+  for `EXPLAIN`, for `CREATE EXTENSION`, for `DROP FUNCTION`, for functions such as `pg_notify`.
 
 - [YugabyteDB](https://yugabyte.com/): last tested on 2025-03 against version 2.25. Mostly working
   though the `pg_sequences` table is not implemented so certain tests fail. YugabyteDB does not have
@@ -104,9 +104,9 @@ The following PostgreSQL-compatible databases have been tested:
   supported, and `LISTEN` and `NOTIFY` are not supported. It does support certain extensions such as
   pgvector, however.
 
-- The [RisingWave](https://github.com/risingwavelabs/risingwave) event streaming database is mostly
-  working. It does not support `GENERATED ALWAYS AS IDENTITY` or `SERIAL` columns, nor `VACUUM
-  ANALYZE`. Last tested 2025-03 with v2.2.0.
+- The [RisingWave](https://github.com/risingwavelabs/risingwave) event streaming database (Apache
+  license) is mostly working. It does not support `GENERATED ALWAYS AS IDENTITY` or `SERIAL`
+  columns, nor `VACUUM ANALYZE`. Last tested 2025-03 with v2.2.4.
 
 - [CrateDB](https://crate.io/): last tested 2025-03 with version 5.10.2. CrateDB does not support
   rows (e.g. `SELECT (1,2)`), does not support the `time`, `varbit`, `bytea`, `jsonb` and `hstore`
