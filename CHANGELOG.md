@@ -1,7 +1,7 @@
 # Changelog
 
 
-## [0.50] - Unreleased
+## [0.50] - 2025-03-22
 
 - Implement new function `pg-column-comment` with a defsetf.
 
