@@ -41,13 +41,10 @@
                   ('cratedb "TEXT DEFAULT gen_random_text_uuid()")
                   ;; https://www.cockroachlabs.com/docs/stable/serial.html#generated-values-for-mode-sql_sequence
                   ('cockroachdb "UUID NOT NULL DEFAULT gen_random_uuid()")
-                  ('risingwave "UUID NOT NULL DEFAULT gen_random_uuid()")
+                  ;; RisingWave does not (2025-03) implement NOT NULL constraints, nor an autoincrementing column type.
+                  ('risingwave nil)
                   ('questdb "UUID NOT NULL DEFAULT gen_random_uuid()")
                   ('materialize "UUID NOT NULL DEFAULT gen_random_uuid()")
-                  ;; ('cratedb nil)
-                  ;; ('risingwave nil)
-                  ;; ('questdb nil)
-                  ;; ('materialize nil)
                   (_ "SERIAL")))
         (pk (pcase (pgcon-server-variant con)
               ('materialize "")
@@ -1579,7 +1576,6 @@ bar$$"))))
 ;; Testing support for the tsvector type used for full text search.
 ;; See https://www.postgresql.org/docs/current/datatype-textsearch.html
 (defun pg-test-tsvector (con)
-  (message "Testing tsvector type support")
   (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0))))
     (should (equal (list (make-pg-ts :lexeme "foo")) (scalar "SELECT 'foo'::tsvector")))
     (let ((tsvec (scalar "SELECT 'foo bar'::tsvector")))
@@ -2171,10 +2167,11 @@ bar$$"))))
     (should (eql 'ok (condition-case nil
                          (scalar "SELECT '[1,2,3]'::json ->> {}")
                        (pg-syntax-error 'ok))))
-    (unless (member (pgcon-server-variant con) '(cockroachdb))
-      (should (eql 'ok (condition-case nil
-                           (scalar "SELECT jsonb_path_query('{\"a\":42}'::jsonb, '$$.foo')")
-                         (pg-syntax-error 'ok)))))
+    (when (> (pgcon-server-version-major con) 11)
+      (unless (member (pgcon-server-variant con) '(cockroachdb))
+        (should (eql 'ok (condition-case nil
+                             (scalar "SELECT jsonb_path_query('{\"a\":42}'::jsonb, '$$.foo')")
+                           (pg-syntax-error 'ok))))))
     ;; The json_serialize() function is new in PostgreSQL 17
     (unless (or (member (pgcon-server-variant con) '(cockroachdb yugabyte))
                 (< (pgcon-server-version-major con) 17))
@@ -2225,7 +2222,8 @@ bar$$"))))
                          (pg-undefined-function 'ok))))
       (should (eql 'ok (condition-case nil
                            (pg-exec-prepared con "SELECT $1[5]" '(("[1,2,3]" . "json")))
-                         (pg-datatype-mismatch 'ok))))
+                         (pg-datatype-mismatch 'ok)))))
+    (when (pg-function-p con "jsonb_path_query")
       (should (eql 'ok (condition-case nil
                            (scalar "SELECT jsonb_path_query('{\"h\": 1.7}', '$.floor()')")
                          (pg-json-error 'ok)))))
