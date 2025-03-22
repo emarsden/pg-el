@@ -108,7 +108,7 @@ The following PostgreSQL-compatible databases have been tested:
   license) is mostly working. It does not support `GENERATED ALWAYS AS IDENTITY` or `SERIAL`
   columns, nor `VACUUM ANALYZE`. Last tested 2025-03 with v2.2.4.
 
-- [CrateDB](https://crate.io/): last tested 2025-03 with version 5.10.2. CrateDB does not support
+- [CrateDB](https://crate.io/): last tested 2025-03 with version 5.10.3. CrateDB does not support
   rows (e.g. `SELECT (1,2)`), does not support the `time`, `varbit`, `bytea`, `jsonb` and `hstore`
   types, does not handle a query which only contains an SQL comment, does not handle various
   PostgreSQL functions such as `factorial`, does not return a correct type OID for text columns in
