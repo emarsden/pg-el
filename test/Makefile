@@ -617,6 +617,7 @@ test-yellowbrick: test-pg.el
 
 
 # https://docs.immudb.io/master/running/download.html
+# https://hub.docker.com/r/codenotary/immudb
 #
 # immadmin doesn't seem to provide a useful way to provide password via environment
 # not to be used in a non-interactive manner
@@ -635,7 +636,7 @@ test-immudb: test-pg.el
 	echo pgeltest|${DOCKER} exec -ti immudb immuadmin login immudb
 	${DOCKER} exec -ti immudb immuadmin database create pgeltestdb
 	expect -c 'spawn ${DOCKER} exec -ti immudb immuadmin user create pgeltestuser readwrite pgeltestdb;sleep 0.1;expect "Choose a password for";sleep 0.1;send "pgeltest\r";expect "continue with your password instead.*Y/n";sleep 0.1;send "Y\r";expect "Confirm password";sleep 0.1;send "pgeltest\r";sleep 0.1;exit'
-	PGEL_DATABASE=pgeltestdb PGEL_USER=pgeltestuser PGEL_PASSWORD=pgeltest PGEL_PORT=5667 $(MAKE) test
+	PGURI=postgresql://pgeltestuser:pgeltest@localhost:5667/pgeltestdb $(MAKE) test
 	${DOCKER} stop immudb
 
 
@@ -681,7 +682,7 @@ test-spanner: test-pg.el
 # YDB by Yandex. Last tested 2025-03 version 23.4.
 # 
 # https://ydb.tech/docs/en/postgresql/docker-connect
-# https://hub.docker.com/r/ydbplatform/local-ydb/tags
+# https://hub.docker.com/r/ydbplatform/local-ydb/tags (this an older version)
 #
 # Fairly limited PostgreSQL support currently; for example all tables must have a primary key.
 # Bit vectors are not returned with a bitvector oid in the metainformation.
@@ -693,14 +694,15 @@ test-ydb: test-pg.el
 	${DOCKER} run --rm --name ydb \
           --pull=newer \
           --publish 5119:5432 \
-          -e YDB_PG_DATABASE=pgeltestdb \
+          -e YDB_EXPERIMENTAL_PG=1 \
           -e POSTGRES_USER=pgeltestuser \
           -e POSTGRES_PASSWORD=pgeltest \
-          -e YDB_EXPERIMENTAL_PG=1 \
+          -e YDB_PG_DATABASE=pgeltestdb \
           -e YDB_USE_IN_MEMORY_PDISKS=true \
-          -d docker.io/ydbplatform/local-ydb:latest
+	  -e YDB_FEATURE_FLAGS=enable_temp_tables \
+	  -d ghcr.io/ydb-platform/local-ydb:nightly
 	sleep 5
-	PGEL_PORT=5119 PGEL_DATABASE=local $(MAKE) test
+	PGURI=postgresql://pgeltestuser:pgeltest@localhost:5119/local $(MAKE) test
 	${DOCKER} stop ydb
 
 
@@ -750,6 +752,7 @@ test-greptimedb: test-pg.el
 
 # RisingWave event streaming database. Last tested 2025-03 with v2.2.0.
 # https://github.com/risingwavelabs/risingwave
+# Also at ghcr.io/risingwavelabs/risingwave
 # https://docs.risingwave.com/get-started/quickstart
 #
 # Fails on query "SELECT 'gday'::varchar(20)"
