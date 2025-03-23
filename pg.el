@@ -146,6 +146,7 @@ SQL queries. To avoid this overhead on establishing a connection, remove
 
 (define-error 'pg-connection-error "PostgreSQL connection failure" 'pg-operational-error)
 (define-error 'pg-invalid-password "PostgreSQL invalid password" 'pg-operational-error)
+(define-error 'pg-invalid-catalog-name "PostgreSQL invalid catalog name" 'pg-operational-error)
 (define-error 'pg-feature-not-supported "PostgreSQL feature not supported" 'pg-error)
 (define-error 'pg-syntax-error "PostgreSQL syntax error" 'pg-programming-error)
 (define-error 'pg-undefined-table "PostgreSQL undefined table" 'pg-programming-error)
@@ -154,6 +155,7 @@ SQL queries. To avoid this overhead on establishing a connection, remove
 (define-error 'pg-reserved-name "PostgreSQL reserved name" 'pg-programming-error)
 (define-error 'pg-copy-failed "PostgreSQL COPY failed" 'pg-operational-error)
 (define-error 'pg-connect-timeout "PostgreSQL connection attempt timed out" 'pg-operational-error)
+(define-error 'pg-timeout "PostgreSQL data transfer timed out" 'pg-operational-error)
 (define-error 'pg-type-error
               "Incorrect type in binding PostgreSQL prepared statement"
               'pg-user-error)
@@ -585,6 +587,7 @@ presented to the user."
                         ((pred (lambda (v) (string-prefix-p "38" v))) 'pg-programming-error)
                         ((pred (lambda (v) (string-prefix-p "39" v))) 'pg-programming-error)
                         ((pred (lambda (v) (string-prefix-p "40" v))) 'pg-operational-error)
+                        ("3D000" 'pg-invalid-catalog-name)
                         ("42000" 'pg-syntax-error)
                         ("42601" 'pg-syntax-error)
                         ("42P01" 'pg-undefined-table)
@@ -3049,7 +3052,7 @@ TABLE can be a string or a schema-qualified name. Uses database connection CON."
         for tuple in tuples
         when (and (string= table-name (nth table-name-pos tuple))
                   (or (not schema-name)
-                      (string= schema-name (nth schema-name-pos tuple))))
+                      (string= schema-name (nth table-schema-pos tuple))))
         return (nth comment-pos tuple))))
     ;; Possibly some other variants use the syntax "COMMENT ON TABLE tname" to query the comment.
     (_ (let* ((t-id (pg-escape-identifier table))
@@ -3060,7 +3063,7 @@ TABLE can be a string or a schema-qualified name. Uses database connection CON."
            (caar tuples))))))
 
 (gv-define-setter pg-table-comment (comment con table)
-  `(pcase (pgcon-server-variant con)
+  `(pcase (pgcon-server-variant ,con)
      ('cratedb nil)
      ('questdb nil)
      ('spanner nil)
@@ -3204,6 +3207,8 @@ Queries legacy internal PostgreSQL tables."
                   (string= "system" (pg-qualified-name-schema tbl)))))
     (cl-delete-if #'clickhouse-name-p (pg--tables-information-schema con))))
 
+;; FIXME this query does not work with YDB. It seems that it is necessary to use external tools to
+;; query the table list with YDB (eg. "ydb ls database-path").
 (defun pg--tables-ydb (con)
   (let* ((sql "SELECT schemaname,tablename FROM pg_catalog.pg_tables WHERE hasindexes=true")
          (res (pg-exec con sql))
@@ -3431,7 +3436,7 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
             (accept-process-output process 1.0))))
       (when (null (char-after pgcon--position))
         (let ((msg (format "Timeout in pg-read-char reading from %s" con)))
-          (signal 'pg-error (list msg))))
+          (signal 'pg-timeout (list msg))))
       (prog1 (char-after pgcon--position)
         (setq-local pgcon--position (1+ pgcon--position))))))
 
@@ -3476,7 +3481,7 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
               (accept-process-output process 1.0))))
         (when (> end (point-max))
           (let ((msg (format "Timeout in pg-read-chars reading from %s" con)))
-            (signal 'pg-error (list msg))))
+            (signal 'pg-timeout error (list msg))))
         (prog1 (buffer-substring start end)
           (setq-local pgcon--position end))))))
 
