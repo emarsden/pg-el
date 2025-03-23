@@ -138,7 +138,7 @@ The following PostgreSQL-compatible databases have been tested:
 - The [Materialize](https://materialize.com/) operational database (a proprietary differential
   dataflow database) has many limitations in its PostgreSQL compatibility: no support for primary
   keys, unique constraints, check constraints, for the 'bit' type for example. It works with these
-  limitations with pg-el (last tested 2025-03 with Materialize v0.135).
+  limitations with pg-el (last tested 2025-03 with Materialize v0.138).
 
 - [GreptimeDB](https://github.com/GrepTimeTeam/greptimedb): this time series database implements
   quite a lot of the PostgreSQL wire protocol, but the names it uses for types in the
