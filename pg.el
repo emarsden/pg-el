@@ -1051,9 +1051,11 @@ sslmode (partial support) and application_name."
     ;; FIXME unfortunately the url-host is being downcased by url-generic-parse-url, which is
     ;; incorrect when the hostname is specifying a local path.
     (let* ((host (url-unhex-string (url-host parsed)))
-           (user (or (url-unhex-string (url-user parsed))
+           (parsed-user (url-user parsed))
+           (parsed-password (url-password parsed))
+           (user (or (when parsed-user (url-unhex-string parsed-user))
                      (getenv "PGUSER")))
-           (password (or (url-unhex-string (url-password parsed))
+           (password (or (when parsed-password (url-unhex-string parsed-password))
                          (getenv "PGPASSWORD")))
            (port (or (url-portspec parsed)
                      (getenv "PGPORT")
