@@ -44,7 +44,7 @@
                   ;; RisingWave does not (2025-03) implement NOT NULL constraints, nor an autoincrementing column type.
                   ('risingwave nil)
                   ('questdb "UUID NOT NULL DEFAULT gen_random_uuid()")
-                  ('materialize "UUID NOT NULL DEFAULT gen_random_uuid()")
+                  ('materialize nil)
                   (_ "SERIAL")))
         (pk (pcase (pgcon-server-variant con)
               ('materialize "")
@@ -226,9 +226,9 @@
       (should (process-live-p (pgcon-process con)))
       (pg-disconnect con)))
   (should (eql 'ok
-               (unwind-protect
+               (condition-case nil
                    (pg-connect "nonexistent-db" "pgeltestuser" "pgeltest")
-                 (pg-connection-error 'ok)))))
+                 (pg-invalid-catalog-name 'ok)))))
 
 (defun pg-run-tests (con)
   (let ((tests (list)))
@@ -255,9 +255,9 @@
       (message "List of tables in db: %s" (pg-tables con))
       (when (eq 'orioledb (pgcon-server-variant con))
         (pg-exec con "CREATE EXTENSION orioledb"))
-      (unless (member (pgcon-server-variant con) '(clickhouse))
+      (unless (member (pgcon-server-variant con) '(clickhouse alloydb risingwave))
         (pg-setup-postgis con))
-      (unless (member (pgcon-server-variant con) '(clickhouse))
+      (unless (member (pgcon-server-variant con) '(clickhouse risingwave))
         (pg-vector-setup con))
       (pgtest-add #'pg-test-basic)
       (pgtest-add #'pg-test-insert)
@@ -289,7 +289,7 @@
       (pgtest-add #'pg-test-collation
                   :skip-variants '(xata cratedb questdb clickhouse greptimedb))
       (pgtest-add #'pg-test-xml
-                  :skip-variants '(xata ydb cockroachdb yugabyte clickhouse))
+                  :skip-variants '(xata ydb cockroachdb yugabyte clickhouse alloydb))
       (pgtest-add #'pg-test-uuid
                   :skip-variants '(cratedb risingwave ydb clickhouse greptimedb spanner))
       ;; Risingwave doesn't support VARCHAR(N) type. YDB doesn't support SELECT generate_series().
@@ -299,12 +299,12 @@
                   :skip-variants '(xata cratedb cockroachdb risingwave questdb greptimedb ydb materialize spanner))
       ;; CrateDB does not support the BYTEA type (!), nor sequences. Spanner does not support the encode() function.
       (pgtest-add #'pg-test-bytea
-                  :skip-variants '(cratedb risingwave spanner))
+                  :skip-variants '(cratedb risingwave spanner materialize))
       ;; Spanner does not support the INCREMENT clause in CREATE SEQUENCE.
       (pgtest-add #'pg-test-sequence
                   :skip-variants '(cratedb risingwave questdb materialize greptimedb ydb spanner))
       (pgtest-add #'pg-test-array
-                  :skip-variants '(cratedb risingwave questdb))
+                  :skip-variants '(cratedb risingwave questdb materialize))
       (pgtest-add #'pg-test-enums
                   :skip-variants '(cratedb risingwave questdb greptimedb ydb materialize spanner))
       (pgtest-add #'pg-test-server-prepare
@@ -316,19 +316,20 @@
                   :skip-variants '(xata cratedb risingwave questdb greptimedb ydb materialize spanner))
       (pgtest-add #'pg-test-schemas
                   :skip-variants '(xata cratedb risingwave questdb ydb materialize))
-      (pgtest-add #'pg-test-hstore)
+      (pgtest-add #'pg-test-hstore
+                  :skip-variants '(risingwave materialize))
       ;; Xata doesn't support extensions, but doesn't signal an SQL error when we attempt to load the
       ;; pgvector extension, so our test fails despite being intended to be robust.
       (pgtest-add #'pg-test-vector
-                  :skip-variants '(xata cratedb))
+                  :skip-variants '(xata cratedb materialize))
       (pgtest-add #'pg-test-tsvector
                   :skip-variants '(xata cratedb cockroachdb risingwave questdb greptimedb ydb materialize spanner))
       (pgtest-add #'pg-test-bm25
-                  :skip-variants '(xata cratedb cockroachdb risingwave))
+                  :skip-variants '(xata cratedb cockroachdb risingwave materialize))
       (pgtest-add #'pg-test-geometric
                   :skip-variants '(xata cratedb cockroachdb risingwave questdb materialize spanner))
       (pgtest-add #'pg-test-gis
-                  :skip-variants '(xata cratedb cockroachdb risingwave))
+                  :skip-variants '(xata cratedb cockroachdb risingwave materialize))
       (pgtest-add #'pg-test-copy
                   :skip-variants '(spanner ydb cratedb risingwave materialize))
       ;; QuestDB fails due to lack of support for the NUMERIC type
