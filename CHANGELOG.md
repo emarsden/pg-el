@@ -1,6 +1,16 @@
 # Changelog
 
 
+## [0.51] - Unreleased
+
+- In `pg-connect/uri`, call `url-unhex-string` on user/password only if non-nil. This restores the
+  ability to fall back to `PGUSER` and `PGPASSWORD` environment variables. Patch from @akurth.
+
+- Fix bug in `pg-table-comment` function and in the associated setf function.
+
+- New error types `pg-invalid-catalog` name and `pg-timeout`.
+
+
 ## [0.50] - 2025-03-22
 
 - Implement new function `pg-column-comment` with a defsetf.
