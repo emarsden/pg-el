@@ -8,6 +8,8 @@
 
 - Fix bug in `pg-table-comment` function and in the associated setf function.
 
+- Provide an empty implementation of `pg-column-default` and `pg-table-comment` for the YDB variant.
+
 - New error types `pg-invalid-catalog` name and `pg-timeout`.
 
 

@@ -1050,7 +1050,7 @@ sslmode (partial support) and application_name."
     (unless (or (string= "postgres" scheme)
                 (string= "postgresql" scheme))
       (let ((msg (format "Invalid protocol %s in connection URI" scheme)))
-        (signal 'pg-error (list msg))))
+        (signal 'pg-programming-error (list msg))))
     ;; FIXME unfortunately the url-host is being downcased by url-generic-parse-url, which is
     ;; incorrect when the hostname is specifying a local path.
     (let* ((host (url-unhex-string (url-host parsed)))
@@ -1068,7 +1068,7 @@ sslmode (partial support) and application_name."
                             ;; ignore the "/" prefix
                             (substring (car path-query) 1))
                        (getenv "PGDATABASE")
-                       (signal 'pg-error '("Missing database name in connection URI"))))
+                       (signal 'pg-programming-error '("Missing database name in connection URI"))))
            (params (cdr path-query))
            ;; this is returning a list of lists, not an alist
            (params (and params (url-parse-query-string params)))
@@ -1293,7 +1293,7 @@ and the keyword WHAT should be one of
     (:tuple
      (let ((which (if (integerp (car arg)) (car arg)
                     (let ((msg (format "%s is not an integer" arg)))
-                      (signal 'pg-error (list msg)))))
+                      (signal 'pg-programming-error (list msg)))))
            (tuples (pgresult-tuples result)))
        (nth which tuples)))
     (:oid
@@ -1301,10 +1301,10 @@ and the keyword WHAT should be one of
        (if (string= "INSERT" (substring status 0 6))
            (cl-parse-integer (substring status 7 (cl-position ? status :start 7)))
          (let ((msg (format "Only INSERT commands generate an oid: %s" status)))
-           (signal 'pg-error (list msg))))))
+           (signal 'pg-programming-error (list msg))))))
     (t
      (let ((msg (format "Unknown result request %s" what)))
-       (signal 'pg-error (list msg))))))
+       (signal 'pg-programming-error (list msg))))))
 
 
 (defun pg--escape-identifier-simple (str)
@@ -1731,9 +1731,9 @@ Uses PostgreSQL connection CON."
 Uses PostgreSQL connection CON. Returns a result structure which
 can be decoded using `pg-result'."
   (unless (string-equal "COPY" (upcase (cl-subseq query 0 4)))
-    (signal 'pg-error (list "Invalid COPY query")))
+    (signal 'pg-programming-error (list "Invalid COPY query")))
   (unless (cl-search "FROM STDIN" query)
-    (signal 'pg-error (list "COPY command must contain 'FROM STDIN'")))
+    (signal 'pg-programming-error (list "COPY command must contain 'FROM STDIN'")))
   (pg-connection-set-busy con t)
   (let ((result (make-pgresult :connection con))
         (ce (pgcon-client-encoding con))
@@ -1873,9 +1873,9 @@ can be decoded using `pg-result'."
 Uses PostgreSQL connection CON. Returns a result structure which
 can be decoded using `pg-result'."
   (unless (string-equal "COPY" (upcase (cl-subseq query 0 4)))
-    (signal 'pg-error (list "Invalid COPY query")))
+    (signal 'pg-programming-error (list "Invalid COPY query")))
   (unless (cl-search "TO STDOUT" query)
-    (signal 'pg-error (list "COPY command must contain 'TO STDOUT'")))
+    (signal 'pg-programming-error (list "COPY command must contain 'TO STDOUT'")))
   (pg-connection-set-busy con t)
   (let ((result (make-pgresult :connection con)))
     (pg-send-char con ?Q)
@@ -3033,6 +3033,7 @@ TABLE can be a string or a schema-qualified name. Uses database connection CON."
     ('cratedb nil)
     ('questdb nil)
     ('spanner nil)
+    ('ydb nil)
     ;; Our query below using PostgreSQL system tables triggers an internal exception in CockroachDB,
     ;; so we use their non-standard "SHOW TABLES" query. The SHOW TABLES command does not accept a
     ;; WHERE clause.
@@ -3067,6 +3068,7 @@ TABLE can be a string or a schema-qualified name. Uses database connection CON."
      ('cratedb nil)
      ('questdb nil)
      ('spanner nil)
+     ('ydb nil)
      (_
       (let* ((sql (format "COMMENT ON TABLE %s IS %s"
                           (pg-escape-identifier ,table)
@@ -3207,8 +3209,6 @@ Queries legacy internal PostgreSQL tables."
                   (string= "system" (pg-qualified-name-schema tbl)))))
     (cl-delete-if #'clickhouse-name-p (pg--tables-information-schema con))))
 
-;; FIXME this query does not work with YDB. It seems that it is necessary to use external tools to
-;; query the table list with YDB (eg. "ydb ls database-path").
 (defun pg--tables-ydb (con)
   (let* ((sql "SELECT schemaname,tablename FROM pg_catalog.pg_tables WHERE hasindexes=true")
          (res (pg-exec con sql))
@@ -3287,6 +3287,7 @@ Using connection to PostgreSQL CON."
   (pcase (pgcon-server-variant con)
     ('cratedb nil)
     ('questdb nil)
+    ('ydb nil)
     (_ (pg-column-default/full con table column))))
 
 (defun pg-column-comment (con table column)
@@ -3481,7 +3482,7 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
               (accept-process-output process 1.0))))
         (when (> end (point-max))
           (let ((msg (format "Timeout in pg-read-chars reading from %s" con)))
-            (signal 'pg-timeout error (list msg))))
+            (signal 'pg-timeout (list msg))))
         (prog1 (buffer-substring start end)
           (setq-local pgcon--position end))))))
 
