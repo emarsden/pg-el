@@ -84,7 +84,7 @@ The following PostgreSQL-compatible databases have been tested:
   product as Amazon DocumentDB.
 
 - The [Hydra Columnar](https://github.com/hydradatabase/columnar) extension for column-oriented
-  storage and parallel queries works perfectly (last tested 2025-02).
+  storage and parallel queries works perfectly (last tested 2025-03).
 
 - The [PgBouncer](https://www.pgbouncer.org/) connection pooler for PostgreSQL works fine (last
   tested with version 1.23 in the default session pooling mode).
@@ -143,7 +143,7 @@ The following PostgreSQL-compatible databases have been tested:
 - [GreptimeDB](https://github.com/GrepTimeTeam/greptimedb): this time series database implements
   quite a lot of the PostgreSQL wire protocol, but the names it uses for types in the
   `pg_catalog.pg_types` table are not the same as those used by PostgreSQL (e.g. `Int64` instead of
-  `int8`), so our parsing machinery does not work. Last tested v0.13 in 2025-03.
+  `int8`), so our parsing machinery does not work. Last tested v0.14 in 2025-03.
 
 - Hosted PostgreSQL services that have been tested: as of 2024-12
   [Railway.app](https://railway.app/) is running a Debian build of PostgreSQL 16.4, and works fine;
@@ -154,7 +154,7 @@ The following PostgreSQL-compatible databases have been tested:
   Aurora. You may however encounter difficulties with TLS connections, as noted above.
 
 It does not work in a satisfactory manner with the ClickHouse database, whose PostgreSQL support is
-too limited. As of version 25.1 in 2025-02, there is no implementation of the `pg_types` system
+too limited. As of version 25.3 in 2025-03, there is no implementation of the `pg_types` system
 table, no support for basic PostgreSQL-flavoured SQL commands such as `SET`, no support for the
 extended query mechanism.
 
