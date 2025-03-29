@@ -337,7 +337,7 @@ test-timescale: test-pg.el
 	   -e POSTGRES_USER=pgeltestuser \
 	   -e POSTGRES_PASSWORD=pgeltest \
 	   -e PGPORT=5981 \
-	   -d docker.io/timescale/timescaledb-ha:pg16
+	   -d docker.io/timescale/timescaledb-ha:pg17
 	sleep 5
 	PGEL_PORT=5981 $(MAKE) test
 	PGEL_PORT=5981 $(MAKE) test-pgvector
@@ -673,7 +673,7 @@ test-cloudberry: test-pg.el
 test-spanner: test-pg.el
 	${DOCKER} run --rm --name spanner \
 	  --publish 5499:5432 \
-	 -d gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator -d pgeltestdb
+	  -d gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:latest -d pgeltestdb
 	sleep 2
 	PGEL_PORT=5499 PGEL_DATABASE=pgeltestdb $(MAKE) test
 	${DOCKER} stop spanner
@@ -731,9 +731,9 @@ test-clickhouse: test-pg.el
 
 # https://docs.greptime.com/getting-started/installation/greptimedb-standalone
 #
-# Last tested 2025-02 version 0.12.0. This database implements quite a lot of the PostgreSQL wire
-# protocol, but the names it uses for types in the pg_catalog.pg_types table are not the same as
-# PostgreSQL, so our parsing machinery does not work (we see 42 returned as "42").
+# This database implements quite a lot of the PostgreSQL wire protocol, but the names it uses for
+# types in the pg_catalog.pg_types table are not the same as PostgreSQL, so our parsing machinery
+# does not work (we see 42 returned as "42").
 #
 # postgresql://pgeltestuser:pgeltest@localhost:4003/public
 test-greptimedb: test-pg.el

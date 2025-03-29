@@ -1,7 +1,7 @@
 # Changelog
 
 
-## [0.51] - Unreleased
+## [0.51] - 2025-03-29
 
 - In `pg-connect/uri`, call `url-unhex-string` on user/password only if non-nil. This restores the
   ability to fall back to `PGUSER` and `PGPASSWORD` environment variables. Patch from @akurth.

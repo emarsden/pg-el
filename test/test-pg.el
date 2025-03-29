@@ -2477,7 +2477,7 @@ bar$$"))))
     (pg-assert-string= "2024-02-27T14:34:42.789+0000" (pg-fmt-ts-utc tstz-no-tz))
     (pg-assert-string= "2024-02-27T15:34:42.789+0000" (pg-fmt-ts-utc tstz-zulu))))
 
-(defun pg-test-serialize-ts (con)
+(defun pg-test-serialize-ts (_con)
   (message "Test serialization of timestamps ...")
   (let* ((ts (encode-time (iso8601-parse "2024-02-27T15:34:42.789+04" t)))
          (ts-ser (pg--serialize-encoded-time ts nil)))
