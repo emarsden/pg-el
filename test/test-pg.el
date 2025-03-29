@@ -339,7 +339,7 @@
       (pgtest-add #'pg-test-createdb
                   :skip-variants '(xata cratedb questdb ydb))
       (pgtest-add #'pg-test-unicode-names
-                  :skip-variants '(xata cratedb cockroachdb risingwave questdb ydb))
+                  :skip-variants '(xata cratedb cockroachdb risingwave questdb ydb spanner))
       (pgtest-add #'pg-test-returning
                   :skip-variants '(risingwave))
       (pgtest-add #'pg-test-parameter-change-handlers
