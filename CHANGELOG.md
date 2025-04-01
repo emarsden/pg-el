@@ -5,6 +5,8 @@
 
 - In `pg-fetch-prepared`, close the portal after fetching the tuple data.
 
+- Provide a basic stub implementation for `pg-table-owner` for CrateDB.
+
 
 ## [0.51] - 2025-03-29
 

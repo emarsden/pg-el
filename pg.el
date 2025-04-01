@@ -3013,6 +3013,12 @@ Uses database connection CON."
     ;; QuestDB have a notion of the current user and RBAC, but does not seem to have any information
     ;; on the owner of a particular table.
     ('questdb nil)
+    ;; CrateDB does not have information on table owners, but rather on privileges granted on objects to users.
+    ('cratedb
+     (let* ((sql "SELECT name FROM sys.users WHERE superuser='t'")
+            (res (pg-exec con sql))
+            (row (pg-result res :tuple 0)))
+       (cl-first row)))
     (_
      (let* ((schema (when (pg-qualified-name-p table)
                       (pg-qualified-name-schema table)))
