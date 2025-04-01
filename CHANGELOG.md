@@ -1,6 +1,11 @@
 # Changelog
 
 
+## [0.52] - Unreleased
+
+- In `pg-fetch-prepared`, close the portal after fetching the tuple data.
+
+
 ## [0.51] - 2025-03-29
 
 - In `pg-connect/uri`, call `url-unhex-string` on user/password only if non-nil. This restores the
