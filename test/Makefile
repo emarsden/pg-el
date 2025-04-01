@@ -546,8 +546,8 @@ test-cockroachdb: test-pg.el
 # https://questdb.io/docs/configuration/
 test-questdb: test-pg.el
 	${DOCKER} run --rm --name questdb \
-          --publish 8812:8812 \
-          --publish 9000:9000 \
+          --publish 127.0.0.1:8812:8812 \
+          --publish 127.0.0.1:9000:9000 \
           -e QDB_PG_USER=pgeltestuser \
           -e QDB_PG_PASSWORD=pgeltest \
 	  -d docker.io/questdb/questdb
@@ -672,7 +672,7 @@ test-cloudberry: test-pg.el
 # Extremely limited PostgreSQL support. Basic types such as int2 are not supported.
 test-spanner: test-pg.el
 	${DOCKER} run --rm --name spanner \
-	  --publish 5499:5432 \
+	  --publish 127.0.0.1:5499:5432 \
 	  -d gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:latest -d pgeltestdb
 	sleep 2
 	PGEL_PORT=5499 PGEL_DATABASE=pgeltestdb $(MAKE) test
@@ -693,7 +693,7 @@ test-spanner: test-pg.el
 test-ydb: test-pg.el
 	${DOCKER} run --rm --name ydb \
           --pull=newer \
-          --publish 5119:5432 \
+          --publish 127.0.0.1:5119:5432 \
           -e YDB_EXPERIMENTAL_PG=1 \
           -e POSTGRES_USER=pgeltestuser \
           -e POSTGRES_PASSWORD=pgeltest \
@@ -718,8 +718,9 @@ test-clickhouse: test-pg.el
 	   --ulimit nofile=62144:62144 \
 	   --ulimit core=234567:234567 \
 	   -v /tmp/pgel-config.xml:/etc/clickhouse-server/config.d/pgel-config.xml \
-	   --publish 5491:5491 \
-	   -p 18123:8123 -p 9000:9000 \
+	   --publish 127.0.0.1:5491:5491 \
+	   --publish 127.0.0.1:18123:8123 \
+	   --publish 127.0.0.1:9000:9000 \
 	   -e CLICKHOUSE_DB=pgeltestdb \
 	   -e CLICKHOUSE_USER=pgeltestuser \
 	   -e CLICKHOUSE_PASSWORD=pgeltest \
@@ -779,7 +780,7 @@ test-risingwave: test-pg.el
 test-alloydb: test-pg.el
 	${DOCKER} run --rm --name alloydb \
           --pull=newer \
-          --publish 4481:5432 \
+          --publish 127.0.0.1:4481:5432 \
           -e POSTGRES_DB=pgeltestdb \
           -e POSTGRES_USER=pgeltestuser \
           -e POSTGRES_PASSWORD=pgeltest \
