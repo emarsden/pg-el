@@ -48,6 +48,7 @@
                   (_ "SERIAL")))
         (pk (pcase (pgcon-server-variant con)
               ('materialize "")
+              ('questdb "")
               (_ "PRIMARY KEY"))))
     (when (cl-search "SERIAL" sql)
       (if serial
@@ -262,13 +263,14 @@
       (pgtest-add #'pg-test-basic)
       (pgtest-add #'pg-test-insert)
       (pgtest-add #'pg-test-procedures
-                  :skip-variants '(cratedb risingwave materialize ydb xata))
+                  :skip-variants '(cratedb risingwave materialize ydb xata questdb))
       ;; RisingWave is not able to parse a TZ value of "UTC-01:00" (POSIX format).
       (pgtest-add #'pg-test-date
                   :skip-variants '(cratedb risingwave materialize ydb)
                   :need-emacs "29.1")
+      ;; QuestDB does not support the timestamptz column type.
       (pgtest-add #'pg-run-tz-tests
-                  :skip-variants '(risingwave materialize ydb clickhouse spanner))
+                  :skip-variants '(risingwave materialize ydb clickhouse spanner questdb))
       (pgtest-add #'pg-test-numeric)
       (pgtest-add #'pg-test-numeric-range
                   :skip-variants '(xata cratedb cockroachdb ydb risingwave questdb clickhouse greptimedb spanner))
@@ -341,7 +343,7 @@
       (pgtest-add #'pg-test-unicode-names
                   :skip-variants '(xata cratedb cockroachdb risingwave questdb ydb spanner))
       (pgtest-add #'pg-test-returning
-                  :skip-variants '(risingwave))
+                  :skip-variants '(risingwave questdb))
       (pgtest-add #'pg-test-parameter-change-handlers
                   :skip-variants '(cratedb risingwave))
       (pgtest-add #'pg-test-errors)
@@ -704,7 +706,7 @@ bar$$"))))
         (pg-exec con sql))
       (should (pgtest-have-table con "count_test"))
       (should (member "val" (pg-columns con "count_test")))
-      (unless (member (pgcon-server-variant con) '(cratedb xata ydb spanner))
+      (unless (member (pgcon-server-variant con) '(cratedb xata ydb spanner questdb))
         (let ((user (or (nth 4 (pgcon-connect-info con))
                         "pgeltestuser"))
               (owner (pg-table-owner con "count_test")))
