@@ -1,7 +1,7 @@
 # Changelog
 
 
-## [0.52] - Unreleased
+## [0.52] - 2025-04-06
 
 - In `pg-fetch-prepared`, close the portal after fetching the tuple data.
 
