@@ -7,6 +7,8 @@
 
 - Provide a basic stub implementation for `pg-table-owner` for CrateDB.
 
+- Add code to detect the Greenplum PostgreSQL variant.
+
 
 ## [0.51] - 2025-03-29
 

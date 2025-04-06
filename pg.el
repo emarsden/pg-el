@@ -488,6 +488,8 @@ Uses connection CON. The variant can be accessed by `pgcon-server-variant'."
               (setf (pgcon-server-variant con) 'risingwave))
              ((cl-search "implemented by immudb" version)
               (setf (pgcon-server-variant con) 'immudb))
+             ((cl-search "Greenplum" version)
+              (setf (pgcon-server-variant con) 'greenplum))
              ((cl-search "(Materialize " version)
               (setf (pgcon-server-variant con) 'materialize))
              ;; A more expensive test is needed for Google AlloyDB. If this parameter is defined,
@@ -3302,6 +3304,7 @@ Using connection to PostgreSQL CON."
   "Return the comment on COLUMN in TABLE in a PostgreSQL database.
 TABLE can be a string or a schema-qualified name. Uses database connection CON."
   (pcase (pgcon-server-variant con)
+    ('cratedb nil)
     (_ (let* ((t-id (pg-escape-identifier table))
               (res (pg-exec con (format "SELECT * FROM %s LIMIT 0" t-id)))
               (column-number (or (cl-position column (pg-result res :attributes)
