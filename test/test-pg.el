@@ -359,7 +359,6 @@
         (condition-case err
             (funcall test con)
           (error (message "Test failed: %s" err)))
-        (ignore-errors (pg-exec con "SELECT 42"))
         (pg-sync con)))))
 
 
@@ -2054,7 +2053,7 @@ bar$$"))))
     (pg-exec con "INSERT INTO foobles VALUES (42, 'foo')")
     (pg-exec con "INSERT INTO foobles VALUES (66, 'bizzle')")
     (when (and (> (pgcon-server-version-major con) 11)
-               (not (member (pgcon-server-variant con) '(risingwave))))
+               (not (member (pgcon-server-variant con) '(risingwave greenplum))))
       (pg-exec con "REINDEX TABLE CONCURRENTLY foobles"))
     (pg-exec con "DROP TABLE foobles"))
   (let* ((r (pg-exec con "SHOW ALL"))
@@ -2288,20 +2287,22 @@ bar$$"))))
                              (pg-exec con "INSERT INTO pgtest_exclude(a) VALUES (6)")
                            (pg-exclusion-violation 'ok)))
                    (pg-exec con "DROP TABLE pgtest_exclude")))))
-    (unwind-protect
-        (progn
-          (pg-exec con "DROP TABLE IF EXISTS pgtest_referencing")
-          (pg-exec con "DROP TABLE IF EXISTS pgtest_referenced")
-          (pg-exec con "CREATE TABLE pgtest_referenced(a INTEGER PRIMARY KEY)")
-          (pg-exec con "CREATE TABLE pgtest_referencing(a INTEGER NOT NULL REFERENCES pgtest_referenced(a))")
-          (pg-exec con "INSERT INTO pgtest_referenced(a) VALUES (6)")
-          (pg-exec con "INSERT INTO pgtest_referencing(a) VALUES (6)")
-          (should (eql 'ok
-                       (condition-case nil
-                           (pg-exec con "INSERT INTO pgtest_referencing(a) VALUES (1)")
-                         (pg-foreign-key-violation 'ok)))))
-      (pg-exec con "DROP TABLE pgtest_referencing")
-      (pg-exec con "DROP TABLE pgtest_referenced"))
+    ;; Greenplum does not implement FOREIGN KEY integrity constraints
+    (unless (member (pgcon-server-variant con) '(greenplum))
+      (unwind-protect
+          (progn
+            (pg-exec con "DROP TABLE IF EXISTS pgtest_referencing")
+            (pg-exec con "DROP TABLE IF EXISTS pgtest_referenced")
+            (pg-exec con "CREATE TABLE pgtest_referenced(a INTEGER PRIMARY KEY)")
+            (pg-exec con "CREATE TABLE pgtest_referencing(a INTEGER NOT NULL REFERENCES pgtest_referenced(a))")
+            (pg-exec con "INSERT INTO pgtest_referenced(a) VALUES (6)")
+            (pg-exec con "INSERT INTO pgtest_referencing(a) VALUES (6)")
+            (should (eql 'ok
+                         (condition-case nil
+                             (pg-exec con "INSERT INTO pgtest_referencing(a) VALUES (1)")
+                           (pg-foreign-key-violation 'ok)))))
+        (pg-exec con "DROP TABLE pgtest_referencing")
+        (pg-exec con "DROP TABLE pgtest_referenced")))
     ;; handler-bind is new in Emacs 30. Here we check the printed representation of our
     ;; pg-undefined-function error class.
     (when (fboundp 'handler-bind)
