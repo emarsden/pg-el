@@ -91,7 +91,7 @@ The following PostgreSQL-compatible databases have been tested:
   storage and parallel queries works perfectly (last tested 2025-03).
 
 - The [PgBouncer](https://www.pgbouncer.org/) connection pooler for PostgreSQL works fine (last
-  tested with version 1.23 in the default session pooling mode).
+  tested 2025-04 with version 1.24 in the default session pooling mode).
 
 - [Google AlloyDB Omni](https://cloud.google.com/alloydb/omni/docs/quickstart) is a proprietary fork
   of PostgreSQL with Google-developed extensions, including a columnar storage extension, adaptive
@@ -102,7 +102,7 @@ The following PostgreSQL-compatible databases have been tested:
   for `CREATE DATABASE`, `CREATE COLLATION`, for XML processing, for temporary tables, for cursors,
   for `EXPLAIN`, for `CREATE EXTENSION`, for `DROP FUNCTION`, for functions such as `pg_notify`.
 
-- [YugabyteDB](https://yugabyte.com/): last tested on 2025-03 against version 2.25. Mostly working
+- [YugabyteDB](https://yugabyte.com/): last tested on 2025-04 against version 2.25. Mostly working
   though the `pg_sequences` table is not implemented so certain tests fail. YugabyteDB does not have
   full compatibility with PostgreSQL SQL, and for example `GENERATED ALWAYS AS` columns are not
   supported, and `LISTEN` and `NOTIFY` are not supported. It does support certain extensions such as
@@ -112,7 +112,7 @@ The following PostgreSQL-compatible databases have been tested:
   license) is mostly working. It does not support `GENERATED ALWAYS AS IDENTITY` or `SERIAL`
   columns, nor `VACUUM ANALYZE`. Last tested 2025-03 with v2.2.4.
 
-- [CrateDB](https://crate.io/): last tested 2025-03 with version 5.10.3. CrateDB does not support
+- [CrateDB](https://crate.io/): last tested 2025-04 with version 5.10.3. CrateDB does not support
   rows (e.g. `SELECT (1,2)`), does not support the `time`, `varbit`, `bytea`, `jsonb` and `hstore`
   types, does not handle a query which only contains an SQL comment, does not handle various
   PostgreSQL functions such as `factorial`, does not return a correct type OID for text columns in
@@ -132,8 +132,8 @@ The following PostgreSQL-compatible databases have been tested:
   itself as `PostgreSQL 14.1`) and the PGAdapter library that enables support for the PostgreSQL
   wire protocol. Spanner has very limited PostgreSQL compatibility, for example refusing to create
   tables that do not have a primary key. It does not recognize basic PostgreSQL types such as `INT2`.
-  It also does not for example support the `CHR` and `MD5` functions, row expressions, and WHERE
-  clauses without a FROM clause.
+  It also does not for example support the `CHR` and `MD5` functions, row expressions, and `WHERE`
+  clauses without a `FROM` clause.
 
 - [YDB by Yandex](https://ydb.tech/docs/en/postgresql/docker-connect) last tested with version 23-4.
   Has very limited PostgreSQL compatibility. For example, an empty query string leads to a hung
@@ -142,7 +142,7 @@ The following PostgreSQL-compatible databases have been tested:
 - The [Materialize](https://materialize.com/) operational database (a proprietary differential
   dataflow database) has many limitations in its PostgreSQL compatibility: no support for primary
   keys, unique constraints, check constraints, for the 'bit' type for example. It works with these
-  limitations with pg-el (last tested 2025-03 with Materialize v0.138).
+  limitations with pg-el (last tested 2025-04 with Materialize v0.140).
 
 - [GreptimeDB](https://github.com/GrepTimeTeam/greptimedb): this time series database implements
   quite a lot of the PostgreSQL wire protocol, but the names it uses for types in the
