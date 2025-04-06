@@ -69,8 +69,8 @@ The following PostgreSQL-compatible databases have been tested:
 - [ParadeDB](https://www.paradedb.com/) version 0.13.1 works perfectly (it's really a PostgreSQL
   extension rather than a distinct database implementation).
 
-- [IvorySQL](https://www.ivorysql.org/) version 4.2 works perfectly (this fork of PostgreSQL adds
-  some features for compatibility with Oracle).
+- [IvorySQL](https://www.ivorysql.org/) works perfectly (this fork of PostgreSQL adds some features
+  for compatibility with Oracle). Last tested 2025-04 with version 4.4.
 
 - The [Timescale DB](https://www.timescale.com/) extension for time series data works perfectly
   (last tested with version 2.16.1).
@@ -78,10 +78,14 @@ The following PostgreSQL-compatible databases have been tested:
 - The [CitusDB](https://github.com/citusdata/citus) extension for sharding PostgreSQL over multiple
   hosts works perfectly (last tested 2025-03 with Citus version 12.1.5, which is based on PostgreSQL
   16.6).
+  
+- The [OrioleDB](https://github.com/orioledb/orioledb) extension, which adds a new storage engine
+  designed for better multithreading and solid state storage, works perfectly. Last tested 2025-04
+  with version beta10.
 
 - The [Microsoft DocumentDB](https://github.com/microsoft/documentdb) extension for MongoDB-like
-  queries works perfectly (last tested 2025-02 with version 16.6). Note that this is not the same
-  product as Amazon DocumentDB.
+  queries works perfectly (last tested 2025-04 with the FerretDB distribution 2.1.0). Note that this
+  is not the same product as Amazon DocumentDB.
 
 - The [Hydra Columnar](https://github.com/hydradatabase/columnar) extension for column-oriented
   storage and parallel queries works perfectly (last tested 2025-03).
@@ -143,7 +147,9 @@ The following PostgreSQL-compatible databases have been tested:
 - [GreptimeDB](https://github.com/GrepTimeTeam/greptimedb): this time series database implements
   quite a lot of the PostgreSQL wire protocol, but the names it uses for types in the
   `pg_catalog.pg_types` table are not the same as those used by PostgreSQL (e.g. `Int64` instead of
-  `int8`), so our parsing machinery does not work. Last tested v0.14 in 2025-03.
+  `int8`), so our parsing machinery does not work. This database also has more restrictions on the use of
+  identifiers than PostgreSQL (for example, `id` is not accepted as a column name, nor are
+  identifiers containing Unicode characters). Last tested v0.14 in 2025-04.
 
 - Hosted PostgreSQL services that have been tested: as of 2024-12
   [Railway.app](https://railway.app/) is running a Debian build of PostgreSQL 16.4, and works fine;
