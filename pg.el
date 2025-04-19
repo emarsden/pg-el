@@ -49,8 +49,8 @@
 ;;    "message bus" and Emacs as event publisher and consumer).
 ;;
 ;;
-;; This is a low level API, and won't be useful to end users. If you're looking for a
-;; browsing/editing interface to PostgreSQL, see the PGmacs module from
+;; This is a low level API, and won't be useful to end users. If you're looking for an
+;; Emacs-based browsing/editing interface to PostgreSQL, see the PGmacs library at
 ;; https://github.com/emarsden/pgmacs/.
 ;;
 ;;
@@ -294,6 +294,7 @@ SQL queries. To avoid this overhead on establishing a connection, remove
   "Enable logging of PostgreSQL queries on connection CON.
 Queries are logged to a buffer identified by `pgcon-query-log'."
   (unless (pgcon-query-log con)
+    (message "pg-el: enabling query log on %s" (cl-prin1-to-string con))
     (setf (pgcon-query-log con) (generate-new-buffer " *PostgreSQL query log*"))))
 
 ;; The qualified name is represented in SQL queries as schema.name. The schema is often either the
@@ -1998,14 +1999,23 @@ can be decoded using `pg-result'."
 
 (defun pg-sync (con)
   (pg-connection-set-busy con t)
+  ;; discard any content in our process buffer
+  (with-current-buffer (process-buffer (pgcon-process con))
+    (setq-local pgcon--position (point-max)))
   (pg-send-char con ?S)
   (pg-send-uint con 4 4)
   (pg-flush con)
   (when (fboundp 'thread-yield)
     (thread-yield))
-  ;; discard any content in our process buffer
-  (with-current-buffer (process-buffer (pgcon-process con))
-    (setq-local pgcon--position (point-max)))
+  ;; Read the ReadyForQuery message
+  (ignore-errors
+    (let ((c (pg-read-char con)))
+      (unless (eql c ?Z)
+        (message "Unexpected message type after Sync: %s" c)
+        (pg-unread-char con)))
+    ;; Read message length then status, which we discard.
+    (pg-read-net-int con 4)
+    (pg-read-char con))
   (pg-connection-set-busy con nil))
 
 
@@ -2138,7 +2148,42 @@ PostgreSQL and Emacs. CON should no longer be used."
            (sql (format "SELECT typname,oid FROM pg_catalog.pg_type WHERE typname IN (%s)"
                         (string-join qnames ",")))
            (res (ignore-errors (pg-exec con sql)))
-           (rows (and res (pg-result res :tuples))))
+           (pgtypes (and res (pg-result res :tuples)))
+           ;; We only use the pg_type information if it looks plausible, and otherwise populate our
+           ;; oid<->typname mappings with some predefined data (though strictly speaking there is no
+           ;; guarantee that this internal information will remain the same in future PostgreSQL
+           ;; releases, it is unlikely to change). This is a workaround for databases like
+           ;; GreptimeDB that populate pg_types with invalid information like ("UInt8" "7").
+           (rows (if (cl-position '("oid" "26") pgtypes :test #'equal)
+                     pgtypes
+                   '(("bool" "16")
+                     ("bytea" "17")
+                     ("char" "18")
+                     ("name" "19")
+                     ("int8" "20")
+                     ("int2" "21")
+                     ("int4" "23")
+                     ("text" "25")
+                     ("oid" "26")
+                     ("json" "114")
+                     ("xml" "142")
+                     ("float4" "700")
+                     ("float8" "701")
+                     ("varchar" "1043")
+                     ("date" "1082")
+                     ("time" "1083")
+                     ("timestamp" "1114")
+                     ("timestamptz" "1184")
+                     ("numeric" "1700")
+                     ("uuid" "2950")
+                     ("jsonb" "3802")
+                     ("_bool" "1000")
+                     ("_int8" "1016")
+                     ("_int2" "1005")
+                     ("_int4" "1007")
+                     ("_float4" "1021")
+                     ("_float8" "1022")
+                     ("_numeric" "1231")))))
       (dolist (row rows)
         (let* ((typname (cl-first row))
                (oid (cl-parse-integer (cl-second row)))
@@ -2375,6 +2420,7 @@ Return nil if the extension could not be loaded."
          (string-to-number str))))
 
 (pg-register-parser "numeric" #'pg-float-parser)
+(pg-register-parser "float" #'pg-float-parser)
 (pg-register-parser "float4" #'pg-float-parser)
 (pg-register-parser "float8" #'pg-float-parser)
 
@@ -3035,15 +3081,46 @@ Uses database connection CON."
             (res (pg-exec-prepared con sql args)))
        (cl-first (pg-result res :tuple 0))))))
 
-;; As per https://www.postgresql.org/docs/current/sql-comment.html
+(defun pg--table-classoid (con table)
+  "Return the OID of the class for PostgreSQL TABLE.
+Uses database connection CON."
+  (let* ((table-name (if (pg-qualified-name-p table) (pg-qualified-name-name table) table))
+         (schema-name (when (pg-qualified-name-p table) (pg-qualified-name-schema table)))
+         (relnamespace (when schema-name
+                         (let ((res (pg-exec-prepared
+                                     con
+                                     "SELECT oid FROM pg_catalog.pg_namespace WHERE nspname=$1"
+                                     `((,schema-name . "text")))))
+                           (cl-first (pg-result res :tuple 0)))))
+         (sql/noschema "SELECT oid FROM pg_catalog.pg_class WHERE relkind='r' AND relname=$1")
+         (sql/wschema "SELECT oid FROM pg_catalog.pg_class WHERE relkind='r' AND relname=$1 AND relnamespace=$2")
+         (res (if schema-name
+                  (pg-exec-prepared con sql/wschema `((,table-name . "text") (,relnamespace . "int4")))
+                (pg-exec-prepared con sql/noschema `((,table-name . "text")))))
+         (row (pg-result res :tuple 0)))
+    (when (null row)
+      (let ((msg (format "Can't find classoid for table %s" table)))
+        (signal 'pg-user-error (list msg))))
+    (cl-first row)))
+
+;; As per https://www.postgresql.org/docs/current/sql-comment.html. But many PostgreSQL variants do
+;; not implement this functionality, or annoyingly use different SQL syntax for it.
 (defun pg-table-comment (con table)
   "Return the comment on TABLE in a PostgreSQL database.
 TABLE can be a string or a schema-qualified name. Uses database connection CON."
   (pcase (pgcon-server-variant con)
-    ('cratedb nil)
-    ('questdb nil)
-    ('spanner nil)
-    ('ydb nil)
+    ('cratedb
+     (warn "CrateDB does not implement table comments")
+     nil)
+    ('questdb
+     (warn "QuestDB does not implement table comments")
+     nil)
+    ('spanner
+     (warn "Spanner does not implement table comments")
+     nil)
+    ('ydb
+     (warn "YDB does not implement table comments")
+     nil)
     ;; Our query below using PostgreSQL system tables triggers an internal exception in CockroachDB,
     ;; so we use their non-standard "SHOW TABLES" query. The SHOW TABLES command does not accept a
     ;; WHERE clause.
@@ -3065,14 +3142,25 @@ TABLE can be a string or a schema-qualified name. Uses database connection CON."
                   (or (not schema-name)
                       (string= schema-name (nth table-schema-pos tuple))))
         return (nth comment-pos tuple))))
-    ;; Possibly some other variants use the syntax "COMMENT ON TABLE tname" to query the comment.
+    ('risingwave
+     ;; RisingWave implements the obj_description() function, but annoyingly returns empty values
+     ;; even when comments are defined. Comment data is available in the rw_description table.
+     (let* ((classoid (pg--table-classoid con table))
+            (sql "SELECT description FROM rw_catalog.rw_description WHERE objoid=$1 AND objsubid IS NULL")
+            (res (pg-exec-prepared con sql `((,classoid . "int4"))))
+            (row (pg-result res :tuple 0)))
+       (cl-first row)))
+    ;; TODO: possibly some other PostgreSQL variants use the syntax "COMMENT ON TABLE tname" to
+    ;; query the comment.
     (_ (let* ((t-id (pg-escape-identifier table))
+              ;; TODO: use an SQL query that avoids escaping the table identifier.
               (sql "SELECT obj_description($1::regclass::oid, 'pg_class')")
               (res (pg-exec-prepared con sql `((,t-id . "text"))))
               (tuples (pg-result res :tuples)))
          (when tuples
            (caar tuples))))))
 
+;; Support for (setf (pg-table-comment con table) "comment")
 (gv-define-setter pg-table-comment (comment con table)
   `(pcase (pgcon-server-variant ,con)
      ('cratedb nil)
@@ -3080,10 +3168,16 @@ TABLE can be a string or a schema-qualified name. Uses database connection CON."
      ('spanner nil)
      ('ydb nil)
      (_
-      (let* ((sql (format "COMMENT ON TABLE %s IS %s"
+      (let* ((cmt (if ,comment
+                      (pcase (pgcon-server-variant ,con)
+                        ;; RisingWave does not support the escaped literal format E'foo' that is
+                        ;; used by pg-escape-identifier.
+                        ('risingwave (concat "'" ,comment "'"))
+                        (_ (pg-escape-literal ,comment)))
+                    "NULL"))
+             (sql (format "COMMENT ON TABLE %s IS %s"
                           (pg-escape-identifier ,table)
-                          (if ,comment (pg-escape-literal ,comment)
-                            "NULL"))))
+                          cmt)))
         ;; We can't use a prepared statement in this situation.
         (pg-exec ,con sql)
         ,comment))))
@@ -3305,6 +3399,21 @@ Using connection to PostgreSQL CON."
 TABLE can be a string or a schema-qualified name. Uses database connection CON."
   (pcase (pgcon-server-variant con)
     ('cratedb nil)
+    ;; RisingWave implements the col_description() function, but annoyingly returns empty values
+    ;; even when comments are defined. Comment data is available in the rw_description table.
+    ('risingwave
+     (let* ((classoid (pg--table-classoid con table))
+            (t-id (pg-escape-identifier table))
+            (res (pg-exec con (format "SELECT * FROM %s LIMIT 0" t-id)))
+            (column-number (or (cl-position column (pg-result res :attributes)
+                                            :key #'cl-first
+                                            :test #'string=)
+                               (signal 'pg-user-error (list (format "Column %s not found in table %s"
+                                                                    column table)))))
+            (sql "SELECT description FROM rw_catalog.rw_description WHERE objoid=$1 AND objsubid=$2")
+            (res (pg-exec-prepared con sql `((,classoid . "int4") (,(1+ column-number) . "int4"))))
+            (row (pg-result res :tuple 0)))
+       (cl-first row)))
     (_ (let* ((t-id (pg-escape-identifier table))
               (res (pg-exec con (format "SELECT * FROM %s LIMIT 0" t-id)))
               (column-number (or (cl-position column (pg-result res :attributes)
@@ -3324,11 +3433,17 @@ TABLE can be a string or a schema-qualified name. Uses database connection CON."
      ('questdb nil)
      ('spanner nil)
      (_
-      (let* ((sql (format "COMMENT ON COLUMN %s.%s IS %s"
+      (let* ((cmt (if ,comment
+                      (pcase (pgcon-server-variant ,con)
+                        ;; RisingWave does not support the escaped literal format E'foo' that is
+                        ;; used by pg-escape-identifier.
+                        ('risingwave (concat "'" ,comment "'"))
+                        (_ (pg-escape-literal ,comment)))
+                    "NULL"))
+             (sql (format "COMMENT ON COLUMN %s.%s IS %s"
                           (pg-escape-identifier ,table)
                           (pg-escape-identifier ,column)
-                          (if ,comment (pg-escape-literal ,comment)
-                            "NULL"))))
+                          cmt)))
         ;; We can't use a prepared statement in this situation.
         (pg-exec ,con sql)
         ,comment))))

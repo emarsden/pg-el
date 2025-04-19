@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.53] - Unreleased
+
+- In `pg-sync`, try to read the `ReadyForQuery` message sent by the backend.
+
+- Add test code for the PgDog and PgCat sharding connection poolers.
+
+- Implement workarounds for the RisingWave variant in `pg-table-comment` and `pg-column-comment` and
+  their companion setf functions.
+
+- Populate our oid<->typname mappings with predefined data for variants that lack a properly populated
+  `pg_type` table (this is the case for GreptimeDB, which contains invalud information such as `UInt8`
+  <-> 7). Although strictly speaking there is no guarantee that this internal information will
+  remain unchanged in future PostgreSQL releases, it is unlikely to change.
+
 
 ## [0.52] - 2025-04-06
 
