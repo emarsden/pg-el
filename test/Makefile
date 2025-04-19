@@ -492,6 +492,36 @@ test-pgbouncer: test-pg.el
 	${DOCKER} stop pgbouncer
 
 
+# pgcat bouncer/sharding middleware
+#
+# https://github.com/postgresml/pgcat
+# https://github.com/postgresml/pgcat/blob/main/Dockerfile
+test-pgcat: test-pg.el
+	cp pgcat-config.toml /tmp
+	${DOCKER} run --rm --name pgcat \
+	   -v /tmp/pgcat-config.toml:/etc/pgcat/pgcat.toml \
+	   --net host \
+	   -d ghcr.io/postgresml/pgcat:latest
+	sleep 5
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:6432/pgeltestdb $(MAKE) test
+	${DOCKER} stop pgcat
+
+
+# pgdog bouncer/sharding middleware (same developer as pgcat)
+#
+# https://github.com/pgdogdev/pgdog
+test-pgdog: test-pg.el
+	cp pgdog-config.toml pgdog-users.toml /tmp
+	${DOCKER} run --rm --name pgdog \
+	   -v /tmp/pgdog-config.toml:/pgdog/pgdog.toml \
+	   -v /tmp/pgdog-users.toml:/pgdog/users.toml \
+	   --net host \
+	   -d ghcr.io/pgdogdev/pgdog:main
+	sleep 5
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5469/pgeltestdb $(MAKE) test
+	${DOCKER} stop pgdog
+
+
 # CrateDB uses a default database name of "doc" that we can't set via Docker. Doesn't get very far
 # through the tests: CrateDB doesn't accept a query which only contains an SQL comment, and doesn't
 # implement the BYTEA, JSON, JSONB and HSTORE types, doesn't support COPY, doesn't support Unicode
@@ -671,7 +701,7 @@ test-spanner: test-pg.el
 	  --publish 127.0.0.1:5499:5432 \
 	  -d gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:latest -d pgeltestdb
 	sleep 2
-	PGEL_PORT=5499 PGEL_DATABASE=pgeltestdb $(MAKE) test
+	PGURI=postgresql://postgres@127.0.0.1:5499/pgeltestdb $(MAKE) test
 	${DOCKER} stop spanner
 
 
@@ -702,7 +732,7 @@ test-ydb: test-pg.el
 	${DOCKER} stop ydb
 
 
-# Last tested 2025-03 with version 25.1. Very limited PostgreSQL support: there is no pg_type table
+# Last tested 2025-04 with version 25.1. Very limited PostgreSQL support: there is no pg_type table
 # so we can't retrieve information regarding the OID of builtin types. We have to be careful during
 # the initialization sequence not to send the query "SET datestyle = 'ISO'", which would fail and cause
 # the network connection to be reset (!).
@@ -747,7 +777,7 @@ test-greptimedb: test-pg.el
 	${DOCKER} stop greptimedb
 
 
-# RisingWave event streaming database. Last tested 2025-03 with v2.2.0.
+# RisingWave event streaming database.
 # https://github.com/risingwavelabs/risingwave
 # Also at ghcr.io/risingwavelabs/risingwave
 # https://docs.risingwave.com/get-started/quickstart
@@ -759,7 +789,7 @@ test-risingwave: test-pg.el
 	${DOCKER} run --rm --name risingwave \
 	  --pull=newer \
 	  -e ENABLE_TELEMETRY=false \
-	  --publish 4566:4566 \
+	  --publish 127.0.0.1:4566:4566 \
 	  -d docker.io/risingwavelabs/risingwave:latest single_node
 	sleep 5
 	PGURI=postgresql://root@127.0.0.1:4566/dev $(MAKE) test
@@ -784,6 +814,15 @@ test-alloydb: test-pg.el
 	sleep 10
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:4481/pgeltestdb $(MAKE) test
 	${DOCKER} stop alloydb
+
+
+# ChronDB -- git-backed database
+# https://github.com/moclojer/chrondb
+#
+# This has extremely poor PostgreSQL wire protocol support (eg. no support for the extended query
+# protocol).
+test-chrondb: test-pg.el
+	PGURI=postgresql://chrondb@127.0.0.1:5432/chrondb $(MAKE) test
 
 
 # Create and populate a new database with information concerning works by Shakespeare.
