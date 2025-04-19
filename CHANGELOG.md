@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.53] - Unreleased
+## [0.53] - 2025-04-19
 
 - In `pg-sync`, try to read the `ReadyForQuery` message sent by the backend.
 
