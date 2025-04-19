@@ -162,6 +162,7 @@
                ,@body)))))
 (put 'with-pg-connection-local 'lisp-indent-function 'defun)
 
+
 ;; Some utility functions to allow us to skip some tests that we know fail on some PostgreSQL
 ;; versions or hosters or semi-compatible implementations
 (defun pg-test-is-cratedb (con)
@@ -263,7 +264,7 @@
       (pgtest-add #'pg-test-basic)
       (pgtest-add #'pg-test-insert)
       (pgtest-add #'pg-test-procedures
-                  :skip-variants '(cratedb risingwave materialize ydb xata questdb))
+                  :skip-variants '(cratedb spanner risingwave materialize ydb xata questdb))
       ;; RisingWave is not able to parse a TZ value of "UTC-01:00" (POSIX format).
       (pgtest-add #'pg-test-date
                   :skip-variants '(cratedb risingwave materialize ydb)
@@ -311,6 +312,8 @@
                   :skip-variants '(cratedb risingwave questdb greptimedb ydb materialize spanner))
       (pgtest-add #'pg-test-server-prepare
                   :skip-variants '(cratedb risingwave questdb greptimedb ydb))
+      (pgtest-add #'pg-test-comments
+                   :skip-variants '(ydb cratedb cockroachdb spanner questdb))
       (pgtest-add #'pg-test-metadata
                   :skip-variants '(cratedb cockroachdb risingwave materialize questdb greptimedb ydb spanner))
       ;; CrateDB doesn't support the JSONB type. CockroachDB doesn't support casting to JSON.
@@ -419,7 +422,6 @@
       (message "  Table: %s" table))))
 
 
-
 (defun pg-test-prepared (con)
   (cl-labels ((row (query args) (pg-result (pg-exec-prepared con query args) :tuple 0))
               (scalar (query args) (car (row query args)))
@@ -428,6 +430,7 @@
     (should (approx= 42.0 (scalar "SELECT 42.00" (list))))
     (should (equal nil (scalar "SELECT NULL" (list))))
     (unless (member (pgcon-server-variant con) '(ydb))
+      (pg-exec con "DEALLOCATE ALL")
       (should (equal nil (scalar "" (list))))
       (pg-exec con "PREPARE pgtest_foobles(integer) AS SELECT $1 + 1")
       (let* ((res (pg-exec con "EXECUTE pgtest_foobles(41)"))
@@ -628,6 +631,7 @@
     (unless (member (pgcon-server-variant con) '(cratedb))
       (should (eql nil (row "-- comment")))
       (should (eql nil (row "  /* only a comment */ "))))
+    (should (eql 42 (scalar "SELECT /* FREE PALESTINE */ 42 ")))
     (should (equal (list 1 nil "all") (row "SELECT 1,NULL,'all'")))
     (unless (member (pgcon-server-variant con) '(questdb spanner))
       (should (string= "Z" (scalar "SELECT chr(90)"))))
@@ -715,31 +719,11 @@ bar$$"))))
             (should (string= user owner))
             (should (string= user (pg-table-owner con (make-pg-qualified-name :name "count_test"))))
             (should (string= user (pg-table-owner con "count_test"))))))
-      (unless (member (pgcon-server-variant con) '(ydb cratedb cockroachdb risingwave spanner))
-        (pg-exec con "COMMENT ON TABLE count_test IS 'Counting squared'")
-        (pg-exec con "COMMENT ON COLUMN count_test.key IS 'preciouss'")
-        (let* ((res (pg-exec con "SELECT obj_description('count_test'::regclass::oid, 'pg_class')"))
-               (comment (cl-first (pg-result res :tuple 0))))
-          (should (cl-search "squared" comment)))
-        (should (cl-search "squared" (pg-table-comment con "count_test")))
-        (should (cl-search "squared" (pg-table-comment con (make-pg-qualified-name :name "count_test"))))
-        (should (cl-search "preciouss" (pg-column-comment con "count_test" "key")))
-        (should (cl-search "preciouss" (pg-column-comment con (make-pg-qualified-name :name "count_test") "key")))
-        (let ((qn (make-pg-qualified-name :schema "public" :name "count_test")))
-          (should (cl-search "squared" (pg-table-comment con qn))))
-        (setf (pg-table-comment con "count_test") "Counting cubed")
-        (should (cl-search "cubed" (pg-table-comment con "count_test")))
-        (setf (pg-table-comment con "count_test") nil)
-        (should (null (pg-table-comment con "count_test")))
-        (setf (pg-column-comment con "count_test" "key") "Oh my")
-        (should (cl-search "my" (pg-column-comment con "count_test" "key")))
-        (setf (pg-column-comment con "count_test" "key") nil)
-        (should (null (pg-column-comment con "count_test" "key"))))
       (cl-loop for i from 1 to count
                for sql = (format "INSERT INTO count_test VALUES(%s, %s)"
                                  i (* i i))
                do (pg-exec con sql))
-      (unless (member (pgcon-server-variant con) '(cratedb cockroachdb ydb risingwave materialize))
+      (unless (member (pgcon-server-variant con) '(cratedb cockroachdb ydb risingwave materialize xata))
         (pg-exec con "VACUUM ANALYZE count_test"))
       (pgtest-flush-table con "count_test")
       (should (eql count (scalar "SELECT count(*) FROM count_test")))
@@ -1213,6 +1197,49 @@ bar$$"))))
       (should (equal 2 (length vec)))
       (should (approx= 44.3 (aref vec 0)))
       (should (approx= 8999.5 (aref vec 1))))))
+
+;; Test functionality related to "COMMENT ON TABLE" and "COMMENT ON COLUMN"
+(defun pg-test-comments (con)
+  (pg-exec con "DROP TABLE IF EXISTS comment_test")
+  (pg-exec con "CREATE TABLE comment_test(cola INTEGER, colb TEXT)")
+  (should (null (pg-table-comment con "comment_test")))
+  (dolist (cmt (list "Easy" "+++---" "éàÖ🫎"))
+    (setf (pg-table-comment con "comment_test") cmt)
+    (should (string= cmt (pg-table-comment con "comment_test"))))
+  (setf (pg-table-comment con "comment_test") nil)
+  (should (null (pg-table-comment con "comment_test")))
+  (dolist (cmt (list "Simple" "!!§§??$$$$$$$$$$$$$$$" "éàÖ🫎"))
+    (setf (pg-column-comment con "comment_test" "cola") cmt)
+    (should (string= cmt (pg-column-comment con "comment_test" "cola")))
+    (setf (pg-column-comment con "comment_test" "colb") cmt)
+    (should (string= cmt (pg-column-comment con "comment_test" "colb"))))
+  (setf (pg-column-comment con "comment_test" "cola") nil)
+  (should (null (pg-column-comment con "comment_test" "cola")))
+  (setf (pg-column-comment con "comment_test" "colb") nil)
+  (should (null (pg-column-comment con "comment_test" "colb")))
+  (pg-exec con "DROP TABLE comment_test")
+  ;; Now test for a qualified-name with a custom schema (this will exercise different code paths for
+  ;; some PostgreSQL variants).
+  (pg-exec con "DROP SCHEMA IF EXISTS pgeltestschema")
+  (pg-exec con "CREATE SCHEMA pgeltestschema")
+  (pg-exec con "CREATE TABLE pgeltestschema.comment_test(cola INTEGER, colb TEXT)")
+  (let ((tname (make-pg-qualified-name :schema "pgeltestschema" :name "comment_test")))
+    (should (null (pg-table-comment con tname)))
+    (dolist (cmt (list "Easy" "ç+++---" "éàÖ🐘"))
+      (setf (pg-table-comment con tname) cmt)
+      (should (string= cmt (pg-table-comment con tname))))
+    (setf (pg-table-comment con tname) nil)
+    (should (null (pg-table-comment con tname)))
+    (dolist (cmt (list "Simple" "!!§§??$$$$$$$$$$$$$$$" "🐘🫎éàÖ"))
+      (setf (pg-column-comment con tname "cola") cmt)
+      (should (string= cmt (pg-column-comment con tname "cola")))
+      (setf (pg-column-comment con tname "colb") cmt)
+      (should (string= cmt (pg-column-comment con tname "colb"))))
+    (setf (pg-column-comment con tname "cola") nil)
+    (should (null (pg-column-comment con tname "cola")))
+    (setf (pg-column-comment con tname "colb") nil)
+    (should (null (pg-column-comment con tname "colb")))
+    (pg-exec con "DROP TABLE pgeltestschema.comment_test")))
 
 (defun pg-test-metadata (con)
   ;; Check that the pg_user table exists and that we can parse the name type
