@@ -1,5 +1,16 @@
 # Changelog
 
+
+## [0.54] - Unreleased
+
+- Implement workaround for `pg-column-default` for Google Spanner and QuestDB.
+
+- Fix for parsing empty arrays.
+
+- New subclass of `pg-error` `pg-transaction-missing` triggered by an attempt to rollback with no
+  transaction in progress.
+
+
 ## [0.53] - 2025-04-19
 
 - In `pg-sync`, try to read the `ReadyForQuery` message sent by the backend.

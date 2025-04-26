@@ -177,6 +177,7 @@ SQL queries. To avoid this overhead on establishing a connection, remove
 (define-error 'pg-unique-violation "PostgreSQL UNIQUE violation" 'pg-integrity-error)
 (define-error 'pg-check-violation "PostgreSQL CHECK violation" 'pg-integrity-error)
 (define-error 'pg-exclusion-violation "PostgreSQL exclusion violation" 'pg-integrity-error)
+(define-error 'pg-transaction-missing "PostgreSQL no transaction in progress" 'pg-programming-error)
 (define-error 'pg-transaction-timeout "PostgreSQL transaction timeout" 'pg-operational-error)
 (define-error 'pg-insufficient-privilege "PostgreSQL insufficient privilege" 'pg-operational-error)
 (define-error 'pg-insufficient-resources "PostgreSQL insufficient resources" 'pg-operational-error)
@@ -585,6 +586,7 @@ presented to the user."
                         ("23514" 'pg-check-violation)
                         ("23P01" 'pg-exclusion-violation)
                         ((pred (lambda (v) (string-prefix-p "23" v))) 'pg-integrity-error)
+                        ("25P01" 'pg-transaction-missing)
                         ("25P04" 'pg-transaction-timeout)
                         ((pred (lambda (v) (string-prefix-p "2F" v))) 'pg-programming-error)
                         ((pred (lambda (v) (string-prefix-p "38" v))) 'pg-programming-error)
@@ -2435,8 +2437,11 @@ Return nil if the extension could not be loaded."
     (unless (and (eql (aref str 0) ?{)
                  (eql (aref str (1- len)) ?}))
       (signal 'pg-protocol-error (list "Unexpected format for int array")))
-    (let ((segments (split-string (cl-subseq str 1 (- len 1)) ",")))
-      (apply #'vector (mapcar #'cl-parse-integer segments)))))
+    (let ((maybe-items (cl-subseq str 1 (- len 1))))
+      (if (zerop (length maybe-items))
+          (vector)
+        (let ((items (split-string maybe-items ",")))
+          (apply #'vector (mapcar #'cl-parse-integer items)))))))
 
 (pg-register-parser "_int2" #'pg-intarray-parser)
 (pg-register-parser "_int2vector" #'pg-intarray-parser)
@@ -2449,8 +2454,11 @@ Return nil if the extension could not be loaded."
     (unless (and (eql (aref str 0) ?{)
                  (eql (aref str (1- len)) ?}))
       (signal 'pg-protocol-error (list "Unexpected format for float array")))
-    (let ((segments (split-string (cl-subseq str 1 (- len 1)) ",")))
-      (apply #'vector (mapcar (lambda (x) (pg-float-parser x nil)) segments)))))
+    (let ((maybe-items (cl-subseq str 1 (- len 1))))
+      (if (zerop (length maybe-items))
+          (vector)
+        (let ((items (split-string maybe-items ",")))
+          (apply #'vector (mapcar (lambda (x) (pg-float-parser x nil)) items)))))))
 
 (pg-register-parser "_float4" #'pg-floatarray-parser)
 (pg-register-parser "_float8" #'pg-floatarray-parser)
@@ -2462,8 +2470,11 @@ Return nil if the extension could not be loaded."
     (unless (and (eql (aref str 0) ?{)
                  (eql (aref str (1- len)) ?}))
       (signal 'pg-protocol-error (list "Unexpected format for bool array")))
-    (let ((segments (split-string (cl-subseq str 1 (1- len)) ",")))
-      (apply #'vector (mapcar (lambda (x) (pg-bool-parser x nil)) segments)))))
+    (let ((maybe-items (cl-subseq str 1 (- len 1))))
+      (if (zerop (length maybe-items))
+          (vector)
+        (let ((items (split-string maybe-items ",")))
+          (apply #'vector (mapcar (lambda (x) (pg-bool-parser x nil)) items)))))))
 
 (pg-register-parser "_bool" #'pg-boolarray-parser)
 
@@ -2473,8 +2484,11 @@ Return nil if the extension could not be loaded."
     (unless (and (eql (aref str 0) ?{)
                  (eql (aref str (1- len)) ?}))
       (signal 'pg-protocol-error (list "Unexpected format for char array")))
-    (let ((segments (split-string (cl-subseq str 1 (1- len)) ",")))
-      (apply #'vector (mapcar (lambda (x) (pg-char-parser x encoding)) segments)))))
+    (let ((maybe-items (cl-subseq str 1 (- len 1))))
+      (if (zerop (length maybe-items))
+          (vector)
+        (let ((items (split-string maybe-items ",")))
+          (apply #'vector (mapcar (lambda (x) (pg-char-parser x encoding)) items)))))))
 
 (pg-register-parser "_char" #'pg-chararray-parser)
 (pg-register-parser "_bpchar" #'pg-chararray-parser)
@@ -2486,8 +2500,11 @@ Uses text encoding ENCODING."
     (unless (and (eql (aref str 0) ?{)
                  (eql (aref str (1- len)) ?}))
       (signal 'pg-protocol-error (list "Unexpected format for text array")))
-    (let ((segments (split-string (cl-subseq str 1 (1- len)) ",")))
-      (apply #'vector (mapcar (lambda (x) (pg-text-parser x encoding)) segments)))))
+    (let ((maybe-items (cl-subseq str 1 (- len 1))))
+      (if (zerop (length maybe-items))
+          (vector)
+        (let ((items (split-string maybe-items ",")))
+          (apply #'vector (mapcar (lambda (x) (pg-text-parser x encoding)) items)))))))
 
 (pg-register-parser "_text" #'pg-textarray-parser)
 
@@ -3109,18 +3126,10 @@ Uses database connection CON."
   "Return the comment on TABLE in a PostgreSQL database.
 TABLE can be a string or a schema-qualified name. Uses database connection CON."
   (pcase (pgcon-server-variant con)
-    ('cratedb
-     (warn "CrateDB does not implement table comments")
-     nil)
-    ('questdb
-     (warn "QuestDB does not implement table comments")
-     nil)
-    ('spanner
-     (warn "Spanner does not implement table comments")
-     nil)
-    ('ydb
-     (warn "YDB does not implement table comments")
-     nil)
+    ('cratedb nil)
+    ('questdb nil)
+    ('spanner nil)
+    ('ydb nil)
     ;; Our query below using PostgreSQL system tables triggers an internal exception in CockroachDB,
     ;; so we use their non-standard "SHOW TABLES" query. The SHOW TABLES command does not accept a
     ;; WHERE clause.
@@ -3191,9 +3200,11 @@ Uses database connection CON."
      (signal 'pg-user-error (list "pg-function-p not implemented for Risingwave")))
     ;; QuestDB does not implement the pg_proc table.
     ('questdb
-     (let* ((res (pg-exec con "SELECT name FROM functions()"))
+     (let* ((sql "SELECT name FROM functions() WHERE name=$1")
+            (res (pg-exec-prepared con sql `((,name . "text"))))
             (rows (pg-result res :tuples)))
-       (cl-position name rows :key #'cl-first :test #'string=)))
+       (not (null rows))))
+       ;; (cl-position name rows :key #'cl-first :test #'string=)))
     (_
      (let* ((sql "SELECT * FROM pg_catalog.pg_proc WHERE proname = $1")
             (res (pg-exec-prepared con sql `((,name . "text")))))
@@ -3392,6 +3403,8 @@ Using connection to PostgreSQL CON."
     ('cratedb nil)
     ('questdb nil)
     ('ydb nil)
+    ;; TODO: Materialize is incorrectly returning "DEFAULT NULL" for the query used in
+    ;; pg-column-default/full; we would try to add a workaround.
     (_ (pg-column-default/full con table column))))
 
 (defun pg-column-comment (con table column)
@@ -3399,6 +3412,8 @@ Using connection to PostgreSQL CON."
 TABLE can be a string or a schema-qualified name. Uses database connection CON."
   (pcase (pgcon-server-variant con)
     ('cratedb nil)
+    ('spanner nil)
+    ('questdb nil)
     ;; RisingWave implements the col_description() function, but annoyingly returns empty values
     ;; even when comments are defined. Comment data is available in the rw_description table.
     ('risingwave
