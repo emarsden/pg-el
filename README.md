@@ -116,7 +116,7 @@ The following PostgreSQL-compatible databases have been tested:
 
 - The [RisingWave](https://github.com/risingwavelabs/risingwave) event streaming database (Apache
   license) is mostly working. It does not support `GENERATED ALWAYS AS IDENTITY` or `SERIAL`
-  columns, nor `VACUUM ANALYZE`. Last tested 2025-04 with v2.3.0.
+  columns, nor `VACUUM ANALYZE`. Last tested 2025-05 with v2.3.1.
 
 - [CrateDB](https://crate.io/): last tested 2025-04 with version 5.10.4. CrateDB does not support
   rows (e.g. `SELECT (1,2)`), does not support the `time`, `varbit`, `bytea`, `jsonb` and `hstore`
@@ -155,7 +155,7 @@ The following PostgreSQL-compatible databases have been tested:
   `pg_catalog.pg_types` table are not the same as those used by PostgreSQL (e.g. `Int64` instead of
   `int8`), so our parsing machinery does not work. This database also has more restrictions on the use of
   identifiers than PostgreSQL (for example, `id` is not accepted as a column name, nor are
-  identifiers containing Unicode characters). Last tested v0.14 in 2025-04.
+  identifiers containing Unicode characters). Last tested v0.14.2 in 2025-05.
 
 - Hosted PostgreSQL services that have been tested: as of 2024-12
   [Railway.app](https://railway.app/) is running a Debian build of PostgreSQL 16.4, and works fine;
@@ -166,7 +166,7 @@ The following PostgreSQL-compatible databases have been tested:
   Aurora. You may however encounter difficulties with TLS connections, as noted above.
 
 It does not work in a satisfactory manner with the ClickHouse database, whose PostgreSQL support is
-too limited. As of version 25.3 in 2025-03, there is no implementation of the `pg_types` system
+too limited. As of version 25.4 in 2025-04, there is no implementation of the `pg_types` system
 table, no support for basic PostgreSQL-flavoured SQL commands such as `SET`, no support for the
 extended query mechanism.
 
