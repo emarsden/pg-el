@@ -144,6 +144,7 @@ SQL queries. To avoid this overhead on establishing a connection, remove
 (define-error 'pg-integrity-error "PostgreSQL integrity error" 'pg-error)
 (define-error 'pg-internal-error "PostgreSQL internal error" 'pg-error)
 
+(define-error 'pg-encoding-error "Client-level error encoding PostgreSQL query" 'pg-operational-error)
 (define-error 'pg-connection-error "PostgreSQL connection failure" 'pg-operational-error)
 (define-error 'pg-invalid-password "PostgreSQL invalid password" 'pg-operational-error)
 (define-error 'pg-invalid-catalog-name "PostgreSQL invalid catalog name" 'pg-operational-error)
@@ -748,7 +749,9 @@ Uses database DBNAME, user USER and password PASSWORD."
             (when (cl-search "-greptimedb-" val)
               (setf (pgcon-server-variant con) 'greptimedb))
             (when (cl-search "OrioleDB" val)
-              (setf (pgcon-server-variant con) 'orioledb)))
+              (setf (pgcon-server-variant con) 'orioledb))
+            (when (cl-search "(ReadySet)" val)
+              (setf (pgcon-server-variant con) 'readyset)))
           ;; Now some somewhat ugly code to detect semi-compatible PostgreSQL variants, to allow us
           ;; to work around some of their behaviour that is incompatible with real PostgreSQL.
           (when (string= "session_authorization" key)
@@ -1140,6 +1143,20 @@ Return a result structure which can be decoded using `pg-result'."
          (result (make-pgresult :connection con))
          (ce (pgcon-client-encoding con))
          (encoded (if ce (encode-coding-string sql ce t) sql)))
+    ;; Ensure that the SQL string is encodable with the current client-encoding system. The function
+    ;; `encode-coding-string' does not trigger an error, but rather silently replaces characters
+    ;; that can't be encoded with '?' or ' '; we don't want to send this corrupted SQL string to
+    ;; PostgreSQL. Unfortunately there does not seem to be any more efficient solution than
+    ;; searching through the list returned by `find-coding-systems-string'. Also note that this
+    ;; check only works if we are using the canonical name for an encoding system, and doesn't work
+    ;; for coding system aliases (eg. 'latin-1 for 'iso-latin-1). We ensure that we are not using
+    ;; aliases in the values contained in pg--encoding-names.
+    (when ce
+      (let ((codings (find-coding-systems-string sql)))
+        (unless (or (eq 'undecided (car codings))
+		    (memq ce codings))
+          (let ((msg (format "Can't encode `%s' with current client encoding %s" sql ce)))
+	    (signal 'pg-encoding-error (list msg))))))
     ;; (message "pg-exec: %s" sql)
     (when (pgcon-query-log con)
       (with-current-buffer (pgcon-query-log con)
@@ -1208,6 +1225,10 @@ Return a result structure which can be decoded using `pg-result'."
             (?N
              ;; a Notice response has the same structure and fields as an ErrorResponse
              (let ((notice (pg-read-error-response con)))
+               ;; This is rather ugly, but seems to be the only way of detecting YottaDB Octo on startup.
+               (when (string= "INFO" (pgerror-severity notice))
+                 (when (string-prefix-p "Generating M file [" (pgerror-message notice))
+                   (setf (pgcon-server-variant con) 'yottadb)))
                (dolist (handler pg-handle-notice-functions)
                  (funcall handler notice))))
 
@@ -1546,6 +1567,31 @@ Returns a pgresult structure (see function `pg-result')."
        (?2
         (pg-read-net-int con 4))
 
+       ;; NotificationResponse
+       (?A
+        (let* ((_msglen (pg-read-net-int con 4))
+               ;; PID of the notifying backend
+               (_pid (pg-read-int con 4))
+               (channel (pg-read-string con))
+               (payload (pg-read-string con))
+               (buf (process-buffer (pgcon-process con)))
+               (handlers (with-current-buffer buf pgcon--notification-handlers)))
+          (dolist (handler handlers)
+            (funcall handler channel payload))))
+
+       ;; ParameterStatus
+       (?S
+        (let* ((msglen (pg-read-net-int con 4))
+               (msg (pg-read-chars con (- msglen 4)))
+               (items (split-string msg (string 0)))
+               (key (cl-first items))
+               (val (cl-second items)))
+          ;; ParameterStatus items sent by the backend include application_name,
+          ;; DateStyle, in_hot_standby, integer_datetimes
+          (when (> (length key) 0)
+            (dolist (handler pg-parameter-change-functions)
+              (funcall handler con key val)))))
+
        ;; RowDescription
        (?T
         (when attributes
@@ -1602,6 +1648,11 @@ Returns a pgresult structure (see function `pg-result')."
         (let ((notice (pg-read-error-response con)))
           (dolist (handler pg-handle-notice-functions)
             (funcall handler notice))))
+
+       ;; CursorResponse
+       (?P
+        (let ((portal (pg-read-string con)))
+          (setf (pgresult-portal result) portal)))
 
        ;; ReadyForQuery
        (?Z
@@ -2213,23 +2264,23 @@ Uses the client-encoding specified in the connection to PostgreSQL CON."
       object)))
 
 
-;; Map between PostgreSQL names for encodings and their Emacs name.
+;; Map between PostgreSQL names for encodings and their Emacs name. See the list at
+;;    https://www.postgresql.org/docs/current/multibyte.html
+;;
 ;; For Emacs, see coding-system-alist.
 (defconst pg--encoding-names
-  '(("UTF8"    . utf-8)
-    ("UTF-8"   . utf-8)
+  `(("UTF8"    . utf-8)
     ("UNICODE" . utf-8)
-    ("UTF16"   . utf-16)
-    ("LATIN1"  . latin-1)
-    ("LATIN2"  . latin-2)
-    ("LATIN3"  . latin-3)
-    ("LATIN4"  . latin-4)
-    ("LATIN5"  . latin-5)
-    ("LATIN6"  . latin-6)
-    ("LATIN7"  . latin-7)
-    ("LATIN8"  . latin-8)
-    ("LATIN9"  . latin-9)
-    ("LATIN10" . latin-10)
+    ("LATIN1"  . ,(coding-system-base 'latin-1))
+    ("LATIN2"  . ,(coding-system-base 'latin-2))
+    ("LATIN3"  . ,(coding-system-base 'latin-3))
+    ("LATIN4"  . ,(coding-system-base 'latin-4))
+    ("LATIN5"  . ,(coding-system-base 'latin-5))
+    ("LATIN6"  . ,(coding-system-base 'latin-6))
+    ("LATIN7"  . ,(coding-system-base 'latin-7))
+    ("LATIN8"  . ,(coding-system-base 'latin-8))
+    ("LATIN9"  . ,(coding-system-base 'latin-9))
+    ("LATIN10" . ,(coding-system-base 'latin-10))
     ("WIN1250" . windows-1250)
     ("WIN1251" . windows-1251)
     ("WIN1252" . windows-1252)
@@ -2239,21 +2290,39 @@ Uses the client-encoding specified in the connection to PostgreSQL CON."
     ("WIN1256" . windows-1256)
     ("WIN1257" . windows-1257)
     ("WIN1258" . windows-1258)
-    ("SHIFT_JIS_2004" . shift_jis-2004)
-    ("SJIS"    . shift_jis-2004)
-    ("GB18030" . gb18030)
-    ("EUC_TW"  . euc-taiwan)
-    ("EUC_KR"  . euc-korea)
-    ("EUC_JP"  . euc-japan)
-    ("EUC_CN"  . euc-china)
-    ("BIG5"    . big5)
-    ("SQL_ASCII" . ascii)))
+    ("SHIFT_JIS_2004" . ,(coding-system-base 'shift_jis-2004))
+    ("SJIS"    . ,(coding-system-base 'shift_jis-2004))
+    ("GB18030" . ,(coding-system-base 'gb18030))
+    ("EUC_TW"  . ,(coding-system-base 'euc-taiwan))
+    ("EUC_KR"  . ,(coding-system-base 'euc-korea))
+    ("EUC_JP"  . ,(coding-system-base 'euc-japan))
+    ("EUC_CN"  . ,(coding-system-base 'euc-china))
+    ("BIG5"    . ,(coding-system-base 'big5))
+    ("SQL_ASCII" . ,(coding-system-base 'ascii))))
 
 (defun pg-normalize-encoding-name (name)
   "Convert PostgreSQL encoding NAME to an Emacs encoding name."
   (if (fboundp 'string-equal-ignore-case)
       (cdr (assoc name pg--encoding-names #'string-equal-ignore-case))
     (cdr (assoc name pg--encoding-names #'string-equal))))
+
+;; Note: this set_config() function call does not work on all variants; for example it fails on QuestDB.
+(defun pg-set-client-encoding (con encoding)
+  "Change the encoding used by the client to ENCODING.
+ENCODING should be a string of the form \"UTF8\" or \"LATIN1\" (see
+`pg--encoding-names' for all values supported by PostgreSQL). Sends the
+SQL command to change the value of the client_encoding runtime
+configuration parameter and also modifies the pgcon-client-encoding for
+the PostgreSQL connection CON."
+  (let ((emacs-encoding-name (pg-normalize-encoding-name encoding)))
+    (unless emacs-encoding-name
+      (signal 'pg-encoding-error (list (format "Unknown encoding %s" encoding))))
+    (let* ((res (pg-exec-prepared con "SELECT set_config('client_encoding', $1, false)"
+                                 `((,encoding . "text"))))
+           (status (pg-result res :status)))
+      (unless (string= "SELECT 1" status)
+        (signal 'pg-error (format "Couldn't set client_encoding to %s" encoding))))
+    (setf (pgcon-client-encoding con) emacs-encoding-name)))
 
 ;; Note that if you register a parser for a new type-name after a PostgreSQL connection has been
 ;; established, you must call (pg-initialize-parsers *connection*) to hook the parser into the
@@ -3245,7 +3314,7 @@ Uses database connection CON."
   (pcase (pgcon-server-variant con)
     ;; QuestDB doesn't really support schemas.
     ('questdb (list "sys" "public"))
-    ('risingwave
+    ((or 'risingwave 'yottadb)
      (let ((res (pg-exec con "SELECT DISTINCT table_schema FROM information_schema.tables")))
        (apply #'append (pg-result res :tuples))))
     (_
@@ -3660,6 +3729,10 @@ that will be read."
              ;; these field types: https://www.postgresql.org/docs/current/protocol-error-fields.html
              do (cl-case field
                   (?S
+                   (setf (pgerror-severity err) val))
+                  ;; This is the unlocalized severity name (only sent for PostgreSQL > 9.6). It's
+                  ;; probably more useful to the user so we keep that.
+                  (?V
                    (setf (pgerror-severity err) val))
                   (?C
                    (setf (pgerror-sqlstate err) val))

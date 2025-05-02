@@ -163,44 +163,6 @@
 (put 'with-pg-connection-local 'lisp-indent-function 'defun)
 
 
-;; Some utility functions to allow us to skip some tests that we know fail on some PostgreSQL
-;; versions or hosters or semi-compatible implementations
-(defun pg-test-is-cratedb (con)
-  (eq (pgcon-server-variant con) 'cratedb))
-
-;; Nothing is present in the server-version string. But it has some unusual behaviour; for example
-;; not respecting the table_owner setting (the value returned by pg-table-owner is not the same as
-;; the username we use to connect).
-(defun pg-test-is-xata (con)
-  (eq (pgcon-server-variant con) 'xata))
-
-(defun pg-test-is-cockroachdb (con)
-  (eq (pgcon-server-variant con) 'cockroachdb))
-
-(defun pg-test-is-yugabyte (con)
-  (cl-search "-YB-" (pg-backend-version con)))
-
-;; Google Spanner (or at least, the emulator which is what we have tested) pretends to be
-;; "PostgreSQL 14.1", but doesn't implement some quite basic PostgreSQL functionality, such as the
-;; CHR() function.
-(defun pg-test-is-spanner (con)
-  ;; See function pg-test-note-param-change below; this is an ugly hack!
-  (gethash "is-spanner-p" (pgcon-prepared-statement-cache con) nil))
-
-   ;; QuestDB doesn't clearly identify itself in its version string, and doesn't implement CHR()
-(defun pg-test-is-questdb (con)
-  (cl-search "Visual C++ build 1914" (pg-backend-version con)))
-
-(defun pg-test-is-ydb (con)
-  (gethash "is-ydb-p"  (pgcon-prepared-statement-cache con) nil))
-
-(defun pg-test-is-immudb (con)
-  (cl-search "implemented by immudb" (pg-backend-version con)))
-
-(defun pg-test-is-greptimedb (con)
-  (cl-search "-greptime-" (pg-backend-version con)))
-
-
 (defun pg-connection-tests ()
   (dolist (v (list "host=localhost port=5432 dbname=pgeltestdb user=pgeltestuser password=pgeltest"
                    "port=5432 dbname=pgeltestdb user=pgeltestuser password=pgeltest"
@@ -242,7 +204,7 @@
       (message "Backend major-version is %s" (pgcon-server-version-major con))
       (message "Detected backend variant: %s" (pgcon-server-variant con))
       (unless (member (pgcon-server-variant con)
-                      '(cockroachdb cratedb yugabyte ydb xata greptimedb risingwave clickhouse))
+                      '(cockroachdb cratedb yugabyte ydb xata greptimedb risingwave clickhouse yottadb))
         (when (> (pgcon-server-version-major con) 11)
           (let* ((res (pg-exec con "SELECT current_setting('ssl_library')"))
                  (row (pg-result res :tuple 0)))
@@ -271,10 +233,10 @@
                   :need-emacs "29.1")
       ;; QuestDB does not support the timestamptz column type.
       (pgtest-add #'pg-run-tz-tests
-                  :skip-variants '(risingwave materialize ydb clickhouse spanner questdb))
+                  :skip-variants '(risingwave materialize ydb clickhouse spanner questdb readyset))
       (pgtest-add #'pg-test-numeric)
       (pgtest-add #'pg-test-numeric-range
-                  :skip-variants '(xata cratedb cockroachdb ydb risingwave questdb clickhouse greptimedb spanner))
+                  :skip-variants '(xata cratedb cockroachdb ydb risingwave questdb clickhouse greptimedb spanner octodb))
       (pgtest-add #'pg-test-prepared
                   :skip-variants '(ydb)
                   :need-emacs "28")
@@ -290,14 +252,14 @@
                   :skip-variants '(risingwave ydb)
                   :need-emacs "28")
       (pgtest-add #'pg-test-collation
-                  :skip-variants '(xata cratedb questdb clickhouse greptimedb))
+                  :skip-variants '(xata cratedb questdb clickhouse greptimedb octodb))
       (pgtest-add #'pg-test-xml
                   :skip-variants '(xata ydb cockroachdb yugabyte clickhouse alloydb))
       (pgtest-add #'pg-test-uuid
-                  :skip-variants '(cratedb risingwave ydb clickhouse greptimedb spanner))
+                  :skip-variants '(cratedb risingwave ydb clickhouse greptimedb spanner octodb))
       ;; Risingwave doesn't support VARCHAR(N) type. YDB doesn't support SELECT generate_series().
       (pgtest-add #'pg-test-result
-                  :skip-variants  '(risingwave ydb spanner))
+                  :skip-variants  '(risingwave ydb spanner clickhouse))
       (pgtest-add #'pg-test-cursors
                   :skip-variants '(xata cratedb cockroachdb risingwave questdb greptimedb ydb materialize spanner))
       ;; CrateDB does not support the BYTEA type (!), nor sequences. Spanner does not support the encode() function.
@@ -305,11 +267,11 @@
                   :skip-variants '(cratedb risingwave spanner materialize))
       ;; Spanner does not support the INCREMENT clause in CREATE SEQUENCE.
       (pgtest-add #'pg-test-sequence
-                  :skip-variants '(cratedb risingwave questdb materialize greptimedb ydb spanner))
+                  :skip-variants '(cratedb risingwave questdb materialize greptimedb ydb spanner clickhouse))
       (pgtest-add #'pg-test-array
-                  :skip-variants '(cratedb risingwave questdb materialize))
+                  :skip-variants '(cratedb risingwave questdb materialize clickhouse))
       (pgtest-add #'pg-test-enums
-                  :skip-variants '(cratedb risingwave questdb greptimedb ydb materialize spanner))
+                  :skip-variants '(cratedb risingwave questdb greptimedb ydb materialize spanner octodb clickhouse))
       (pgtest-add #'pg-test-server-prepare
                   :skip-variants '(cratedb risingwave questdb greptimedb ydb))
       (pgtest-add #'pg-test-comments
@@ -318,31 +280,34 @@
                   :skip-variants '(cratedb cockroachdb risingwave materialize questdb greptimedb ydb spanner))
       ;; CrateDB doesn't support the JSONB type. CockroachDB doesn't support casting to JSON.
       (pgtest-add #'pg-test-json
-                  :skip-variants '(xata cratedb risingwave questdb greptimedb ydb materialize spanner))
+                  :skip-variants '(xata cratedb risingwave questdb greptimedb ydb materialize spanner octodb))
       (pgtest-add #'pg-test-schemas
                   :skip-variants '(xata cratedb risingwave questdb ydb materialize))
       (pgtest-add #'pg-test-hstore
-                  :skip-variants '(risingwave materialize))
+                  :skip-variants '(risingwave materialize octodb readyset))
       ;; Xata doesn't support extensions, but doesn't signal an SQL error when we attempt to load the
       ;; pgvector extension, so our test fails despite being intended to be robust.
       (pgtest-add #'pg-test-vector
-                  :skip-variants '(xata cratedb materialize))
+                  :skip-variants '(xata cratedb materialize octodb))
       (pgtest-add #'pg-test-tsvector
-                  :skip-variants '(xata cratedb cockroachdb risingwave questdb greptimedb ydb materialize spanner))
+                  :skip-variants '(xata cratedb cockroachdb risingwave questdb greptimedb ydb materialize spanner octodb))
       (pgtest-add #'pg-test-bm25
-                  :skip-variants '(xata cratedb cockroachdb risingwave materialize))
+                  :skip-variants '(xata cratedb cockroachdb risingwave materialize octodb))
       (pgtest-add #'pg-test-geometric
                   :skip-variants '(xata cratedb cockroachdb risingwave questdb materialize spanner))
       (pgtest-add #'pg-test-gis
                   :skip-variants '(xata cratedb cockroachdb risingwave materialize))
       (pgtest-add #'pg-test-copy
-                  :skip-variants '(spanner ydb cratedb risingwave materialize))
+                  :skip-variants '(spanner ydb cratedb risingwave materialize questdb))
       ;; QuestDB fails due to lack of support for the NUMERIC type
       (pgtest-add #'pg-test-copy-large
                   :skip-variants '(spanner ydb cratedb risingwave questdb materialize))
       ;; Apparently Xata does not support CREATE DATABASE
       (pgtest-add #'pg-test-createdb
                   :skip-variants '(xata cratedb questdb ydb))
+      ;; Many PostgreSQL variants only support UTF8 as the client encoding.
+      (pgtest-add #'pg-test-client-encoding
+                  :skip-variants '(cratedb cockroachdb ydb risingwave materialize spanner greptimedb xata))
       (pgtest-add #'pg-test-unicode-names
                   :skip-variants '(xata cratedb cockroachdb risingwave questdb ydb spanner))
       (pgtest-add #'pg-test-returning
@@ -366,21 +331,7 @@
 
 
 (defun pg-test-note-param-change (con name value)
-  (message "PG> backend parameter %s=%s" name value)
-  (when (and (string= "session_authorization" name)
-             (string-prefix-p "xata" value))
-    ;; This is a rather rude and ugly way of hiding some private information in the PostgreSQL
-    ;; connection struct.
-    (puthash "is-xata-p" t (pgcon-prepared-statement-cache con)))
-  ;; Google Spanner (or at least the emulator) using PGAdapter for PostgreSQL wire protocol support
-  (when (and (string= "session_authorization" name)
-             (string= "PGAdapter" value))
-    (puthash "is-spanner-p" t (pgcon-prepared-statement-cache con)))
-  (when (and (string= "server_version" name)
-             (cl-search "ydb stable" value))
-    (setf (pgcon-timeout con) 50)
-    (puthash "is-ydb-p" t (pgcon-prepared-statement-cache con))))
-
+  (message "PG> backend parameter %s=%s" name value))
 
 (defun pg-test ()
   (let ((pg-parameter-change-functions (cons #'pg-test-note-param-change pg-parameter-change-functions)))
@@ -429,6 +380,9 @@
     (should (equal 42 (scalar "SELECT 42" (list))))
     (should (approx= 42.0 (scalar "SELECT 42.00" (list))))
     (should (equal nil (scalar "SELECT NULL" (list))))
+    (unless (member (pgcon-server-variant con) '(immudb))
+      (should (equal (list t nil) (row "SELECT $1, $2" `((t . "bool") (nil . "bool")))))
+      (should (equal (list -33 "ZZz" 9999) (row "SELECT $1,$2,$3" `((-33 . "int4") ("ZZz" . "text") (9999 . "int8"))))))
     (unless (member (pgcon-server-variant con) '(ydb))
       (pg-exec con "DEALLOCATE ALL")
       (should (equal nil (scalar "" (list))))
@@ -603,8 +557,9 @@
               (scalar (sql) (cl-first (pg-result (pg-exec con sql) :tuple 0))))
     (should (equal (list 42) (row "SELECT 42")))
     (should (equal (list t) (row "SELECT true")))
-    (unless (pg-test-is-immudb con)
-      (should (equal (list t nil) (row "SELECT true, false"))))
+    (unless (member (pgcon-server-variant con) '(immudb))
+      (should (equal (list t nil) (row "SELECT true, false")))
+      (should (equal (list -33 "ZZ" 9999) (row "SELECT -33, 'ZZ', 9999"))))
     (should (eql -1 (scalar "SELECT -1::integer")))
     (should (eql 66 (scalar "SELECT 66::int2")))
     (should (eql -66 (scalar "SELECT -66::int2")))
@@ -644,10 +599,10 @@
         (should (string= "éléphant" (cl-first col1)))))
     ;; Note that we need to escape the ?\ character in an elisp string by repeating it.
     ;; CrateDB does not support the BYTEA type.
-    (unless (pg-test-is-cratedb con)
+    (unless (member (pgcon-server-variant con) '(cratedb))
       (should (eql 3 (length (scalar "SELECT '\\x123456'::bytea"))))
       (should (string= (string #x12 #x34 #x56) (scalar "SELECT '\\x123456'::bytea"))))
-    (unless (pg-test-is-spanner con)
+    (unless (member (pgcon-server-variant con) '(spanner))
       (should (eql nil (row " SELECT 3 WHERE 1=0"))))
     (unless (member (pgcon-server-variant con) '(cratedb spanner ydb))
       ;; these are row expressions, not standard SQL
@@ -753,7 +708,6 @@ bar$$"))))
       (pg-exec con "CREATE TABLE count_test(key INT PRIMARY KEY, val INT)")
       (should (pgtest-have-table con "count_test"))
       (should (member "val" (pg-columns con "count_test")))
-      ;; CrateDB does not implement TRUNCATE TABLE
       (unless (member (pgcon-server-variant con) '(cratedb risingwave ydb))
         (pg-exec con "TRUNCATE TABLE count_test"))
       (dotimes (i count)
@@ -804,6 +758,46 @@ bar$$"))))
                    (3 (pfp ps3 `((0 . "int4")))))))
           (should (eql v 10)))))
     (pg-exec con "DROP TABLE prep")))
+
+
+;; https://www.postgresql.org/docs/current/multibyte.html
+(defun pg-test-client-encoding (con)
+  (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0)))
+            (row (sql) (pg-result (pg-exec con sql) :tuple 0)))
+    (unwind-protect
+        (progn 
+          ;; (pg-exec con "SET client_encoding TO 'SQL_ASCII'")
+          ;; (setf (pgcon-client-encoding con) 'ascii)
+          (pg-set-client-encoding con "SQL_ASCII")
+          (should (equal "foobles" (scalar "SELECT 'foobles'")))
+          (should (eql 'ok (condition-case nil
+                               (pg-exec con "SELECT '😏'")
+                             (pg-encoding-error 'ok))))
+          (should (equal "FOOBLES" (scalar "SELECT 'FOOBLES'")))
+          ;; (pg-exec con "SET client_encoding TO 'UTF8'")
+          ;; (setf (pgcon-client-encoding con) 'utf-8)
+          (pg-set-client-encoding con "UTF8")
+          (should (equal "foobles" (scalar "SELECT 'foobles'")))
+          (should (equal "föéàµ©" (scalar "SELECT 'föéàµ©'")))
+          (should (equal (list "é!à" "more😏than") (row "SELECT 'é!à', 'more😏than'")))
+          (should (equal "墲いfooローマ字入力" (scalar "SELECT '墲いfooローマ字入力'")))
+          ;; This works with 'iso-latin-1 but not with 'latin-1, due to an Emacs issue.
+          ;; (pg-exec con "SET client_encoding TO 'LATIN1'")
+          ;; (setf (pgcon-client-encoding con) 'iso-latin-1)
+          (pg-set-client-encoding con "LATIN1")
+          (should (equal "foobles" (scalar "SELECT 'foobles'")))
+          (should (equal "föéàµ" (scalar "SELECT 'föéàµ'")))
+          ;; (pg-exec con "SET client_encoding TO 'WIN1250'")
+          ;; (setf (pgcon-client-encoding con) 'windows-1250)
+          (pg-set-client-encoding con "WIN1250")
+          (should (equal "foobles" (scalar "SELECT 'foobles'")))
+          (should (equal "ŐÇąěý" (scalar "SELECT 'ŐÇąěý'")))
+          ;; (pg-exec con "SET client_encoding TO 'EUC_JP'")
+          ;; (setf (pgcon-client-encoding con) 'eucjp-ms)
+          (pg-set-client-encoding con "EUC_JP")
+          (should (equal "foobles" (scalar "SELECT 'foobles'")))
+          (should (equal "あえをビル" (scalar "SELECT 'あえをビル'"))))
+      (pg-set-client-encoding con "UTF8"))))
 
 
 (defun pg-test-procedures (con)
@@ -947,6 +941,9 @@ bar$$"))))
     (should (eql 66 (scalar "SELECT 66::int8")))
     (should (eql -1 (scalar "SELECT -1::int8")))
     (should (eql 42 (scalar "SELECT '42'::smallint")))
+    ;; RisingWave doesn't support numeric(x, y) or decimal(x, y).
+    (unless (member (pgcon-server-variant con) '(risingwave questdb))
+      (should (approx= 3.14 (scalar "SELECT 3.14::decimal(10,2) as pi"))))
     ;; CrateDB doesn't support the OID type, nor casting integers to bits.
     (unless (member (pgcon-server-variant con) '(cratedb risingwave materialize))
       (should (eql 123 (scalar "SELECT 123::oid")))
@@ -1008,7 +1005,7 @@ bar$$"))))
                   ;; CrateDB prints the result in this way (valid if not hugely helpful)
                   (string= 4days "4 days 00:00:00"))))
     ;; CrateDB returns this as a string "3 days 00:00:00"
-    (unless (pg-test-is-cratedb con)
+    (unless (member (pgcon-server-variant con) '(cratedb))
       (should (eql (scalar "SELECT date '2001-10-01' - date '2001-09-28'") 3)))))
 
 (defun pg-test-numeric-range (con)
@@ -1156,7 +1153,7 @@ bar$$"))))
     (pg-exec con "DROP SEQUENCE IF EXISTS foo_seq")
     (pg-exec con "CREATE SEQUENCE IF NOT EXISTS foo_seq INCREMENT 20 START WITH 400")
     (should (equal 400 (scalar "SELECT nextval('foo_seq')")))
-    (unless (pg-test-is-yugabyte con)
+    (unless (member (pgcon-server-variant con) '(yugabyte))
       (should (equal 400 (scalar "SELECT last_value FROM pg_sequences WHERE sequencename='foo_seq'"))))
     (should (equal 420 (scalar "SELECT nextval('foo_seq')")))
     (should (equal 440 (scalar "SELECT nextval('foo_seq')")))
@@ -1233,7 +1230,7 @@ bar$$"))))
   (pg-exec con "DROP TABLE comment_test")
   ;; Now test for a qualified-name with a custom schema (this will exercise different code paths for
   ;; some PostgreSQL variants).
-  (pg-exec con "DROP SCHEMA IF EXISTS pgeltestschema")
+  (pg-exec con "DROP SCHEMA IF EXISTS pgeltestschema CASCADE")
   (pg-exec con "CREATE SCHEMA pgeltestschema")
   (pg-exec con "CREATE TABLE pgeltestschema.comment_test(cola INTEGER, colb TEXT)")
   (let ((tname (make-pg-qualified-name :schema "pgeltestschema" :name "comment_test")))
@@ -1252,7 +1249,8 @@ bar$$"))))
     (should (null (pg-column-comment con tname "cola")))
     (setf (pg-column-comment con tname "colb") nil)
     (should (null (pg-column-comment con tname "colb")))
-    (pg-exec con "DROP TABLE pgeltestschema.comment_test")))
+    (pg-exec con "DROP TABLE pgeltestschema.comment_test")
+    (pg-exec con "DROP SCHEMA pgeltestschema")))
 
 (defun pg-test-metadata (con)
   ;; Check that the pg_user table exists and that we can parse the name type
@@ -2197,6 +2195,7 @@ bar$$"))))
                          ;; numerical overflow
                          (scalar "SELECT 2147483649::int4")
                        (pg-numeric-value-out-of-range 'ok))))
+    ;; xata.io fails on this test; returns a generic pg-error.
     (should (eql 'ok (condition-case nil
                          (scalar "SELECT happiness(42)")
                        (pg-undefined-function 'ok))))
@@ -2379,11 +2378,27 @@ bar$$"))))
   (cl-flet ((deity-p (ntc) (should (cl-search "deity" (pgerror-message ntc)))))
     (let ((pg-handle-notice-functions (list #'deity-p)))
       (pg-exec con "DROP TABLE IF EXISTS deity")))
-  (cl-flet ((check-user-abort (ntc)
-              (should (string= "25P01" (pgerror-sqlstate ntc)))
-              (should (string= "UserAbortTransactionBlock" (pgerror-routine ntc)))))
-    (let ((pg-handle-notice-functions (list #'check-user-abort)))
-      (pg-exec con "ROLLBACK"))))
+  ;; CrateDB does not support ROLLBACK
+  (unless (member (pgcon-server-variant con) '(cratedb))
+    (cl-flet ((check-user-abort (ntc)
+                (should (string= "25P01" (pgerror-sqlstate ntc)))
+                (should (string= "UserAbortTransactionBlock" (pgerror-routine ntc)))))
+      (let ((pg-handle-notice-functions (list #'check-user-abort)))
+        (pg-exec con "ROLLBACK"))))
+  ;; CrateDB and Spanner do not support DO. GreptimeDB does not support SET client_min_messages.
+  (unless (member (pgcon-server-variant con) '(cratedb spanner greptimedb questdb))
+    (cl-flet ((check-shibboleth (ntc)
+                (should (cl-search "ShibboleTH" (pgerror-message ntc)))))
+      (let ((pg-handle-notice-functions (list #'check-shibboleth)))
+        (pg-exec con "SET client_min_messages TO notice")
+        (pg-exec con "DO $$BEGIN raise notice 'Hi! ShibboleTH'; END$$ LANGUAGE PLPGSQL")))
+    (cl-flet ((check-shibboleth (ntc)
+                (should (cl-search "ShibboleTH" (pgerror-message ntc)))
+                (should (string= "WARNING" (pgerror-severity ntc)))))
+      (let ((pg-handle-notice-functions (list #'check-shibboleth)))
+        (pg-exec con "SET client_min_messages TO warning")
+        (pg-exec con "DO $$BEGIN raise notice 'Intruder here'; END$$ LANGUAGE PLPGSQL")
+        (pg-exec con "DO $$BEGIN raise warning 'Hi! ShibboleTH'; END$$ LANGUAGE PLPGSQL")))))
 
 ;; Check handling of asynchronous notifications, as generated by LISTEN/NOTIFY. Note that this test
 ;; is not actually relying on any asynchronous functionality; the notification is received in

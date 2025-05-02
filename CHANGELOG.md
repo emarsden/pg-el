@@ -3,12 +3,24 @@
 
 ## [0.54] - Unreleased
 
+- Handle `ParameterStatus` and `NotificationResponse` messages in `pg-fetch`.
+
+- New function `pg-set-client-encoding` to set the client-side encoding for data sent to the
+  backend. Calling this function sends an SQL request to the backend telling it of the new client
+  encoding, and sets the per-connection client encoding (accessible via `pgcon-client-encoding`). It
+  also checks that the requested client encoding is one supported by PostgreSQL. Note that most of
+  the PostgreSQL variants only support UTF8 as a client-encoding.
+
 - Implement workaround for `pg-column-default` for Google Spanner and QuestDB.
 
 - Fix for parsing empty arrays.
 
 - New subclass of `pg-error` `pg-transaction-missing` triggered by an attempt to rollback with no
   transaction in progress.
+
+- Add preliminary support for the ReadySet PostgreSQL proxy as a PostgreSQL variant.
+
+- Add preliminary support for the YottaDB Octo database as a PostgreSQL variant.
 
 
 ## [0.53] - 2025-04-19
