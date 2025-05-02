@@ -58,24 +58,24 @@ test-pgvector: test-pgvector.el install-deps
 # Using Docker images for Emacs from https://hub.docker.com/r/silex/emacs/ and the locally installed
 # PostgreSQL.
 test-emacs-dev: test-pg.el
-	cp install-deps.el load-deps.el ../pg.el ../pg-geometry.el ../pg-gis.el test-pg.el ${WORKDIR}
+	cp install-deps.el load-deps.el ../pg.el ../pg-geometry.el ../pg-gis.el ../pg-bm25.el test-pg.el ${WORKDIR}
 	${DOCKER} run --rm -it \
 	   -v ${WORKDIR}:/tmp \
 	   -e DEPS_DIR=/tmp/deps \
 	   -e PGEL_HOSTNAME=10.0.2.2 \
 	   --network slirp4netns:allow_host_loopback=true \
 	   docker.io/silex/emacs:master-alpine-ci \
-	   ${EMACS} -Q --batch /tmp/pg.el -l /tmp/install-deps.el -l /tmp/load-deps.el -l /tmp/pg.el -l ../tmp/pg-geometry.el -l /tmp/pg-gis.el -l /tmp/test-pg.el -f pg-test
+	   ${EMACS} -Q --batch /tmp/pg.el -l /tmp/install-deps.el -l /tmp/load-deps.el -l /tmp/pg.el -l ../tmp/pg-geometry.el -l /tmp/pg-gis.el -l /tmp/pg-bm25.el -l /tmp/test-pg.el -f pg-test
 
 test-emacs28: test-pg.el
-	cp install-deps.el load-deps.el ../pg.el ../pg-geometry.el ../pg-gis.el test-pg.el ${WORKDIR}
+	cp install-deps.el load-deps.el ../pg.el ../pg-geometry.el ../pg-gis.el ../pg-bm25.el test-pg.el ${WORKDIR}
 	${DOCKER} run --rm -it \
 	   -v ${WORKDIR}:/tmp \
 	   -e DEPS_DIR=/tmp/deps \
 	   -e PGEL_HOSTNAME=10.0.2.2 \
 	   --network slirp4netns:allow_host_loopback=true \
 	   docker.io/silex/emacs:28.1 \
-	   ${EMACS} -Q --batch /tmp/pg.el -l /tmp/install-deps.el -l /tmp/load-deps.el -l /tmp/pg.el -l /tmp/pg-geometry.el -l /tmp/pg-gis.el -l /tmp/test-pg.el -f pg-test
+	   ${EMACS} -Q --batch /tmp/pg.el -l /tmp/install-deps.el -l /tmp/load-deps.el -l /tmp/pg.el -l /tmp/pg-geometry.el -l /tmp/pg-gis.el -l /tmp/pg-bm25.el -l /tmp/test-pg.el -f pg-test
 
 # The peg.el library doesn't actually compile with Emacs 27 (void-function byte-run--set-speed), so
 # this doesn't work.
@@ -401,7 +401,7 @@ test-ivorysql: test-pg.el
 # An ElasticSearch alternative, built as a PostgreSQL extension. Works fine with pg.el.
 # https://docs.paradedb.com/introduction#get-started
 #
-# As of 2024-11, the paradedb docker image is built on a Debian PostgreSQL 16.4. It has some TIGER
+# As of 2025-05, the paradedb docker image is built on a Debian PostgreSQL 17.4. It has some TIGER
 # data preloaded.
 test-paradedb: test-pg.el
 	${DOCKER} run --rm --name paradedb \
@@ -467,7 +467,7 @@ test-documentdb: test-pg.el
 	  --publish 5488:5488 \
 	   -e POSTGRES_PASSWORD=pgeltest \
 	   -e PGPORT=5488 \
-	   -d ghcr.io/ferretdb/postgres-documentdb:17-0.102.0-ferretdb-2.1.0
+	   -d ghcr.io/ferretdb/postgres-documentdb:latest
 	sleep 5
 	PGURI=postgresql://postgres:pgeltest@127.0.0.1:5488/postgres $(MAKE) test
 	${DOCKER} stop documentdb
@@ -513,6 +513,7 @@ test-pgcat: test-pg.el
 test-pgdog: test-pg.el
 	cp pgdog-config.toml pgdog-users.toml /tmp
 	${DOCKER} run --rm --name pgdog \
+           --pull=newer \
 	   -v /tmp/pgdog-config.toml:/pgdog/pgdog.toml \
 	   -v /tmp/pgdog-users.toml:/pgdog/users.toml \
 	   --net host \
@@ -520,6 +521,30 @@ test-pgdog: test-pg.el
 	sleep 5
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5469/pgeltestdb $(MAKE) test
 	${DOCKER} stop pgdog
+
+
+# https://readyset.io/docs/get-started/install-rs/docker/postgres
+# https://readyset.io/docs/reference/cli/readyset
+test-readyset: test-pg.el
+	${DOCKER} run --rm --name bitnamipg \
+	   --publish 5488:5488 \
+	   -e POSTGRESQL_PORT_NUMBER=5488 \
+	   -e POSTGRESQL_DATABASE=pgeltestdb \
+	   -e POSTGRESQL_USERNAME=pgeltestuser \
+	   -e POSTGRESQL_PASSWORD=pgeltest \
+	   -d docker.io/bitnami/postgresql:latest
+	sleep 5
+	${DOCKER} run --rm --name readyset \
+          --pull=newer --net=host \
+          -e DISABLE_UPSTREAM_SSL_VERIFICATION=true \
+          -e UPSTREAM_DB_URL=postgresql://pgeltestuser:pgeltest@localhost:5488/pgeltestdb \
+          -e LISTEN_ADDRESS=127.0.0.1:5433 \
+          -d docker.io/readysettech/readyset:latest --disable-telemetry --database-type=postgresql
+	sleep 10
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5433/pgeltestdb $(MAKE) test
+	${DOCKER} stop readyset
+	${DOCKER} stop bitnamipg
+
 
 
 # CrateDB uses a default database name of "doc" that we can't set via Docker. Doesn't get very far
@@ -535,6 +560,7 @@ test-pgdog: test-pg.el
 # https://cratedb.com/docs/crate/reference/en/latest/interfaces/postgres.html
 test-cratedb: test-pg.el
 	${DOCKER} run --rm --name cratedb \
+          --pull=newer \
 	  --net host \
           -e CRATE_HEAP_SIZE=1g \
           -d docker.io/crate \
@@ -551,6 +577,7 @@ test-cratedb: test-pg.el
 # which was reported in May 2023!
 test-cockroachdb: test-pg.el
 	${DOCKER} run --rm --name cockroachdb \
+           --pull=newer \
 	   -e COCKROACH_DATABASE=pgeltestdb \
 	   -e COCKROACH_USER=pgeltestuser \
 	   -e COCKROACH_PASSWORD=pgeltest \
@@ -572,6 +599,7 @@ test-cockroachdb: test-pg.el
 # https://questdb.io/docs/configuration/
 test-questdb: test-pg.el
 	${DOCKER} run --rm --name questdb \
+          --pull=newer \
           --publish 127.0.0.1:8812:8812 \
           --publish 127.0.0.1:9000:9000 \
           -e QDB_PG_USER=pgeltestuser \
@@ -591,6 +619,7 @@ test-questdb: test-pg.el
 # https://docs.yugabyte.com/preview/reference/configuration/yugabyted/
 test-yugabyte: test-pg.el
 	${DOCKER} run --rm --name yugabyte \
+          --pull=newer \
           --net host \
           -e YSQL_DB=pgeltestdb \
           -e YSQL_USER=pgeltestuser \
@@ -628,6 +657,7 @@ test-yellowbrick: test-pg.el
 	${DOCKER} volume ls --format '{{ .Name }}' | grep -qw ybd-storage-lfs || podman volume create ybd-storage-lfs
 	mkdir -p /tmp/yellowbrick
 	${DOCKER} run --rm --name yellowbrick \
+          --hostname yellowbrick \
 	  --cgroupns=host \
 	  -v ybd-storage-rfs:/var/lib/k0s \
 	  -v ybd-storage-lfs:/tmp/yellowbrick \
@@ -670,6 +700,7 @@ test-immudb: test-pg.el
 # https://github.com/greenplum-db/gpdb-archive
 test-greenplum: test-pg.el
 	${DOCKER} run --rm --name greenplum \
+          --pull=newer \
 	  --publish 5433:5432 \
 	  -e PGPORT=5433 \
 	  -d docker.io/andruche/greenplum:7
@@ -698,6 +729,7 @@ test-cloudberry: test-pg.el
 # Extremely limited PostgreSQL support. Basic types such as int2 are not supported.
 test-spanner: test-pg.el
 	${DOCKER} run --rm --name spanner \
+          --pull=newer \
 	  --publish 127.0.0.1:5499:5432 \
 	  -d gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:latest -d pgeltestdb
 	sleep 2
@@ -814,6 +846,32 @@ test-alloydb: test-pg.el
 	sleep 10
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:4481/pgeltestdb $(MAKE) test
 	${DOCKER} stop alloydb
+
+
+# YottaDB Octo
+#
+# https://gitlab.com/YottaDB/DBMS/YDBOcto/-/blob/master/README.md#using-the-docker-images
+test-yottadb: test-pg.el
+	${DOCKER} run --rm --name yottadb \
+          --pull=newer \
+          --publish 127.0.0.1:5669:1337 \
+          -e POSTGRES_DB=pgeltestdb \
+          -e POSTGRES_USER=pgeltestuser \
+          -e POSTGRES_PASSWORD=pgeltest \
+          -d docker.io/yottadb/octo:latest --readwrite --allowschemachanges
+	sleep 5
+	PGURI=postgresql://ydb:ydbrocks@127.0.0.1:5669/hello $(MAKE) test
+	${DOCKER} stop yottadb
+
+
+# https://github.com/risinglightdb/risinglight
+#
+# This educational database implementation is not very PostgreSQL compatible; it doesn't implement
+# version() for example.
+test-risinglight: test-pg.el
+	cd ~/tmp/risinglight && cargo run -- --server --port 5367 &
+	sleep 2
+	PGURI=postgresql://postgres@localhost:5367/postgres $(MAKE) test
 
 
 # ChronDB -- git-backed database
