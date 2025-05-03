@@ -464,6 +464,11 @@ Uses PostgreSQL connection CON.")
   (pg-register-parser "models" #'pg-text-parser)
   (pg-initialize-parsers con))
 
+;; OctoDB defaults to starting up using the SQL_ASCII client encoding.
+(cl-defmethod pg-do-variant-specific-setup ((con pgcon) (_variant (eql 'octodb)))
+  (message "pg-el: running variant-specific setup for YottaDB Octo")
+  (pg-set-client-encoding con "UTF8"))
+
 (cl-defmethod pg-do-variant-specific-setup ((con pgcon) (variant t))
   ;; This statement fails on ClickHouse (and the database immediately closes the connection!).
   (unless (eq variant 'clickhouse)
@@ -1228,7 +1233,7 @@ Return a result structure which can be decoded using `pg-result'."
                ;; This is rather ugly, but seems to be the only way of detecting YottaDB Octo on startup.
                (when (string= "INFO" (pgerror-severity notice))
                  (when (string-prefix-p "Generating M file [" (pgerror-message notice))
-                   (setf (pgcon-server-variant con) 'yottadb)))
+                   (setf (pgcon-server-variant con) 'octodb)))
                (dolist (handler pg-handle-notice-functions)
                  (funcall handler notice))))
 
@@ -2317,11 +2322,18 @@ the PostgreSQL connection CON."
   (let ((emacs-encoding-name (pg-normalize-encoding-name encoding)))
     (unless emacs-encoding-name
       (signal 'pg-encoding-error (list (format "Unknown encoding %s" encoding))))
-    (let* ((res (pg-exec-prepared con "SELECT set_config('client_encoding', $1, false)"
-                                 `((,encoding . "text"))))
-           (status (pg-result res :status)))
-      (unless (string= "SELECT 1" status)
-        (signal 'pg-error (format "Couldn't set client_encoding to %s" encoding))))
+    (pcase (pgcon-server-variant con)
+      ('octodb
+       (let* ((res (pg-exec con (format "SET client_encoding TO '%s'" encoding)))
+              (status (pg-result res :status)))
+         (unless (string= "SET" status)
+           (signal 'pg-error (format "Couldn't set client_encoding to %s" encoding)))))
+      (_
+       (let* ((res (pg-exec-prepared con "SELECT set_config('client_encoding', $1, false)"
+                                     `((,encoding . "text"))))
+              (status (pg-result res :status)))
+         (unless (string= "SELECT 1" status)
+           (signal 'pg-error (format "Couldn't set client_encoding to %s" encoding))))))
     (setf (pgcon-client-encoding con) emacs-encoding-name)))
 
 ;; Note that if you register a parser for a new type-name after a PostgreSQL connection has been
@@ -3314,7 +3326,7 @@ Uses database connection CON."
   (pcase (pgcon-server-variant con)
     ;; QuestDB doesn't really support schemas.
     ('questdb (list "sys" "public"))
-    ((or 'risingwave 'yottadb)
+    ((or 'risingwave 'octodb)
      (let ((res (pg-exec con "SELECT DISTINCT table_schema FROM information_schema.tables")))
        (apply #'append (pg-result res :tuples))))
     (_
@@ -3414,6 +3426,8 @@ Only tables to which the current user has access are listed."
            (pg--tables-materialize con))
           ((eq (pgcon-server-variant con) 'clickhouse)
            (pg--tables-clickhouse con))
+          ((eq (pgcon-server-variant con) 'octodb)
+           (pg--tables-legacy con))
           ((> (pgcon-server-version-major con) 11)
            (pg--tables-information-schema con))
           (t
