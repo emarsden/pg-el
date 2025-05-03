@@ -423,6 +423,7 @@ test-paradedb: test-pg.el
 # https://github.com/tensorchord/VectorChord-bm25/
 test-vectorchord: test-pg.el
 	${DOCKER} run --rm --name vectorchord \
+          --pull=newer \
 	  --publish 5778:5432 \
           -e POSTGRES_DB=pgeltestdb \
           -e POSTGRES_USER=pgeltestuser \
@@ -436,6 +437,7 @@ test-vectorchord: test-pg.el
 # https://github.com/hydradatabase/columnar?tab=readme-ov-file
 test-hydra: test-pg.el
 	${DOCKER} run --rm --name hydra \
+          --pull=newer \
 	  --publish 5167:5167 \
           -e POSTGRES_DB=pgeltestdb \
           -e POSTGRESQL_PORT_NUMBER=5167 \
@@ -464,6 +466,7 @@ test-hydra: test-pg.el
 # default database name.
 test-documentdb: test-pg.el
 	${DOCKER} run --rm --name documentdb \
+          --pull=newer \
 	  --publish 5488:5488 \
 	   -e POSTGRES_PASSWORD=pgeltest \
 	   -e PGPORT=5488 \
@@ -499,6 +502,7 @@ test-pgbouncer: test-pg.el
 test-pgcat: test-pg.el
 	cp pgcat-config.toml /tmp
 	${DOCKER} run --rm --name pgcat \
+           --pull=newer \
 	   -v /tmp/pgcat-config.toml:/etc/pgcat/pgcat.toml \
 	   --net host \
 	   -d ghcr.io/postgresml/pgcat:latest
