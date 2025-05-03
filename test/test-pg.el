@@ -204,7 +204,7 @@
       (message "Backend major-version is %s" (pgcon-server-version-major con))
       (message "Detected backend variant: %s" (pgcon-server-variant con))
       (unless (member (pgcon-server-variant con)
-                      '(cockroachdb cratedb yugabyte ydb xata greptimedb risingwave clickhouse yottadb))
+                      '(cockroachdb cratedb yugabyte ydb xata greptimedb risingwave clickhouse octodb))
         (when (> (pgcon-server-version-major con) 11)
           (let* ((res (pg-exec con "SELECT current_setting('ssl_library')"))
                  (row (pg-result res :tuple 0)))
@@ -261,7 +261,7 @@
       (pgtest-add #'pg-test-result
                   :skip-variants  '(risingwave ydb spanner clickhouse))
       (pgtest-add #'pg-test-cursors
-                  :skip-variants '(xata cratedb cockroachdb risingwave questdb greptimedb ydb materialize spanner))
+                  :skip-variants '(xata cratedb cockroachdb risingwave questdb greptimedb ydb materialize spanner octodb))
       ;; CrateDB does not support the BYTEA type (!), nor sequences. Spanner does not support the encode() function.
       (pgtest-add #'pg-test-bytea
                   :skip-variants '(cratedb risingwave spanner materialize))
@@ -269,11 +269,11 @@
       (pgtest-add #'pg-test-sequence
                   :skip-variants '(cratedb risingwave questdb materialize greptimedb ydb spanner clickhouse))
       (pgtest-add #'pg-test-array
-                  :skip-variants '(cratedb risingwave questdb materialize clickhouse))
+                  :skip-variants '(cratedb risingwave questdb materialize clickhouse octodb))
       (pgtest-add #'pg-test-enums
                   :skip-variants '(cratedb risingwave questdb greptimedb ydb materialize spanner octodb clickhouse))
       (pgtest-add #'pg-test-server-prepare
-                  :skip-variants '(cratedb risingwave questdb greptimedb ydb))
+                  :skip-variants '(cratedb risingwave questdb greptimedb ydb octodb))
       (pgtest-add #'pg-test-comments
                    :skip-variants '(ydb cratedb cockroachdb spanner questdb))
       (pgtest-add #'pg-test-metadata
@@ -294,9 +294,9 @@
       (pgtest-add #'pg-test-bm25
                   :skip-variants '(xata cratedb cockroachdb risingwave materialize octodb))
       (pgtest-add #'pg-test-geometric
-                  :skip-variants '(xata cratedb cockroachdb risingwave questdb materialize spanner))
+                  :skip-variants '(xata cratedb cockroachdb risingwave questdb materialize spanner octodb))
       (pgtest-add #'pg-test-gis
-                  :skip-variants '(xata cratedb cockroachdb risingwave materialize))
+                  :skip-variants '(xata cratedb cockroachdb risingwave materialize octodb))
       (pgtest-add #'pg-test-copy
                   :skip-variants '(spanner ydb cratedb risingwave materialize questdb))
       ;; QuestDB fails due to lack of support for the NUMERIC type
@@ -945,7 +945,7 @@ bar$$"))))
     (unless (member (pgcon-server-variant con) '(risingwave questdb))
       (should (approx= 3.14 (scalar "SELECT 3.14::decimal(10,2) as pi"))))
     ;; CrateDB doesn't support the OID type, nor casting integers to bits.
-    (unless (member (pgcon-server-variant con) '(cratedb risingwave materialize))
+    (unless (member (pgcon-server-variant con) '(cratedb risingwave materialize octodb))
       (should (eql 123 (scalar "SELECT 123::oid")))
       (should (equal (make-bool-vector 1 nil) (scalar "SELECT 0::bit")))
       (should (equal (make-bool-vector 1 t) (scalar "SELECT 1::bit")))
