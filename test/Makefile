@@ -851,17 +851,21 @@ test-alloydb: test-pg.el
 # YottaDB Octo
 #
 # https://gitlab.com/YottaDB/DBMS/YDBOcto/-/blob/master/README.md#using-the-docker-images
-test-yottadb: test-pg.el
-	${DOCKER} run --rm --name yottadb \
+# https://docs.yottadb.com/Octo/config.html
+#
+# To give a user permission to modify schemas, recreate the user using ydboctoAdmin with the --allowschemachanges
+#   yottadb -r %ydboctoAdmin add user OctoUser --readwrite --allowschemachanges
+test-octodb: test-pg.el
+	cp octo-entrypoint.sh /tmp
+	chmod og+x /tmp/octo-entrypoint.sh
+	${DOCKER} run --rm --name octodb \
           --pull=newer \
           --publish 127.0.0.1:5669:1337 \
-          -e POSTGRES_DB=pgeltestdb \
-          -e POSTGRES_USER=pgeltestuser \
-          -e POSTGRES_PASSWORD=pgeltest \
-          -d docker.io/yottadb/octo:latest --readwrite --allowschemachanges
+          -v /tmp/octo-entrypoint.sh:/entrypoint.sh \
+          -d docker.io/yottadb/octo:latest
 	sleep 5
-	PGURI=postgresql://ydb:ydbrocks@127.0.0.1:5669/hello $(MAKE) test
-	${DOCKER} stop yottadb
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5669/hello $(MAKE) test
+	${DOCKER} stop octodb
 
 
 # https://github.com/risinglightdb/risinglight
