@@ -121,6 +121,32 @@
                ,@body)))))
 (put 'with-pgtest-connection-tls 'lisp-indent-function 'defun)
 
+;; Connect to the database using the "direct TLS" method introduced in PostgreSQL 18
+(defmacro with-pgtest-connection-direct-tls (con &rest body)
+  (cond ((getenv "PGURI")
+         `(let ((,con (pg-connect/uri ,(getenv "PGURI"))))
+            (unwind-protect
+                (progn ,@body)
+              (when ,con (pg-disconnect ,con)))))
+        (t
+         (let* ((db (or (getenv "PGEL_DATABASE") "pgeltestdb"))
+                (user (or (getenv "PGEL_USER") "pgeltestuser"))
+                (password (or (getenv "PGEL_PASSWORD") "pgeltest"))
+                (host (or (getenv "PGEL_HOSTNAME") "localhost"))
+                (port (let ((p (getenv "PGEL_PORT"))) (if p (string-to-number p) 5432)))
+                (trust-ca (getenv "PGEL_TRUST_CA"))
+                (trust-ca-file (and trust-ca (expand-file-name trust-ca)))
+                (trust (list :trustfiles (list trust-ca-file))))
+           `(progn
+              (unless trust-ca
+                (error "Need PGEL_TRUST_CA env variable"))
+              (let ((,con (pg-connect/direct-tls ,db ,user ,password ,host ,port ',trust)))
+                (unwind-protect
+                    (progn ,@body)
+                  (when ,con (pg-disconnect ,con)))))))))
+(put 'with-pgtest-connection-direct-tls 'lisp-indent-function 'defun)
+
+
 ;; Connect to the database presenting a client certificate as authentication
 (defmacro with-pgtest-connection-client-cert (con &rest body)
   (cond ((getenv "PGURI")
@@ -198,7 +224,7 @@
   (let ((tests (list)))
     (cl-flet ((pgtest-add (fun &key skip-variants need-emacs)
                 (unless (member (pgcon-server-variant con) skip-variants)
-                  (when (if need-emacs (version< emacs-version need-emacs) t)
+                  (when (if need-emacs (version<= need-emacs emacs-version) t)
                     (push fun tests)))))
       (pg-enable-query-log con)
       (message "Backend major-version is %s" (pgcon-server-version-major con))
@@ -238,7 +264,7 @@
       (pgtest-add #'pg-test-numeric-range
                   :skip-variants '(xata cratedb cockroachdb ydb risingwave questdb clickhouse greptimedb spanner octodb))
       (pgtest-add #'pg-test-prepared
-                  :skip-variants '(ydb)
+                  :skip-variants '(ydb cratedb)
                   :need-emacs "28")
       ;; Risingwave v2.2.0 panics on this test (https://github.com/risingwavelabs/risingwave/issues/20367)
       (pgtest-add #'pg-test-prepared/multifetch
@@ -354,6 +380,14 @@
                 (version) (pg-backend-version con))
        (pg-run-tests con))))
 
+;; For the "direct TLS" connection method introduced in PostgreSQL v18.
+(defun pg-test-tls-direct ()
+  (let ((pg-parameter-change-functions (cons #'pg-test-note-param-change pg-parameter-change-functions)))
+    (with-pgtest-connection-direct-tls con
+       (message "Running pg.el tests in %s against backend %s"
+                (version) (pg-backend-version con))
+       (pg-run-tests con))))
+
 ;; Run tests over local Unix socket connection to backend
 (defun pg-test-local ()
   (let ((pg-parameter-change-functions (cons #'pg-test-note-param-change pg-parameter-change-functions)))
@@ -435,8 +469,8 @@
     (should (string= "Bîzzlô⚠️" (scalar "SELECT $1" '(("Bîzzlô⚠️" . "varchar")))))
     (should (string= "foobles" (scalar "SELECT $1 || $2" '(("foo" . "text") ("bles" . "text")))))
     (unless (or (member (pgcon-server-variant con) '(cratedb))
-                (zerop (scalar "SELECT COUNT(*) FROM pg_collation WHERE collname='fr_FR'" nil)))
-      (should (string= "12 foé£èüñ¡" (scalar "SELECT lower($1) COLLATE \"fr_FR\"" '(("12 FOÉ£ÈÜÑ¡" . "text"))))))
+                (zerop (scalar "SELECT COUNT(*) FROM pg_collation WHERE collname='fr-FR'" nil)))
+      (should (string= "12 foé£èüñ¡" (scalar "SELECT lower($1) COLLATE \"fr-FR\"" '(("12 FOÉ£ÈÜÑ¡" . "text"))))))
     ;; Risingwave failed to parse the PT12S
     (unless (member (pgcon-server-variant con) '(risingwave materialize))
       (should (equal "00:00:12" (scalar "SELECT $1::interval" '(("PT12S" . "text"))))))
@@ -552,6 +586,7 @@
     (should (eql 55 (cl-first tuple)))))
 
 
+;; https://github.com/postgres/postgres/blob/master/src/test/regress/sql/insert.sql
 (defun pg-test-basic (con)
   (cl-labels ((row (sql) (pg-result (pg-exec con sql) :tuple 0))
               (scalar (sql) (cl-first (pg-result (pg-exec con sql) :tuple 0))))
@@ -569,8 +604,14 @@
     (should (eql -12345 (scalar "SELECT -12345::int8")))
     (should (eql 100 (scalar "SELECT CAST ('100' AS INTEGER)")))
     (should (eql nil (scalar "SELECT '0'::boolean")))
+    (should (eql t (scalar "SELECT '1'::boolean")))
+    (unless (member (pgcon-server-variant con) '(cratedb))
+      (should (eql t (scalar "SELECT bool 'f' < bool 't' AS true")))
+      (should (eql t (scalar "SELECT bool 'f' <= bool 't' AS true"))))
     (should (equal (list "hey" "Jude") (row "SELECT 'hey', 'Jude'")))
     (should (eql nil (scalar "SELECT NULL")))
+    (unless (member (pgcon-server-variant con) '(cratedb risingwave yugabyte))
+      (should (eql #x1eeeffff (scalar "SELECT int8 '0x1EEE_FFFF'"))))
     (should (eql t (scalar "SELECT 42 = 42")))
     ;; Empty strings are equal
     (should (eql t (scalar "SELECT '' = ''")))
@@ -619,6 +660,10 @@ bar$$"))))
     ;; RisingWave does not support the VARCHAR(N) syntax.
     (unless (eq 'risingwave (pgcon-server-variant con))
       (should (string= "gday" (scalar "SELECT 'gday'::varchar(20)"))))
+    (should (eql nil (scalar "SELECT SUM(null::numeric) FROM generate_series(1,3)")))
+    ;; CrateDB: Cannot cast `'NaN'` of type `text` to type `numeric`
+    (unless (member (pgcon-server-variant con) '(cratedb))
+      (should (eql 0.0e+NaN (scalar "SELECT SUM('NaN'::numeric) FROM generate_series(1,3)"))))
     ;; CockroachDB is returning these byteas in a non-BYTEA format so they are twice as long as
     ;; expected. CrateDB does not implement the sha256 and sha512 functions.
     ;;
@@ -913,6 +958,7 @@ bar$$"))))
                (encode-time (list 21 42 14 5 6 2010 nil -1 "UTC-01:00")))
       (message "TZ test: w/DST encoded time 'wall = %s"
                (encode-time (list 21 42 14 5 6 2010 nil -1 'wall)))
+      (should (equal "04:05:06" (scalar "SELECT time without time zone '040506'")))
       ;; In this test, we have ensured that the PostgreSQL session timezone is the same as the
       ;; timezone used by Emacs for encode-time. Passing ZONE=nil means using Emacs' interpretation
       ;; of local time, which should correspond to that of PostgreSQL.
@@ -2195,6 +2241,10 @@ bar$$"))))
                          ;; numerical overflow
                          (scalar "SELECT 2147483649::int4")
                        (pg-numeric-value-out-of-range 'ok))))
+    (should (eql 'ok (condition-case nil
+                         ;; numerical overflow
+                         (scalar "SELECT lcm((-9223372036854775808)::int8, 1::int8)")
+                       (pg-numeric-value-out-of-range 'ok))))
     ;; xata.io fails on this test; returns a generic pg-error.
     (should (eql 'ok (condition-case nil
                          (scalar "SELECT happiness(42)")
@@ -2266,6 +2316,33 @@ bar$$"))))
                            (scalar "SELECT jsonb_path_query('{\"h\": 1.7}', '$.floor()')")
                          (pg-json-error 'ok)))))
     (should (eql 'ok (condition-case nil
+                         (scalar "SELECT '{1:\"abc\"}'::json")
+                       (pg-invalid-text-representation 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "SELECT '{\"abc\":1:2}'::json")
+                       (pg-invalid-text-representation 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "SELECT '{\"abc\":1,3}'::json")
+                       (pg-invalid-text-representation 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "SELECT '1f2'::json")
+                       (pg-invalid-text-representation 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "SELECT 'true false::json")
+                       (pg-syntax-error 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "SELECT 'true false'::json")
+                       (pg-invalid-text-representation 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "SELECT '    '::json")
+                       (pg-invalid-text-representation 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "SELECT '\"\\u00\"'::json")
+                       (pg-invalid-text-representation 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "SELECT '\"\\u\"'::jsonb")
+                       (pg-invalid-text-representation 'ok))))
+    (should (eql 'ok (condition-case nil
                          (scalar "SELECT E'\\xDEADBEEF'")
                        ;; "Invalid byte sequence for encoding"
                        (pg-character-not-in-repertoire 'ok)
@@ -2274,6 +2351,33 @@ bar$$"))))
     (should (eql 'ok (condition-case nil
                          (scalar "SELECT '2024-15-01'::date")
                        (pg-datetime-field-overflow 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (progn
+                           (pg-exec con "PREPARE pgeltestq1(text, int, float, boolean, smallint) AS SELECT 42")
+                           ;; too many params
+                           (pg-exec con "EXECUTE pgeltestq1('AAAAxx', 5::smallint, 10.5::float, false, 4::bigint, 15::int2)"))
+                       (pg-syntax-error 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (pg-exec con "PREPARE pgeltestq1(text, int, float, boolean, smallint) AS SELECT 42")
+                       (pg-duplicate-prepared-statement 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (progn
+                           (pg-exec con "PREPARE pgeltestq2(text, int, float, boolean, smallint) AS SELECT 42")
+                           ;; too few params
+                           (pg-exec con "EXECUTE pgeltestq2('bool')"))
+                       (pg-syntax-error 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (progn
+                           (pg-exec con "PREPARE pgeltestq3(text, int, float, boolean, smallint) AS SELECT 42")
+                           ;; wrong parameter types
+                           (pg-exec con "EXECUTE pgeltestq3(5::smallint, 10.5::float, false, 4::bigint, 'bytea')"))
+                       (pg-datatype-mismatch 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "ALTER OPERATOR @+@(int4, int4) OWNER TO pgeltest_notexist")
+                       (pg-programming-error 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "ALTER OPERATOR @+@(int4, int4) SET SCHEMA pgeltest_notexist")
+                       (pg-programming-error 'ok))))
     (should (eql 'ok (condition-case nil
                          (scalar "CREATE TABLE pgtest_dupcol(a INTEGER PRIMARY KEY, a VARCHAR)")
                        (pg-programming-error 'ok))))
