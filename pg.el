@@ -3,7 +3,7 @@
 ;; Copyright: (C) 1999-2002, 2022-2025  Eric Marsden
 
 ;; Author: Eric Marsden <eric.marsden@risk-engineering.org>
-;; Version: 0.53
+;; Version: 0.54
 ;; Keywords: data comm database postgresql
 ;; URL: https://github.com/emarsden/pg-el
 ;; Package-Requires: ((emacs "28.1") (peg "1.0.1"))
@@ -153,6 +153,7 @@ SQL queries. To avoid this overhead on establishing a connection, remove
 (define-error 'pg-undefined-table "PostgreSQL undefined table" 'pg-programming-error)
 (define-error 'pg-undefined-column "PostgreSQL undefined column" 'pg-programming-error)
 (define-error 'pg-undefined-function "PostgreSQL undefined function" 'pg-programming-error)
+(define-error 'pg-duplicate-prepared-statement "Duplicate prepared statement" 'pg-programming-error)
 (define-error 'pg-reserved-name "PostgreSQL reserved name" 'pg-programming-error)
 (define-error 'pg-copy-failed "PostgreSQL COPY failed" 'pg-operational-error)
 (define-error 'pg-connect-timeout "PostgreSQL connection attempt timed out" 'pg-operational-error)
@@ -602,6 +603,7 @@ presented to the user."
                         ("42000" 'pg-syntax-error)
                         ("42601" 'pg-syntax-error)
                         ("42P01" 'pg-undefined-table)
+                        ("42P05" 'pg-duplicate-prepared-statement)
                         ("42703" 'pg-undefined-column)
                         ("42804" 'pg-datatype-mismatch)
                         ("42883" 'pg-undefined-function)
@@ -866,6 +868,71 @@ you would like to run specific code in
           (gnutls-error
            (let ((msg (format "TLS error connecting to PostgreSQL: %s" (error-message-string err))))
              (signal 'pg-protocol-error (list msg)))))))
+    ;; the remainder of the startup sequence is common to TCP and Unix socket connections
+    (pg-do-startup con dbname user password)))
+
+(cl-defun pg-connect/direct-tls (dbname user
+                                        &optional
+                                        (password "")
+                                        (host "localhost")
+                                        (port 5432)
+                                        (tls-options nil))
+  "Initiate a direct TLS connection with the PostgreSQL backend over TCP.
+Connect to the database DBNAME with the username USER, on PORT of
+HOST, providing PASSWORD if necessary. Return a connection to the
+database (as an opaque type). PORT defaults to 5432, HOST to
+\"localhost\", and PASSWORD to an empty string. The TLS-OPTIONS
+are passed to GnuTLS."
+  (require 'gnutls)
+  (require 'network-stream)
+  (unless (gnutls-available-p)
+    (signal 'pg-error '("Connecting over TLS requires GnuTLS support in Emacs")))
+  ;; Here we make a "direct" TLS connection to PostgreSQL, rather than the STARTTLS-like
+  ;; connection upgrade handshake.
+  (message "Making direct GnuTLS connection")
+  (let* ((buf (generate-new-buffer " *PostgreSQL*"))
+         (process (make-network-process :name "postgres"
+                                        :buffer buf
+                                        :host host
+                                        :service port
+                                        :coding nil))
+         (con (make-pgcon :dbname dbname :process process))
+         (cert (network-stream-certificate host port nil))
+         (opts (append (list :process process)
+                       (list :hostname host)
+                       ;; see https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
+                       (list :alpn-protocols (list "postgresql"))
+                       (when cert (list :keylist cert))
+                       (when (listp tls-options) tls-options)))
+         (gnutls-log-level 3)
+         (gnutls-verify-error nil))
+    (message "Connecting to %s:%s with TLS opts %s" host port opts)
+    (condition-case err
+        (apply #'gnutls-negotiate opts)
+      (gnutls-error
+       (let ((msg (format "TLS error connecting to PostgreSQL: %s"
+                          (error-message-string err))))
+         (signal 'pg-protocol-error (list msg)))))
+    (sit-for 1)
+    ;; FIXME here we are reading "Process postgres connection broken by remote peer"
+    (cl-loop for ch = (pg-read-char con)
+             until (eql ?S ch)
+             do (message "TLS chatter> %c" ch))
+    (unless (zerop pg-connect-timeout)
+      (run-at-time pg-connect-timeout nil
+                   (lambda ()
+                     (unless (memq (process-status process) '(open listen))
+                       (delete-process process)
+                       (kill-buffer buf)
+                       (signal 'pg-connect-timeout (list "PostgreSQL connection timed out"))))))
+    (with-current-buffer buf
+      (set-process-coding-system process 'binary 'binary)
+      (set-buffer-multibyte nil)
+      (setq-local pgcon--position 1
+                  pgcon--busy t
+                  pgcon--notification-handlers (list)))
+    ;; Save connection info in the pgcon object, for possible later use by pg-cancel
+    (setf (pgcon-connect-info con) (list :tcp host port dbname user password))
     ;; the remainder of the startup sequence is common to TCP and Unix socket connections
     (pg-do-startup con dbname user password)))
 
@@ -3497,6 +3564,7 @@ TABLE can be a string or a schema-qualified name. Uses database connection CON."
     ('cratedb nil)
     ('spanner nil)
     ('questdb nil)
+    ('ydb nil)
     ;; RisingWave implements the col_description() function, but annoyingly returns empty values
     ;; even when comments are defined. Comment data is available in the rw_description table.
     ('risingwave
