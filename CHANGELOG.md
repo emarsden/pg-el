@@ -1,7 +1,17 @@
 # Changelog
 
 
-## [0.54] - Unreleased
+## [0.55] - Unreleased
+
+- New error class `pg-duplicate-prepared-statement`.
+
+- New function `pg-connect/direct-tls` to establish a direct TLS connection to PostgreSQL, rather
+  than the STARTTLS-like method used in the standard wire protocol. This connection method is
+  implemented from PostgreSQL v18 (currently in beta). It requires ALPN support in Emacs, which is
+  not yet committed.
+
+
+## [0.54] - 2025-05-03
 
 - Handle `ParameterStatus` and `NotificationResponse` messages in `pg-fetch`.
 
