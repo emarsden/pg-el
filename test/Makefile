@@ -33,6 +33,7 @@ hang: install-deps
 test-tls: test-pg.el install-deps
 	${EMACS} -Q --batch -L .. -L . -l load-deps.el -l ../pg.el -l test-pg.el -f pg-test-tls
 
+# This needs Emacs support for ALPN (currently unimplemented).
 test-tls-direct: test-pg.el install-deps
 	${EMACS} -Q --batch -L .. -L . -l load-deps.el -l ../pg.el -l test-pg.el -f pg-test-tls-direct
 
@@ -116,19 +117,6 @@ test-emacs25: test-pg.el
 	   docker.io/silex/emacs:25.3 \
 	   ${EMACS} -Q --batch /tmp/pg.el -l /tmp/install-deps.el -l /tmp/load-deps.el -l /tmp/pg.el -l /tmp/test-pg.el -f pg-test
 
-test-postgresql17: test-pg.el
-	${DOCKER} run --rm --name pgsql \
-	   --publish 5426:5426 \
-	   -e POSTGRES_DB=pgeltestdb \
-	   -e POSTGRES_USER=pgeltestuser \
-	   -e POSTGRES_PASSWORD=pgeltest \
-	   -e PGPORT=5426 \
-	   -e TZ=Asia/Tokyo \
-	   -d docker.io/library/postgres:17-alpine
-	sleep 5
-	PGEL_PORT=5426 $(MAKE) test
-	${DOCKER} stop pgsql
-
 # A special test for short usernames, database names, passwords and so on (we used to have some
 # builtin assumptions that a username was a least 4 chars in length).
 test-shortnames: test-pg.el
@@ -143,8 +131,103 @@ test-shortnames: test-pg.el
 	PGEL_PORT=5926 PGEL_DATABASE=d PGEL_USER=u PGEL_PASSWORD="~" $(MAKE) test
 	${DOCKER} stop pgsql
 
+# using https://github.com/mbcrawfo/postgres18-docker
+#
+# Note that we need to tell Emacs GnuTLS to trust the root.crt file in order for it to accept the
+# PostgreSQL server TLS certificate (it's not signed by the system CA).
+#
+# Currently failing with Emacs 31.0.50 with
+#   LOG:  received direct SSL connection request without ALPN protocol negotiation extension
+test-postgresql18beta1tls: test-pg.el
+	openssl req -new -nodes -text -out ${WORKDIR}/root.csr -keyout ${WORKDIR}/root.key \
+	   -subj "/CN=localhost"
+	chmod og-rwx ${WORKDIR}/root.key
+	openssl x509 -req -in ${WORKDIR}/root.csr -text -days 42 \
+	   -extfile /etc/ssl/openssl.cnf -extensions v3_ca \
+	   -signkey ${WORKDIR}/root.key -out ${WORKDIR}/root.crt
+	openssl req -new -nodes -text -out ${WORKDIR}/server.csr -keyout ${WORKDIR}/server.key \
+	   -subj "/CN=localhost"
+	chmod og-rwx ${WORKDIR}/server.key
+	openssl x509 -req -in ${WORKDIR}/server.csr -text -days 42 \
+	   -CA ${WORKDIR}/root.crt -CAkey ${WORKDIR}/root.key \
+	   -CAcreateserial -out ${WORKDIR}/server.crt
+	openssl req -new -nodes -out ${WORKDIR}/client.csr -keyout ${WORKDIR}/client.key \
+	   -subj "/CN=pgeltestuser"
+	openssl x509 -req -days 42 -in ${WORKDIR}/client.csr \
+	   -CA ${WORKDIR}/root.crt \
+	   -CAkey ${WORKDIR}/root.key \
+	   -CAcreateserial -out ${WORKDIR}/client.crt
+	chmod 600 ${WORKDIR}/server.key
+	ls -l ${WORKDIR}
+	${DOCKER} volume create pgcerts
+	tar cf ${WORKDIR}/certs.tar --directory=${WORKDIR} server.crt server.key root.crt
+	${DOCKER} volume import pgcerts ${WORKDIR}/certs.tar
+	${DOCKER} run --rm --name pgsql \
+           --pull=newer \
+	   -v pgcerts:/certs:U \
+	   --publish 5418:5418 \
+	   -e POSTGRES_DB=pgeltestdb \
+	   -e POSTGRES_USER=pgeltestuser \
+	   -e POSTGRES_PASSWORD=pgeltest \
+	   -e PGPORT=5418 \
+	   -e TZ=Asia/Tokyo \
+           --user postgres \
+	   localhost/postgres:18-beta1 \
+              -c ssl=on \
+              -c ssl_cert_file=/certs/server.crt \
+              -c ssl_key_file=/certs/server.key
+	sleep 5
+	PGEL_TRUST_CA=${WORKDIR}/root.crt PGEL_PORT=5418 $(MAKE) test-tls-direct
+	${DOCKER} stop pgsql
+	sleep 2
+	${DOCKER} volume rm pgcerts
+
+
+test-postgresql18beta1: test-pg.el
+	${DOCKER} run --rm --name pgsql \
+           --pull=newer \
+	   --publish 5418:5418 \
+	   -e POSTGRES_DB=pgeltestdb \
+	   -e POSTGRES_USER=pgeltestuser \
+	   -e POSTGRES_PASSWORD=pgeltest \
+	   -e PGPORT=5418 \
+	   -e TZ=Asia/Tokyo \
+	   -d docker.io/library/postgres:18beta1-alpine
+	sleep 5
+	PGEL_PORT=5418 $(MAKE) test
+	${DOCKER} stop pgsql
+
+test-postgresql18: test-pg.el
+	${DOCKER} run --rm --name pgsql \
+           --pull=newer \
+	   --publish 5418:5418 \
+	   -e POSTGRES_DB=pgeltestdb \
+	   -e POSTGRES_USER=pgeltestuser \
+	   -e POSTGRES_PASSWORD=pgeltest \
+	   -e PGPORT=5418 \
+	   -e TZ=Asia/Tokyo \
+	   -d docker.io/library/postgres:18-alpine
+	sleep 5
+	PGEL_PORT=5418 $(MAKE) test
+	${DOCKER} stop pgsql
+
+test-postgresql17: test-pg.el
+	${DOCKER} run --rm --name pgsql \
+           --pull=newer \
+	   --publish 5426:5426 \
+	   -e POSTGRES_DB=pgeltestdb \
+	   -e POSTGRES_USER=pgeltestuser \
+	   -e POSTGRES_PASSWORD=pgeltest \
+	   -e PGPORT=5426 \
+	   -e TZ=Asia/Tokyo \
+	   -d docker.io/library/postgres:17-alpine
+	sleep 5
+	PGEL_PORT=5426 $(MAKE) test
+	${DOCKER} stop pgsql
+
 test-postgresql16: test-pg.el
 	${DOCKER} run --rm --name pgsql \
+           --pull=newer \
 	   --publish 5416:5416 \
 	   -e POSTGRES_DB=pgeltestdb \
 	   -e POSTGRES_USER=pgeltestuser \
@@ -158,6 +241,7 @@ test-postgresql16: test-pg.el
 
 test-postgresql15: test-pg.el
 	${DOCKER} run --rm --name pgsql \
+           --pull=newer \
 	   --publish 5116:5116 \
 	   -e POSTGRES_DB=pgeltestdb \
 	   -e POSTGRES_USER=pgeltestuser \
@@ -170,6 +254,7 @@ test-postgresql15: test-pg.el
 
 test-postgresql14: test-pg.el
 	${DOCKER} run --rm --name pgsql \
+           --pull=newer \
 	   --publish 5439:5439 \
 	   -e POSTGRES_DB=pgeltestdb \
 	   -e POSTGRES_USER=pgeltestuser \
@@ -332,6 +417,7 @@ test-xata: test-pg.el
 # code in pg-el to remove these from the list of tables returned by pg-tables.
 test-timescale: test-pg.el
 	${DOCKER} run --rm --name timescale \
+           --pull=newer \
 	   --publish 5981:5981 \
 	   -e POSTGRES_DB=pgeltestdb \
 	   -e POSTGRES_USER=pgeltestuser \
@@ -352,6 +438,7 @@ test-timescale: test-pg.el
 # behavioural difference from standard PostgreSQL, we don't report this as a variant.
 test-citus: test-pg.el
 	${DOCKER} run --rm --name citus \
+           --pull=newer \
 	   --publish 5409:5409 \
 	   -e POSTGRES_DB=pgeltestdb \
 	   -e POSTGRES_USER=pgeltestuser \
@@ -370,6 +457,7 @@ test-citus: test-pg.el
 # https://hub.docker.com/r/orioledb/orioledb
 test-orioledb: test-pg.el
 	${DOCKER} run --rm --name orioledb \
+          --pull=newer \
 	  --publish 5317:5317 \
 	   -e POSTGRES_DB=pgeltestdb \
 	   -e POSTGRES_USER=pgeltestuser \
@@ -387,13 +475,14 @@ test-orioledb: test-pg.el
 # https://registry.hub.docker.com/r/ivorysql/ivorysql/tags
 test-ivorysql: test-pg.el
 	${DOCKER} run --rm --name ivorydb \
+          --pull=newer \
 	  --publish 5437:5432 \
 	  -e LANG=C.UTF8 \
 	  -e LC_CTYPE=C.UTF8 \
 	  -e IVORYSQL_DB=pgeltestdb \
 	  -e IVORYSQL_USER=pgeltestuser \
 	  -e IVORYSQL_PASSWORD=pgeltest \
-	  -d docker.io/ivorysql/ivorysql:4.4-ubi8
+	  -d docker.io/ivorysql/ivorysql:ubi8-4.5-4.0-1
 	sleep 5
 	PGEL_PORT=5437 $(MAKE) test
 	${DOCKER} stop ivorydb
@@ -405,6 +494,7 @@ test-ivorysql: test-pg.el
 # data preloaded.
 test-paradedb: test-pg.el
 	${DOCKER} run --rm --name paradedb \
+          --pull=newer \
 	  --publish 5441:5441 \
           -e POSTGRES_DB=pgeltestdb \
           -e POSTGRESQL_PORT_NUMBER=5441 \
@@ -531,6 +621,7 @@ test-pgdog: test-pg.el
 # https://readyset.io/docs/reference/cli/readyset
 test-readyset: test-pg.el
 	${DOCKER} run --rm --name bitnamipg \
+           --pull=newer \
 	   --publish 5488:5488 \
 	   -e POSTGRESQL_PORT_NUMBER=5488 \
 	   -e POSTGRESQL_DATABASE=pgeltestdb \
@@ -645,6 +736,7 @@ test-yugabyte: test-pg.el
 # https://materialize.com/blog/postgres-compatibility/
 test-materialize: test-pg.el
 	${DOCKER} run --rm --name materialize \
+          --pull=newer \
           --publish 6875:6875 \
           -d docker.io/materialize/materialized:latest
 	sleep 10
@@ -768,7 +860,7 @@ test-ydb: test-pg.el
 	${DOCKER} stop ydb
 
 
-# Last tested 2025-04 with version 25.1. Very limited PostgreSQL support: there is no pg_type table
+# Very limited PostgreSQL support: there is no pg_type table
 # so we can't retrieve information regarding the OID of builtin types. We have to be careful during
 # the initialization sequence not to send the query "SET datestyle = 'ISO'", which would fail and cause
 # the network connection to be reset (!).
