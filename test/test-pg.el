@@ -424,6 +424,12 @@
       (let* ((res (pg-exec con "EXECUTE pgtest_foobles(41)"))
              (row (pg-result res :tuple 0)))
         (should (eql 42 (cl-first row)))))
+    ;; https://github.com/kagis/pgwire/blob/main/test/test.js
+    (let ((typ (scalar "SELECT pg_typeof($1)::text" '((42 . "int4")))))
+      (should (or (string= "integer" typ)
+                  (string= "bigint" typ)))) 
+    (should (equal (list "text" "foobles")
+                   (row "SELECT pg_typeof($1)::text, $1::text" '(("foobles" . "text")))))
     (unless (member (pgcon-server-variant con) '(cratedb risingwave materialize ydb))
       (let ((bv1 (make-bool-vector 1 nil))
             (bv2 (make-bool-vector 1 t)))
@@ -611,7 +617,8 @@
     (should (equal (list "hey" "Jude") (row "SELECT 'hey', 'Jude'")))
     (should (eql nil (scalar "SELECT NULL")))
     (unless (member (pgcon-server-variant con) '(cratedb risingwave yugabyte))
-      (should (eql #x1eeeffff (scalar "SELECT int8 '0x1EEE_FFFF'"))))
+      (when (> (pgcon-server-version-major con) 13)
+        (should (eql #x1eeeffff (scalar "SELECT int8 '0x1EEE_FFFF'")))))
     (should (eql t (scalar "SELECT 42 = 42")))
     ;; Empty strings are equal
     (should (eql t (scalar "SELECT '' = ''")))
@@ -623,6 +630,8 @@
     ;; This leads to a timeout with YDB
     (unless (member (pgcon-server-variant con) '(ydb))
       (should (equal nil (row ""))))
+    (unless (member (pgcon-server-variant con) '(cratedb risingwave))
+      (should (eql nil (scalar "SELECT"))))
     (unless (member (pgcon-server-variant con) '(cratedb))
       (should (eql nil (row "-- comment")))
       (should (eql nil (row "  /* only a comment */ "))))
@@ -987,6 +996,8 @@ bar$$"))))
     (should (eql 66 (scalar "SELECT 66::int8")))
     (should (eql -1 (scalar "SELECT -1::int8")))
     (should (eql 42 (scalar "SELECT '42'::smallint")))
+    ;; (should (string= "-32768" (scalar "SELECT (-1::int2<<15)::text")))
+    (should (eql 0 (scalar "SELECT (-32768)::int2 % (-1)::int2")))
     ;; RisingWave doesn't support numeric(x, y) or decimal(x, y).
     (unless (member (pgcon-server-variant con) '(risingwave questdb))
       (should (approx= 3.14 (scalar "SELECT 3.14::decimal(10,2) as pi"))))
@@ -1039,6 +1050,9 @@ bar$$"))))
     (should (eql -1.0e+INF (scalar "SELECT '-Infinity'::float8")))
     (should (isnan (scalar "SELECT 'NaN'::float4")))
     (should (isnan (scalar "SELECT 'NaN'::float8")))
+    ;; The cube root operator
+    (unless (member (pgcon-server-variant con) '(cratedb materialize))
+      (should (approx= 3.0 (scalar "SELECT ||/ float8 '27'"))))
     (should (string= (scalar "SELECT 42::decimal::text") "42"))
     (unless (member (pgcon-server-variant con) '(cratedb cockroachdb risingwave materialize))
       (should (string= (scalar "SELECT macaddr '08002b:010203'") "08:00:2b:01:02:03")))
@@ -1299,6 +1313,9 @@ bar$$"))))
     (pg-exec con "DROP SCHEMA pgeltestschema")))
 
 (defun pg-test-metadata (con)
+  (pg-exec con "SET work_mem TO '2MB'")
+  (pg-exec con "EXPLAIN (COSTS OFF) SELECT 42")
+  (pg-exec con "RESET work_mem")
   ;; Check that the pg_user table exists and that we can parse the name type
   (let* ((res (pg-exec con "SELECT usename FROM pg_user"))
          (users (pg-result res :tuples)))
@@ -1472,6 +1489,14 @@ bar$$"))))
             (approx= (x y) (< (/ (abs (- x y)) (max (abs x) (abs y))) 1e-5)))
     (should (eql 42 (scalar "SELECT to_json(42)")))
     (should (eql -56 (scalar "SELECT CAST ('-56' as json)")))
+    (should (eql nil (scalar "SELECT JSON(NULL)")))
+    (let ((dct (scalar "SELECT JSON('{ \"a\" : 1 }')")))
+      (should (hash-table-p dct))
+      (should (eql 1 (gethash "a" dct))))
+    (unless (member (pgcon-server-variant con) '(alloydb))
+      (should (approx= 155.6 (scalar "SELECT JSON_SCALAR(155.6)")))
+      (should (string= "155.6" (scalar "SELECT JSON_SCALAR('155.6')")))
+      (should (string= "144" (scalar "SELECT JSON_SERIALIZE('144')"))))
     (let ((json (scalar "SELECT '[5,7]'::json")))
       (should (eql 5 (aref json 0))))
     (let ((json (scalar "SELECT '[5,7]'::jsonb")))
@@ -1940,6 +1965,9 @@ bar$$"))))
   (message "Testing COPY...")
   (cl-flet ((ascii (n) (+ ?A (mod n 26)))
             (random-word () (apply #'string (cl-loop for count to 10 collect (+ ?a (random 26))))))
+    (with-temp-buffer
+      (let* ((res (pg-copy-to-buffer con "COPY (values (1, 'hello'), (2, 'world')) TO STDOUT" (current-buffer))))
+        (should (string= "1\thello\n2\tworld\n" (buffer-string)))))
     (pg-exec con "DROP TABLE IF EXISTS copy_tsv")
     (pg-exec con "CREATE TABLE copy_tsv (a INTEGER, b CHAR, c TEXT)")
     (with-temp-buffer
@@ -2229,7 +2257,19 @@ bar$$"))))
                          (scalar "SELECT 42/0")
                        (pg-division-by-zero 'ok))))
     (should (eql 'ok (condition-case nil
-                         (pg-exec-prepared con "SELECT 1/0" nil)
+                         (scalar "SELECT 1/0::float8")
+                       (pg-division-by-zero 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (pg-exec-prepared con "SELECT 1/0::int2" nil)
+                       (pg-division-by-zero 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (pg-exec-prepared con "SELECT 1/0::numeric" nil)
+                       (pg-division-by-zero 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (pg-exec-prepared con "SELECT 1::numeric/0" nil)
+                       (pg-division-by-zero 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (pg-exec-prepared con "SELECT 1::int8/0" nil)
                        (pg-division-by-zero 'ok))))
     (should (eql 'ok (condition-case nil
                          (scalar "SELECT sqrt(-5.0)")
@@ -2242,8 +2282,26 @@ bar$$"))))
                          (scalar "SELECT 2147483649::int4")
                        (pg-numeric-value-out-of-range 'ok))))
     (should (eql 'ok (condition-case nil
+                         ;; numerical overflow on smallint
+                         (scalar "SELECT (-32768)::int2 * (-1)::int2")
+                       (pg-numeric-value-out-of-range 'ok))))
+    (should (eql 'ok (condition-case nil
+                         ;; numerical overflow on smallint
+                         (scalar "SELECT (-32768)::int2 / (-1)::int2")
+                       (pg-numeric-value-out-of-range 'ok))))
+    ;; Yugabyte doesn't accept this input syntax for smallint
+    (unless (member (pgcon-server-variant con) '(yugabyte))
+      (should (eql 'ok (condition-case nil
+                           ;; numerical overflow on smallint
+                           (scalar "SELECT int2 '-0b1000000000000001'")
+                         (pg-numeric-value-out-of-range 'ok)))))
+    (should (eql 'ok (condition-case nil
                          ;; numerical overflow
                          (scalar "SELECT lcm((-9223372036854775808)::int8, 1::int8)")
+                       (pg-numeric-value-out-of-range 'ok))))
+    (should (eql 'ok (condition-case nil
+                         ;; numerical overflow
+                         (scalar "SELECT '10e-400'::float8")
                        (pg-numeric-value-out-of-range 'ok))))
     ;; xata.io fails on this test; returns a generic pg-error.
     (should (eql 'ok (condition-case nil
@@ -2261,20 +2319,37 @@ bar$$"))))
                              (scalar "SELECT jsonb_path_query('{\"a\":42}'::jsonb, '$$.foo')")
                            (pg-syntax-error 'ok))))))
     ;; The json_serialize() function is new in PostgreSQL 17
-    (unless (or (member (pgcon-server-variant con) '(cockroachdb yugabyte))
+    (unless (or (member (pgcon-server-variant con) '(cockroachdb yugabyte alloydb))
                 (< (pgcon-server-version-major con) 17))
       (should (eql 'ok (condition-case nil
                            (scalar "SELECT json_serialize('{\"a\": \"foo\", 42: 43 }')")
-                         (pg-invalid-text-representation 'ok)))))
+                         (pg-invalid-text-representation 'ok))))
+      (should (eql 'ok (condition-case nil
+                           ;; cannot use non-string types with implicit FORMAT JSON clause
+                           (scalar "SELECT JSON_SERIALIZE(144)")
+                         (pg-datatype-mismatch 'ok)))))
     (should (eql 'ok (condition-case nil
                          (scalar "SELECT CAST('55Y' AS INTEGER)")
                        (pg-invalid-text-representation 'ok))))
     (should (eql 'ok (condition-case nil
                          (scalar "SELECT * FROM nonexistent_table")
                        (pg-undefined-table 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "ALTER TABLE nonexistent_table RENAME TO aspirational")
+                       (pg-undefined-table 'ok))))
     (scalar "CREATE TABLE pgtest_foobles(a INTEGER PRIMARY KEY)")
     (should (eql 'ok (condition-case nil
                          (scalar "ALTER TABLE pgtest_foobles DROP COLUMN nonexistent")
+                       (pg-programming-error 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "ALTER TABLE pgtest_foobles RENAME COLUMN nonexistent TO aspirational")
+                       (pg-programming-error 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "ALTER TABLE pgtest_foobles RENAME TO pgtest_foobles")
+                       (pg-programming-error 'ok))))
+    (should (eql 'ok (condition-case nil
+                         ;; This creates a conflict with the system column ctid
+                         (scalar "ALTER TABLE pgtest_foobles RENAME COLUMN a TO ctid")
                        (pg-programming-error 'ok))))
     (should (eql 'ok (condition-case nil
                          (scalar "CREATE INDEX pgtest_idx ON pgtest_foobles(inexist)")
@@ -2285,6 +2360,12 @@ bar$$"))))
                        (pg-programming-error 'ok))))
     (should (eql 'ok (condition-case nil
                          (scalar "DROP VIEW nonexist_view")
+                       (pg-programming-error 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "DROP TYPE")
+                       (pg-programming-error 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "DROP TYPE nonexist_type")
                        (pg-programming-error 'ok))))
     (should (eql 'ok (condition-case nil
                          (scalar "SELECT unexist FROM pg_catalog.pg_type")
@@ -2326,6 +2407,9 @@ bar$$"))))
                        (pg-invalid-text-representation 'ok))))
     (should (eql 'ok (condition-case nil
                          (scalar "SELECT '1f2'::json")
+                       (pg-invalid-text-representation 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "SELECT int2 '10__000'")
                        (pg-invalid-text-representation 'ok))))
     (should (eql 'ok (condition-case nil
                          (scalar "SELECT 'true false::json")
@@ -2388,6 +2472,9 @@ bar$$"))))
                          (scalar "CREATE TABLE table(a INTEGER PRIMARY KEY)")
                        (pg-reserved-name 'ok)
                        (pg-syntax-error 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "CREATE TABLE foo (LIKE nonexistent)")
+                       (pg-programming-error 'ok))))
     (should (eql 'ok
                  (unwind-protect
                      (progn
@@ -2492,10 +2579,10 @@ bar$$"))))
   ;; CrateDB and Spanner do not support DO. GreptimeDB does not support SET client_min_messages.
   (unless (member (pgcon-server-variant con) '(cratedb spanner greptimedb questdb))
     (cl-flet ((check-shibboleth (ntc)
-                (should (cl-search "ShibboleTH" (pgerror-message ntc)))))
+                (should (cl-search "Shibboleτℋ" (pgerror-message ntc)))))
       (let ((pg-handle-notice-functions (list #'check-shibboleth)))
         (pg-exec con "SET client_min_messages TO notice")
-        (pg-exec con "DO $$BEGIN raise notice 'Hi! ShibboleTH'; END$$ LANGUAGE PLPGSQL")))
+        (pg-exec con "DO $$BEGIN raise notice 'Hi! Shibboleτℋ'; END$$ LANGUAGE PLPGSQL")))
     (cl-flet ((check-shibboleth (ntc)
                 (should (cl-search "ShibboleTH" (pgerror-message ntc)))
                 (should (string= "WARNING" (pgerror-severity ntc)))))
