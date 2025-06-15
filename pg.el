@@ -2001,7 +2001,7 @@ can be decoded using `pg-result'."
 (cl-defun pg-copy-to-buffer (con query buf)
   "Execute COPY TO STDOUT on QUERY into the buffer BUF.
 Uses PostgreSQL connection CON. Returns a result structure which
-can be decoded using `pg-result'."
+can be decoded using `pg-result', but with data in BUF."
   (unless (string-equal "COPY" (upcase (cl-subseq query 0 4)))
     (signal 'pg-programming-error (list "Invalid COPY query")))
   (unless (cl-search "TO STDOUT" query)
@@ -2122,7 +2122,7 @@ can be decoded using `pg-result'."
             (signal 'pg-protocol-error (list msg)))))))))
 
 
-(defun pg-sync (con)
+(cl-defun pg-sync (con)
   (pg-connection-set-busy con t)
   ;; discard any content in our process buffer
   (with-current-buffer (process-buffer (pgcon-process con))
@@ -2133,15 +2133,43 @@ can be decoded using `pg-result'."
   (when (fboundp 'thread-yield)
     (thread-yield))
   ;; Read the ReadyForQuery message
-  (ignore-errors
-    (let ((c (pg-read-char con)))
-      (unless (eql c ?Z)
-        (message "Unexpected message type after Sync: %s" c)
-        (pg-unread-char con)))
-    ;; Read message length then status, which we discard.
-    (pg-read-net-int con 4)
-    (pg-read-char con))
-  (pg-connection-set-busy con nil))
+  (cl-loop
+   for c = (pg-read-char con) do
+   (cl-case c
+     ;; ErrorResponse
+     (?E
+      (pg-handle-error-response con))
+
+     ;; NoData
+     (?n
+      (pg-read-net-int con 4))
+
+     ;; ParseComplete
+     (?1
+      (pg-read-net-int con 4))
+
+     ;; BindComplete
+     (?2
+      (pg-read-net-int con 4))
+
+     ;; CloseComplete
+     (?3
+      (pg-read-net-int con 4))
+
+     ;; ReadyForQuery message
+     (?Z
+      (let ((_msglen (pg-read-net-int con 4))
+            (status (pg-read-char con)))
+        (when (eql ?E status)
+          (message "PostgreSQL ReadyForQuery message with error status"))
+        (pg-connection-set-busy con nil)
+        (cl-return-from pg-sync nil)))
+
+     (t
+      (message "Unexpected message type after Sync: %s" c)
+      (pg-unread-char con)
+      (pg-connection-set-busy con nil)
+      (cl-return-from pg-sync nil)))))
 
 
 (defun pg-cancel (con)
