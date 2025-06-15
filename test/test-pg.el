@@ -352,7 +352,7 @@
         (message "== Running test %s" test)
         (condition-case err
             (funcall test con)
-          (error (message "Test failed: %s" err)))
+          (error (message "\033[31;1mTest failed\033[0m: %s" err)))
         (pg-sync con)))))
 
 
@@ -616,7 +616,7 @@
       (should (eql t (scalar "SELECT bool 'f' <= bool 't' AS true"))))
     (should (equal (list "hey" "Jude") (row "SELECT 'hey', 'Jude'")))
     (should (eql nil (scalar "SELECT NULL")))
-    (unless (member (pgcon-server-variant con) '(cratedb risingwave yugabyte))
+    (unless (member (pgcon-server-variant con) '(cratedb risingwave yugabyte xata))
       (when (> (pgcon-server-version-major con) 13)
         (should (eql #x1eeeffff (scalar "SELECT int8 '0x1EEE_FFFF'")))))
     (should (eql t (scalar "SELECT 42 = 42")))
@@ -647,6 +647,22 @@
       (let* ((res (pg-exec con "SELECT 42 as éléphant"))
              (col1 (cl-first (pg-result res :attributes))))
         (should (string= "éléphant" (cl-first col1)))))
+    (let* ((res (pg-exec con "SELECT -55 AS \"foo/bar\""))
+           (col1 (cl-first (pg-result res :attributes)))
+           (row (pg-result res :tuple 0)))
+      (should (eql -55 (cl-first row)))
+      (should (string= "foo/bar" (cl-first col1))))
+    ;; Try a query with a large number of columns.
+    (let* ((n 1200)
+           (cols (cl-loop for i from 1 to n collect (format "%d AS col%d" (- i) i)))
+           (sql (concat "SELECT " (string-join cols ", ")))
+           (res (pg-exec con sql))
+           (row (pg-result res :tuple 0))
+           (columns (pg-result res :attributes)))
+      (should (eql n (length row)))
+      (should (eql -55 (elt row (1- 55))))
+      (should (string= "col66" (cl-first (elt columns (1- 66)))))
+      (should (string= "col555" (cl-first (elt columns (1- 555))))))
     ;; Note that we need to escape the ?\ character in an elisp string by repeating it.
     ;; CrateDB does not support the BYTEA type.
     (unless (member (pgcon-server-variant con) '(cratedb))
@@ -2160,6 +2176,8 @@ bar$$"))))
     (pg-exec con "CREATE INDEX idx_foobles ON foobles(a)")
     (pg-exec con "INSERT INTO foobles VALUES (42, 'foo')")
     (pg-exec con "INSERT INTO foobles VALUES (66, 'bizzle')")
+    (unless (member (pgcon-server-variant con) '(risingwave materialize))
+      (pg-exec con "REINDEX INDEX idx_foobles"))
     (when (and (> (pgcon-server-version-major con) 11)
                (not (member (pgcon-server-variant con) '(risingwave greenplum))))
       (pg-exec con "REINDEX TABLE CONCURRENTLY foobles"))
@@ -2290,7 +2308,7 @@ bar$$"))))
                          (scalar "SELECT (-32768)::int2 / (-1)::int2")
                        (pg-numeric-value-out-of-range 'ok))))
     ;; Yugabyte doesn't accept this input syntax for smallint
-    (unless (member (pgcon-server-variant con) '(yugabyte))
+    (unless (member (pgcon-server-variant con) '(yugabyte greenplum))
       (should (eql 'ok (condition-case nil
                            ;; numerical overflow on smallint
                            (scalar "SELECT int2 '-0b1000000000000001'")
@@ -2562,7 +2580,6 @@ bar$$"))))
 ;; Check our handling of NoticeMessage messages, and the correct operation of
 ;; `pg-handle-notice-functions'.
 (defun pg-test-notice (con)
-  (message "Testing handler functions for NOTICE messages")
   ;; The DROP TABLE will generate a NOTICE. We install a handler function that checks for the
   ;; name of the table in the NOTICE message (the message will be localized, but hopefully the
   ;; table name will always be present).
