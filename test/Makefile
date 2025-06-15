@@ -482,7 +482,7 @@ test-ivorysql: test-pg.el
 	  -e IVORYSQL_DB=pgeltestdb \
 	  -e IVORYSQL_USER=pgeltestuser \
 	  -e IVORYSQL_PASSWORD=pgeltest \
-	  -d docker.io/ivorysql/ivorysql:ubi8-4.5-4.0-1
+	  -d docker.io/ivorysql/ivorysql:4.5-ubi8
 	sleep 5
 	PGEL_PORT=5437 $(MAKE) test
 	${DOCKER} stop ivorydb
@@ -597,7 +597,7 @@ test-pgcat: test-pg.el
 	   --net host \
 	   -d ghcr.io/postgresml/pgcat:latest
 	sleep 5
-	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:6432/pgeltestdb $(MAKE) test
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:6432/pgeltestdb?read_timeout=1000 $(MAKE) test
 	${DOCKER} stop pgcat
 
 
