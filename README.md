@@ -95,15 +95,16 @@ The following PostgreSQL-compatible databases have been tested:
   licensed). Works fine (last tested 2025-05 with version 1.24 in the default session pooling mode).
 
 - The [PgDog](https://github.com/pgdogdev/pgdog) sharding connection pooler for PostgreSQL (AGPLv3
-  licensed). Works mostly fine but disconnects the client when the client-encoding is switched to
-  `LATIN1` (last tested 2025-05).
+  licensed). We encounter some errors when using the extended query protocol: unnamed prepared
+  statements and prepared statments named `__pgdog_N` are reported not to exist. The pooler also
+  disconnects the client when the client-encoding is switched to `LATIN1` (last tested 2025-05).
 
 - The [PgCat](https://github.com/postgresml/pgcat) sharding connection pooler for PostgreSQL (MIT
-  license). Works fine (last tested 2025-05 with v0.2.5).
+  license). Mostly works but sometimes runs into read timeouts (last tested 2025-06 with v0.2.5).
 
 - [Google AlloyDB Omni](https://cloud.google.com/alloydb/omni/docs/quickstart) is a proprietary fork
   of PostgreSQL with Google-developed extensions, including a columnar storage extension, adaptive
-  autovacuum, and an index advisor. It works perfectly with pg-el as of 2025-05 (version that
+  autovacuum, and an index advisor. It works perfectly with pg-el as of 2025-06 (version that
   reports itself as "15.7").
 
 - [Xata](https://xata.io/) “serverless PostgreSQL” has many limitations including lack of support
@@ -154,7 +155,7 @@ The following PostgreSQL-compatible databases have been tested:
 - The [Materialize](https://materialize.com/) operational database (a proprietary differential
   dataflow database) has many limitations in its PostgreSQL compatibility: no support for primary
   keys, unique constraints, check constraints, for the 'bit' type for example. It works with these
-  limitations with pg-el (last tested 2025-06 with Materialize v0.145).
+  limitations with pg-el (last tested 2025-06 with Materialize v0.146).
 
 - [YottaDB Octo](https://gitlab.com/YottaDB/DBMS/YDBOcto), which is built on the YottaDB key-value
   store (which is historically based on the MUMPS programming language). GNU AGPL v3 licence. There

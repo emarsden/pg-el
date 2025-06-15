@@ -10,6 +10,9 @@
   implemented from PostgreSQL v18 (currently in beta). It requires ALPN support in Emacs, which is
   not yet committed.
 
+- The `pg-sync` function tries a little harder to resynchronize the data stream with the backend, by
+  reading and discarding additional message types that cannot lead to data loss.
+
 
 ## [0.54] - 2025-05-03
 
