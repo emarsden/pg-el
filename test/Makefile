@@ -884,6 +884,22 @@ test-clickhouse: test-pg.el
 	${DOCKER} stop clickhouse
 
 
+# https://github.com/timeplus-io/proton
+#
+# Apparently this database is supposed to have PostgreSQL wire protocol support, but it doesn't seem
+# to be a priority as it hasn't worked for over a year
+# (https://github.com/timeplus-io/proton/issues/824)
+#
+# Alternative container image: ghcr.io/timeplus-io/proton:develop
+test-proton: test-pg.el
+	${DOCKER} run --rm --name proton \
+           --pull=newer \
+           --publish 8123:8123 --publish 8463:8463 \
+           -d d.timeplus.com/timeplus-io/proton:latest
+	sleep 5
+	PGURI=postgresql://default@localhost:8463/default $(MAKE) test
+
+
 # https://docs.greptime.com/getting-started/installation/greptimedb-standalone
 #
 # This database implements quite a lot of the PostgreSQL wire protocol, but the names it uses for
@@ -942,6 +958,21 @@ test-alloydb: test-pg.el
 	sleep 10
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:4481/pgeltestdb $(MAKE) test
 	${DOCKER} stop alloydb
+
+
+# Apache AGE is a graph query extension for PostgreSQL.
+#
+# https://age.apache.org/getstarted/quickstart
+test-age: test-pg.el
+	${DOCKER} run --rm --name age \
+          -p 5455:5432 \
+          -e POSTGRES_USER=pgeltestuser \
+          -e POSTGRES_PASSWORD=pgeltest \
+          -e POSTGRES_DB=pgeltestdb \
+          -d docker.io/apache/age
+	sleep 5
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5455/pgeltestdb $(MAKE) test
+	${DOCKER} stop age
 
 
 # YottaDB Octo
