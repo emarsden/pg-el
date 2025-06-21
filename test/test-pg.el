@@ -611,6 +611,8 @@
     (should (eql 100 (scalar "SELECT CAST ('100' AS INTEGER)")))
     (should (eql nil (scalar "SELECT '0'::boolean")))
     (should (eql t (scalar "SELECT '1'::boolean")))
+    (should (eql -6 (scalar "SELECT -(6)")))
+    (should (eql t (scalar "SELECT true or false")))
     (unless (member (pgcon-server-variant con) '(cratedb))
       (should (eql t (scalar "SELECT bool 'f' < bool 't' AS true")))
       (should (eql t (scalar "SELECT bool 'f' <= bool 't' AS true"))))
@@ -1510,9 +1512,10 @@ bar$$"))))
       (should (hash-table-p dct))
       (should (eql 1 (gethash "a" dct))))
     (unless (member (pgcon-server-variant con) '(alloydb))
-      (should (approx= 155.6 (scalar "SELECT JSON_SCALAR(155.6)")))
-      (should (string= "155.6" (scalar "SELECT JSON_SCALAR('155.6')")))
-      (should (string= "144" (scalar "SELECT JSON_SERIALIZE('144')"))))
+      (when (>= (pgcon-server-version-major con) 17)
+        (should (approx= 155.6 (scalar "SELECT json_scalar(155.6)")))
+        (should (string= "155.6" (scalar "SELECT json_scalar('155.6')")))
+        (should (string= "144" (scalar "SELECT json_serialize('144')")))))
     (let ((json (scalar "SELECT '[5,7]'::json")))
       (should (eql 5 (aref json 0))))
     (let ((json (scalar "SELECT '[5,7]'::jsonb")))
@@ -1670,7 +1673,6 @@ bar$$"))))
 ;; Testing support for the pgvector extension.
 (defun pg-test-vector (con)
   (when (pg-vector-setup con)
-    (message "Testing pgvector extension")
     (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0))))
       (let ((v (scalar "SELECT '[4,5,6]'::vector")))
         (should (eql 4 (aref v 0))))
@@ -2269,6 +2271,8 @@ bar$$"))))
     (should (eql -55 (scalar "SELECT -55")))))
 
 ;; Here we test that the SQLSTATE component of errors signaled by the backend is valid.
+;;
+;; Some examples from https://github.com/technicaldeft/rgsql
 (defun pg-test-error-sqlstate (con)
   (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0))))
     (should (eql 'ok (condition-case nil
@@ -2295,6 +2299,12 @@ bar$$"))))
     (should (eql 'ok (condition-case nil
                          (scalar "SELECT log(-2.1)")
                        (pg-floating-point-exception 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "SELECT abs(true)")
+                       (pg-undefined-function 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "SELECT 1 + true")
+                       (pg-undefined-function 'ok))))
     (should (eql 'ok (condition-case nil
                          ;; numerical overflow
                          (scalar "SELECT 2147483649::int4")
@@ -2329,6 +2339,9 @@ bar$$"))))
                          (scalar "SELECTING 42")
                        (pg-syntax-error 'ok))))
     (should (eql 'ok (condition-case nil
+                         (scalar "SELECT 1 * / 2")
+                       (pg-syntax-error 'ok))))
+    (should (eql 'ok (condition-case nil
                          (scalar "SELECT '[1,2,3]'::json ->> {}")
                        (pg-syntax-error 'ok))))
     (when (> (pgcon-server-version-major con) 11)
@@ -2352,6 +2365,9 @@ bar$$"))))
     (should (eql 'ok (condition-case nil
                          (scalar "SELECT * FROM nonexistent_table")
                        (pg-undefined-table 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "CREATE TABLE foobles(a BANANA)")
+                       (pg-programming-error 'ok))))
     (should (eql 'ok (condition-case nil
                          (scalar "ALTER TABLE nonexistent_table RENAME TO aspirational")
                        (pg-undefined-table 'ok))))
@@ -2385,6 +2401,9 @@ bar$$"))))
     (should (eql 'ok (condition-case nil
                          (scalar "DROP TYPE nonexist_type")
                        (pg-programming-error 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "SELECT banana(42)")
+                       (pg-undefined-function 'ok))))
     (should (eql 'ok (condition-case nil
                          (scalar "SELECT unexist FROM pg_catalog.pg_type")
                        (pg-undefined-column 'ok))))
