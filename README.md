@@ -92,12 +92,12 @@ The following PostgreSQL-compatible databases have been tested:
   storage and parallel queries (Apache license). Works perfectly (last tested 2025-05 with v1.1.2).
 
 - The [PgBouncer](https://www.pgbouncer.org/) connection pooler for PostgreSQL (open source, ISC
-  licensed). Works fine (last tested 2025-05 with version 1.24 in the default session pooling mode).
+  licensed). Works fine (last tested 2025-06 with version 1.24 in the default session pooling mode).
 
 - The [PgDog](https://github.com/pgdogdev/pgdog) sharding connection pooler for PostgreSQL (AGPLv3
   licensed). We encounter some errors when using the extended query protocol: unnamed prepared
   statements and prepared statments named `__pgdog_N` are reported not to exist. The pooler also
-  disconnects the client when the client-encoding is switched to `LATIN1` (last tested 2025-05).
+  disconnects the client when the client-encoding is switched to `LATIN1` (last tested 2025-06).
 
 - The [PgCat](https://github.com/postgresml/pgcat) sharding connection pooler for PostgreSQL (MIT
   license). Mostly works but sometimes runs into read timeouts (last tested 2025-06 with v0.2.5).
@@ -127,7 +127,7 @@ The following PostgreSQL-compatible databases have been tested:
   PostgreSQL functions such as `factorial`, does not return a correct type OID for text columns in
   rows returned from a prepared statement, doesn't support Unicode identifiers, doesn't support the
   `COPY` protocol, doesn't support `TRUNCATE TABLE`. It works with these limitations with pg-el
-  (last tested 2025-06 with version 5.10.7).
+  (last tested 2025-06 with version 5.10.9).
 
 - The [CockroachDB](https://github.com/cockroachdb/cockroach) distributed database (source-available
   but non-free software licence). Note that this database does not implement the large object
@@ -137,8 +137,8 @@ The following PostgreSQL-compatible databases have been tested:
   tested 2025-06 with CockroachDB CCL v25.2).
 
 - The [QuestDB](https://questdb.io/) time series database (Apache licensed) has very limited
-  PostgreSQL support, and does not support the `integer` type for example. Last tested 2025-05 with
-  version 8.3.1.
+  PostgreSQL support, and does not support the `integer` type for example. Last tested 2025-06 with
+  version 8.3.3.
 
 - [Google Spanner](https://cloud.google.com/spanner) proprietary distributed database: tested with
   the Spanner emulator (that reports itself as `PostgreSQL 14.1`) and the PGAdapter library that
@@ -179,10 +179,15 @@ The following PostgreSQL-compatible databases have been tested:
 - Untested but likely to work: Amazon RDS, Google Cloud SQL, Azure Database for PostgreSQL, Amazon
   Aurora. You may however encounter difficulties with TLS connections, as noted above.
 
-It does not work in a satisfactory manner with the ClickHouse database, whose PostgreSQL support is
-too limited. As of version 25.4 in 2025-06, there is no implementation of the `pg_types` system
-table, no support for basic PostgreSQL-flavoured SQL commands such as `SET`, no support for the
-extended query mechanism.
+PostgreSQL variants that **don't work** with pg-el:
+
+- The ClickHouse database, whose PostgreSQL support is too limited. As of version 25.4 in 2025-06,
+  there is no implementation of the `pg_types` system table, no support for basic PostgreSQL-flavoured
+  SQL commands such as `SET`, no support for the extended query mechanism.
+  
+- The [ReadySet cache](https://github.com/readysettech/readyset) does not work in a satisfactory
+  manner: it generate spurious errors such as `invalid binary data value` when using the extended
+  query protocol (last tested 2025-06).
 
 
 Tested **Emacs versions**: mostly tested with versions 31 pre-release, 30.1 and 29.4. Emacs versions
