@@ -251,6 +251,7 @@
         (pg-vector-setup con))
       (pgtest-add #'pg-test-basic)
       (pgtest-add #'pg-test-insert)
+      (pgtest-add #'pg-test-edge-cases)
       (pgtest-add #'pg-test-procedures
                   :skip-variants '(cratedb spanner risingwave materialize ydb xata questdb))
       ;; RisingWave is not able to parse a TZ value of "UTC-01:00" (POSIX format).
@@ -324,7 +325,7 @@
       (pgtest-add #'pg-test-gis
                   :skip-variants '(xata cratedb cockroachdb risingwave materialize octodb))
       (pgtest-add #'pg-test-copy
-                  :skip-variants '(spanner ydb cratedb risingwave materialize questdb))
+                  :skip-variants '(spanner ydb cratedb risingwave materialize questdb xata))
       ;; QuestDB fails due to lack of support for the NUMERIC type
       (pgtest-add #'pg-test-copy-large
                   :skip-variants '(spanner ydb cratedb risingwave questdb materialize))
@@ -613,30 +614,13 @@
     (should (eql t (scalar "SELECT '1'::boolean")))
     (should (eql -6 (scalar "SELECT -(6)")))
     (should (eql t (scalar "SELECT true or false")))
-    (unless (member (pgcon-server-variant con) '(cratedb))
-      (should (eql t (scalar "SELECT bool 'f' < bool 't' AS true")))
-      (should (eql t (scalar "SELECT bool 'f' <= bool 't' AS true"))))
     (should (equal (list "hey" "Jude") (row "SELECT 'hey', 'Jude'")))
     (should (eql nil (scalar "SELECT NULL")))
     (unless (member (pgcon-server-variant con) '(cratedb risingwave yugabyte xata))
       (when (> (pgcon-server-version-major con) 13)
         (should (eql #x1eeeffff (scalar "SELECT int8 '0x1EEE_FFFF'")))))
     (should (eql t (scalar "SELECT 42 = 42")))
-    ;; Empty strings are equal
-    (should (eql t (scalar "SELECT '' = ''")))
     (should (eql nil (scalar "SELECT 53 = 33")))
-    ;; Returns NULL because NULL is wierd in SQL
-    (should (eql nil (scalar "SELECT NULL = NULL")))
-    ;; IS checks for NULL identity
-    (should (eql t (scalar "SELECT NULL IS NULL")))
-    ;; This leads to a timeout with YDB
-    (unless (member (pgcon-server-variant con) '(ydb))
-      (should (equal nil (row ""))))
-    (unless (member (pgcon-server-variant con) '(cratedb risingwave))
-      (should (eql nil (scalar "SELECT"))))
-    (unless (member (pgcon-server-variant con) '(cratedb))
-      (should (eql nil (row "-- comment")))
-      (should (eql nil (row "  /* only a comment */ "))))
     (should (eql 42 (scalar "SELECT /* FREE PALESTINE */ 42 ")))
     (should (equal (list 1 nil "all") (row "SELECT 1,NULL,'all'")))
     (unless (member (pgcon-server-variant con) '(questdb spanner))
@@ -644,27 +628,6 @@
     (should (eql 12 (scalar "SELECT length('(╯°□°)╯︵ ┻━┻')")))
     (should (string= "::!!::" (scalar "SELECT '::!!::'::varchar")))
     (should (string= "éàç⟶∪" (scalar "SELECT 'éàç⟶∪'")))
-    ;; This statement is strangely very poorly supported in semi-compatible PostgreSQL variants...
-    (unless (member (pgcon-server-variant con) '(cratedb risingwave))
-      (let* ((res (pg-exec con "SELECT 42 as éléphant"))
-             (col1 (cl-first (pg-result res :attributes))))
-        (should (string= "éléphant" (cl-first col1)))))
-    (let* ((res (pg-exec con "SELECT -55 AS \"foo/bar\""))
-           (col1 (cl-first (pg-result res :attributes)))
-           (row (pg-result res :tuple 0)))
-      (should (eql -55 (cl-first row)))
-      (should (string= "foo/bar" (cl-first col1))))
-    ;; Try a query with a large number of columns.
-    (let* ((n 1200)
-           (cols (cl-loop for i from 1 to n collect (format "%d AS col%d" (- i) i)))
-           (sql (concat "SELECT " (string-join cols ", ")))
-           (res (pg-exec con sql))
-           (row (pg-result res :tuple 0))
-           (columns (pg-result res :attributes)))
-      (should (eql n (length row)))
-      (should (eql -55 (elt row (1- 55))))
-      (should (string= "col66" (cl-first (elt columns (1- 66)))))
-      (should (string= "col555" (cl-first (elt columns (1- 555))))))
     ;; Note that we need to escape the ?\ character in an elisp string by repeating it.
     ;; CrateDB does not support the BYTEA type.
     (unless (member (pgcon-server-variant con) '(cratedb))
@@ -672,15 +635,7 @@
       (should (string= (string #x12 #x34 #x56) (scalar "SELECT '\\x123456'::bytea"))))
     (unless (member (pgcon-server-variant con) '(spanner))
       (should (eql nil (row " SELECT 3 WHERE 1=0"))))
-    (unless (member (pgcon-server-variant con) '(cratedb spanner ydb))
-      ;; these are row expressions, not standard SQL
-      (should (string= (scalar "SELECT (1,2)") "(1,2)"))
-      (should (string= (scalar "SELECT (null,1,2)") "(,1,2)")))
-    (unless (eq 'risingwave (pgcon-server-variant con))
-      (should (string= "foo\nbar" (scalar "SELECT $$foo
-bar$$"))))
-    (should (string= "foo\tbar" (scalar "SELECT 'foo\tbar'")))
-    (should (string= "foo\rbar\nbiz" (scalar "SELECT 'foo\rbar\nbiz'")))
+    (should (eql 4 (scalar "SELECT ((2 * 2))")))
     (should (string= "abcdef" (scalar "SELECT 'abc' || 'def'")))
     (should (string= "howdy" (scalar "SELECT 'howdy'::text")))
     (should (eql t (scalar "SELECT 'abc' LIKE 'a%'")))
@@ -721,6 +676,68 @@ bar$$"))))
             (should (eql (pgcon-server-version-major con)
                          (/ version-num 10000)))
           (message "This PostgreSQL server doesn't support current_setting('server_version_num')"))))))
+
+
+(defun pg-test-edge-cases (con)
+  (cl-labels ((row (sql) (pg-result (pg-exec con sql) :tuple 0))
+              (scalar (sql) (cl-first (pg-result (pg-exec con sql) :tuple 0))))
+    (unless (member (pgcon-server-variant con) '(cratedb))
+      (should (eql t (scalar "SELECT bool 'f' < bool 't' AS true")))
+      (should (eql t (scalar "SELECT bool 'f' <= bool 't' AS true"))))
+    ;; Empty strings are equal
+    (should (eql t (scalar "SELECT '' = ''")))
+    ;; Returns NULL because NULL is wierd in SQL
+    (should (eql nil (scalar "SELECT NULL = NULL")))
+    ;; IS checks for NULL identity
+    (should (eql t (scalar "SELECT NULL IS NULL")))
+    ;; NULL is propagated in mathematical operations.
+    (should (eql nil (scalar "SELECT NULL + 42")))
+    (should (eql nil (scalar "SELECT 42 < NULL")))
+    (should (eql nil (scalar "SELECT ABS(NULL)")))
+    ;; NULL is propagated in logical operations.
+    (should (eql nil (scalar "SELECT true AND NULL")))
+    (should (eql nil (scalar "SELECT NOT NULL")))
+    (should (eql t (scalar "SELECT TRUE OR NULL")))
+    ;; This leads to a timeout with YDB
+    (unless (member (pgcon-server-variant con) '(ydb))
+      (should (equal nil (row ""))))
+    (unless (member (pgcon-server-variant con) '(cratedb risingwave))
+      (should (eql nil (scalar "SELECT"))))
+    (unless (member (pgcon-server-variant con) '(cratedb))
+      (should (eql nil (row "-- comment")))
+      (should (eql nil (row "  /* only a comment */ "))))
+    ;; This statement is strangely very poorly supported in semi-compatible PostgreSQL variants...
+    (unless (member (pgcon-server-variant con) '(cratedb risingwave))
+      (let* ((res (pg-exec con "SELECT 42 as éléphant"))
+             (col1 (cl-first (pg-result res :attributes))))
+        (should (string= "éléphant" (cl-first col1)))))
+    (let* ((res (pg-exec con "SELECT -55 AS \"foo/bar\""))
+           (col1 (cl-first (pg-result res :attributes)))
+           (row (pg-result res :tuple 0)))
+      (should (eql -55 (cl-first row)))
+      (should (string= "foo/bar" (cl-first col1))))
+    ;; Try a query with a large number of columns.
+    (let* ((n 1200)
+           (cols (cl-loop for i from 1 to n collect (format "%d AS col%d" (- i) i)))
+           (sql (concat "SELECT " (string-join cols ", ")))
+           (res (pg-exec con sql))
+           (row (pg-result res :tuple 0))
+           (columns (pg-result res :attributes)))
+      (should (eql n (length row)))
+      (should (eql -55 (elt row (1- 55))))
+      (should (string= "col66" (cl-first (elt columns (1- 66)))))
+      (should (string= "col555" (cl-first (elt columns (1- 555))))))
+    (unless (member (pgcon-server-variant con) '(cratedb spanner ydb))
+      ;; these are row expressions, not standard SQL
+      (should (string= (scalar "SELECT (1,2)") "(1,2)"))
+      (should (string= (scalar "SELECT (null,1,2)") "(,1,2)")))
+    (unless (eq 'risingwave (pgcon-server-variant con))
+      (should (string= "foo\nbar" (scalar "SELECT $$foo
+bar$$"))))
+    (should (string= "foo\tbar" (scalar "SELECT 'foo\tbar'")))
+    (should (string= "foo\rbar\nbiz" (scalar "SELECT 'foo\rbar\nbiz'")))
+    (should (eql -55 (scalar "SELECT \n\n-\n\n55  \t\n")))
+    (should (equal (list 4 2 0) (row "SELECT 4,\n2,\n0")))))
 
 
 (defun pg-test-insert (con)
@@ -1331,9 +1348,10 @@ bar$$"))))
     (pg-exec con "DROP SCHEMA pgeltestschema")))
 
 (defun pg-test-metadata (con)
-  (pg-exec con "SET work_mem TO '2MB'")
-  (pg-exec con "EXPLAIN (COSTS OFF) SELECT 42")
-  (pg-exec con "RESET work_mem")
+  (unless (member (pgcon-server-variant con) '(xata))
+    (pg-exec con "SET work_mem TO '2MB'")
+    (pg-exec con "EXPLAIN (COSTS OFF) SELECT 42")
+    (pg-exec con "RESET work_mem"))
   ;; Check that the pg_user table exists and that we can parse the name type
   (let* ((res (pg-exec con "SELECT usename FROM pg_user"))
          (users (pg-result res :tuples)))
@@ -2304,7 +2322,9 @@ bar$$"))))
                        (pg-undefined-function 'ok))))
     (should (eql 'ok (condition-case nil
                          (scalar "SELECT 1 + true")
-                       (pg-undefined-function 'ok))))
+                       (pg-undefined-function 'ok)
+                       ;; CockroachDB reports this as a pg-data-error.
+                       (pg-data-error 'ok))))
     (should (eql 'ok (condition-case nil
                          ;; numerical overflow
                          (scalar "SELECT 2147483649::int4")
@@ -2340,6 +2360,26 @@ bar$$"))))
                        (pg-syntax-error 'ok))))
     (should (eql 'ok (condition-case nil
                          (scalar "SELECT 1 * / 2")
+                       (pg-syntax-error 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "SELECT abs 1)")
+                       (pg-syntax-error 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "SELECT mod 1, 2")
+                       (pg-syntax-error 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "SELECT 42 as 42a")
+                       (pg-syntax-error 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "SELECT @, $, %, &")
+                       (pg-syntax-error 'ok))))
+    ;; Reserved keyword used as table name.
+    (should (eql 'ok (condition-case nil
+                         (scalar "CREATE TABLE from(a INTEGER)")
+                       (pg-syntax-error 'ok))))
+    ;; Reserved keyword used as column name.
+    (should (eql 'ok (condition-case nil
+                         (scalar "CREATE TABLE x(as INTEGER)")
                        (pg-syntax-error 'ok))))
     (should (eql 'ok (condition-case nil
                          (scalar "SELECT '[1,2,3]'::json ->> {}")
@@ -2401,8 +2441,17 @@ bar$$"))))
     (should (eql 'ok (condition-case nil
                          (scalar "DROP TYPE nonexist_type")
                        (pg-programming-error 'ok))))
+    ;; CockroachDB reports this as a pg-data-error, and PostgreSQL as pg-undefined-function.
+    (should (eql 'ok (condition-case nil
+                         (scalar "SELECT 100 = false")
+                       (pg-undefined-function 'ok)
+                       (pg-data-error 'ok))))
     (should (eql 'ok (condition-case nil
                          (scalar "SELECT banana(42)")
+                       (pg-undefined-function 'ok))))
+    ;; insufficient arguments means operator does not exist
+    (should (eql 'ok (condition-case nil
+                         (scalar "SELECT mod(42)")
                        (pg-undefined-function 'ok))))
     (should (eql 'ok (condition-case nil
                          (scalar "SELECT unexist FROM pg_catalog.pg_type")

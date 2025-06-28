@@ -651,6 +651,7 @@ test-readyset: test-pg.el
 # inserted into the row_count table).
 #
 # https://hub.docker.com/_/crate/
+# https://github.com/crate/docker-crate/blob/master/Dockerfile
 # https://cratedb.com/docs/guide/install/container/docker.html
 # https://cratedb.com/docs/crate/reference/en/latest/interfaces/postgres.html
 test-cratedb: test-pg.el
@@ -670,17 +671,19 @@ test-cratedb: test-pg.el
 #
 # Still affected as of 2024-12 by the panic bug https://github.com/cockroachdb/cockroach/issues/104009
 # which was reported in May 2023!
-test-cockroachdb: test-pg.el
+test-cockroach: test-pg.el
 	${DOCKER} run --rm --name cockroachdb \
-           --pull=newer \
-	   -e COCKROACH_DATABASE=pgeltestdb \
-	   -e COCKROACH_USER=pgeltestuser \
-	   -e COCKROACH_PASSWORD=pgeltest \
-	   --publish 26257:26257 \
-	   -d docker.io/cockroachdb/cockroach start-single-node
-	sleep 5
-	PGURI="postgresql://pgeltestuser:pgeltest@127.0.0.1:26257/pgeltestdb?sslmode=require" $(MAKE) test
-	${DOCKER} stop cockroachdb
+          --pull=newer \
+          -v /dev/log:/dev/log \
+          --publish 26257:26257 \
+          -e COCKROACH_DATABASE=pgeltestdb \
+          -e COCKROACH_USER=pgeltestuser \
+          -e COCKROACH_PASSWORD=pgeltest \
+          -d docker.io/cockroachdb/cockroach start-single-node
+	sleep 10
+	psql -f tiny-import.sql postgresql://pgeltestuser:pgeltest@localhost:26257/pgeltestdb
+	PGURI="postgresql://pgeltestuser:pgeltest@localhost:26257/pgeltestdb?sslmode=require" $(MAKE) test
+
 
 
 # This database (based on PostgreSQL 12.3 but which for some reason claims to have a backend major
