@@ -346,6 +346,8 @@ test-enterprisedb: test-pg.el
 # client certificate is signed by its root CA (configured as /certs/root.crt below) and will also
 # verify that the username specified in the CN field of the certificate corresponds to the
 # PostgreSQL username we are connecting as.
+#
+# The bitnami containers are also published to the AWS ECR, public.ecr.aws/bitnami/postgresql:latest
 test-certificates: test-pg.el install-deps
 	openssl req -new -nodes -text -out ${WORKDIR}/root.csr -keyout ${WORKDIR}/root.key \
 	   -subj "/CN=localhost"
@@ -382,7 +384,8 @@ test-certificates: test-pg.el install-deps
 	   -e POSTGRESQL_TLS_KEY_FILE=/certs/server.key \
 	   -e POSTGRESQL_TLS_CA_FILE=/certs/root.crt \
 	   -e POSTGRESQL_PGHBA_REMOVE_FILTERS=local,md5,trust \
-	   -d docker.io/bitnami/postgresql:latest
+           -e POSTGRESQL_INITDB_ARGS=--data-checksums \
+           -d docker.io/bitnami/postgresql:latest
 	sleep 5
 	PGEL_CLIENT_CERT=${WORKDIR}/client.crt PGEL_CLIENT_CERT_KEY=${WORKDIR}/client.key PGEL_PORT=5488 ${EMACS} -Q --batch -L .. -L . -l load-deps.el -l ../pg.el -l test-pg.el -f pg-test-client-cert
 	${DOCKER} stop pgsqltls
@@ -542,6 +545,22 @@ test-hydra: test-pg.el
 	${DOCKER} stop hydra
 
 
+# Apache AGE is a graph query extension for PostgreSQL.
+#
+# https://age.apache.org/getstarted/quickstart
+test-age: test-pg.el
+	${DOCKER} run --rm --name age \
+          -p 5455:5432 \
+          -e POSTGRES_USER=pgeltestuser \
+          -e POSTGRES_PASSWORD=pgeltest \
+          -e POSTGRES_DB=pgeltestdb \
+          -d docker.io/apache/age
+	sleep 5
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5455/pgeltestdb $(MAKE) test
+	${DOCKER} stop age
+
+
+
 # Microsoft DocumentDB (PostgreSQL-based). This is not the same product as Amazon DocumentDB.
 #
 # https://github.com/microsoft/documentdb
@@ -681,7 +700,6 @@ test-cockroach: test-pg.el
           -e COCKROACH_PASSWORD=pgeltest \
           -d docker.io/cockroachdb/cockroach start-single-node
 	sleep 10
-	psql -f tiny-import.sql postgresql://pgeltestuser:pgeltest@localhost:26257/pgeltestdb
 	PGURI="postgresql://pgeltestuser:pgeltest@localhost:26257/pgeltestdb?sslmode=require" $(MAKE) test
 
 
@@ -836,7 +854,7 @@ test-spanner: test-pg.el
 	${DOCKER} stop spanner
 
 
-# YDB by Yandex. Last tested 2025-03 version 23.4.
+# YDB by Yandex
 # 
 # https://ydb.tech/docs/en/postgresql/docker-connect
 # https://hub.docker.com/r/ydbplatform/local-ydb/tags (this an older version)
@@ -961,21 +979,6 @@ test-alloydb: test-pg.el
 	sleep 10
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:4481/pgeltestdb $(MAKE) test
 	${DOCKER} stop alloydb
-
-
-# Apache AGE is a graph query extension for PostgreSQL.
-#
-# https://age.apache.org/getstarted/quickstart
-test-age: test-pg.el
-	${DOCKER} run --rm --name age \
-          -p 5455:5432 \
-          -e POSTGRES_USER=pgeltestuser \
-          -e POSTGRES_PASSWORD=pgeltest \
-          -e POSTGRES_DB=pgeltestdb \
-          -d docker.io/apache/age
-	sleep 5
-	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5455/pgeltestdb $(MAKE) test
-	${DOCKER} stop age
 
 
 # YottaDB Octo
