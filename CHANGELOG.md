@@ -13,6 +13,9 @@
 - The `pg-sync` function tries a little harder to resynchronize the data stream with the backend, by
   reading and discarding additional message types that cannot lead to data loss.
 
+- Recognize the hosted PostgreSQL provider thenile.dev as variant `thenile` and implement some
+  workarounds for its limitations.
+
 
 ## [0.54] - 2025-05-03
 

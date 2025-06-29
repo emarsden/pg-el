@@ -171,10 +171,13 @@ The following PostgreSQL-compatible databases have been tested:
   use of identifiers than PostgreSQL (for example, `id` is not accepted as a column name, nor are
   identifiers containing Unicode characters). Last tested v0.14.3 in 2025-06.
 
-- Hosted PostgreSQL services that have been tested: as of 2024-12
+- Hosted PostgreSQL services that have been tested: as of 2025-06 render.com is running a Debian
+  build of PostgreSQL 16.8 and works fine (requires TLS connection), as of 2024-12
   [Railway.app](https://railway.app/) is running a Debian build of PostgreSQL 16.4, and works fine;
   [Aiven.io](https://aiven.io/) is running a Red Hat build of PostgreSQL 16.4 on Linux/Aarch64 and
-  works fine.
+  works fine. [TheNile](https://thenile.dev/) is running a modified version of PostgreSQL 15, and
+  has several limitations (for example, comments on tables and comments don't work, you can't create
+  functions or procedures).
 
 - Untested but likely to work: Amazon RDS, Google Cloud SQL, Azure Database for PostgreSQL, Amazon
   Aurora. You may however encounter difficulties with TLS connections, as noted above.

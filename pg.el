@@ -767,6 +767,8 @@ Uses database DBNAME, user USER and password PASSWORD."
               (setf (pgcon-server-variant con) 'xata))
             (when (string= "PGAdapter" val)
               (setf (pgcon-server-variant con) 'spanner)))
+          (when (string= "khnum_version" key)
+            (setf (pgcon-server-variant con) 'thenile))
           (when (string-prefix-p "ivorysql." key)
             (setf (pgcon-server-variant con) 'ivorydb))
           (dolist (handler pg-parameter-change-functions)
@@ -1232,7 +1234,9 @@ Return a result structure which can be decoded using `pg-result'."
     ;; (message "pg-exec: %s" sql)
     (when (pgcon-query-log con)
       (with-current-buffer (pgcon-query-log con)
-        (insert sql "\n")))
+        (insert sql "\n"))
+      (when noninteractive
+        (message "SQL:> %s" sql)))
     (let ((len (length encoded)))
       (when (> len (- (expt 2 32) 5))
         (signal 'pg-user-error (list "Query is too large")))
@@ -1769,7 +1773,9 @@ are available, they can later be retrieved with `pg-fetch'."
   (when (pgcon-query-log con)
     (with-current-buffer (pgcon-query-log con)
       (insert query "\n")
-      (insert (format "   %s\n" typed-arguments))))
+      (insert (format "   %s\n" typed-arguments)))
+    (when noninteractive
+      (message "SQL:> %s %s" query typed-arguments)))
   (let* ((argument-types (mapcar #'cdr typed-arguments))
          (ps-name (pg-prepare con query argument-types))
          (portal-name (pg-bind con ps-name typed-arguments :portal portal))
@@ -2156,6 +2162,21 @@ can be decoded using `pg-result', but with data in BUF."
      (?3
       (pg-read-net-int con 4))
 
+     ;; RowDescription message. We really shouldn't be seeing this here, but some PostgreSQL
+     ;; variants like TheNile are sending this after the Sync. Read and discard the attributes.
+     (?T
+      (pg-read-attributes con))
+
+     ;; DataRow. Should not be seen here; read and discard.
+     (?D
+      (let ((msglen (pg-read-net-int con 4)))
+        (pg-read-chars con (- msglen 4))))
+
+     ;; CommandComplete -- read and discard
+     (?C
+      (let ((msglen (pg-read-net-int con 4)))
+        (pg-read-chars con (- msglen 4))))
+
      ;; ReadyForQuery message
      (?Z
       (let ((_msglen (pg-read-net-int con 4))
@@ -2370,6 +2391,7 @@ Uses the client-encoding specified in the connection to PostgreSQL CON."
 ;; For Emacs, see coding-system-alist.
 (defconst pg--encoding-names
   `(("UTF8"    . utf-8)
+    ("UTF-8"   . utf-8)
     ("UNICODE" . utf-8)
     ("LATIN1"  . ,(coding-system-base 'latin-1))
     ("LATIN2"  . ,(coding-system-base 'latin-2))
@@ -3352,6 +3374,8 @@ TABLE can be a string or a schema-qualified name. Uses database connection CON."
      ('questdb nil)
      ('spanner nil)
      ('ydb nil)
+     ;; TheNile raises and error "command tag COMMENT unhandled"
+     ('thenile nil)
      (_
       (let* ((cmt (if ,comment
                       (pcase (pgcon-server-variant ,con)
