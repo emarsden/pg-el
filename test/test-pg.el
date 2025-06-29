@@ -80,8 +80,8 @@
                                  (make-pg-qualified-name :schema cs :name target))))
                   (equal qtarget qtable))))
       (dolist (tbl (pg-tables con))
-       (when (matches tbl)
-         (cl-return-from pgtest-have-table t)))
+        (when (matches tbl)
+          (cl-return-from pgtest-have-table t)))
       nil)))
 
 
@@ -253,7 +253,7 @@
       (pgtest-add #'pg-test-insert)
       (pgtest-add #'pg-test-edge-cases)
       (pgtest-add #'pg-test-procedures
-                  :skip-variants '(cratedb spanner risingwave materialize ydb xata questdb))
+                  :skip-variants '(cratedb spanner risingwave materialize ydb xata questdb thenile))
       ;; RisingWave is not able to parse a TZ value of "UTC-01:00" (POSIX format).
       (pgtest-add #'pg-test-date
                   :skip-variants '(cratedb risingwave materialize ydb)
@@ -294,7 +294,7 @@
                   :skip-variants '(cratedb risingwave spanner materialize))
       ;; Spanner does not support the INCREMENT clause in CREATE SEQUENCE.
       (pgtest-add #'pg-test-sequence
-                  :skip-variants '(cratedb risingwave questdb materialize greptimedb ydb spanner clickhouse))
+                  :skip-variants '(cratedb risingwave questdb materialize greptimedb ydb spanner clickhouse thenile))
       (pgtest-add #'pg-test-array
                   :skip-variants '(cratedb risingwave questdb materialize clickhouse octodb))
       (pgtest-add #'pg-test-enums
@@ -302,7 +302,7 @@
       (pgtest-add #'pg-test-server-prepare
                   :skip-variants '(cratedb risingwave questdb greptimedb ydb octodb))
       (pgtest-add #'pg-test-comments
-                   :skip-variants '(ydb cratedb cockroachdb spanner questdb))
+                   :skip-variants '(ydb cratedb cockroachdb spanner questdb thenile))
       (pgtest-add #'pg-test-metadata
                   :skip-variants '(cratedb cockroachdb risingwave materialize questdb greptimedb ydb spanner))
       ;; CrateDB doesn't support the JSONB type. CockroachDB doesn't support casting to JSON.
@@ -617,7 +617,7 @@
     (should (equal (list "hey" "Jude") (row "SELECT 'hey', 'Jude'")))
     (should (eql nil (scalar "SELECT NULL")))
     (unless (member (pgcon-server-variant con) '(cratedb risingwave yugabyte xata))
-      (when (> (pgcon-server-version-major con) 13)
+      (when (> (pgcon-server-version-major con) 15)
         (should (eql #x1eeeffff (scalar "SELECT int8 '0x1EEE_FFFF'")))))
     (should (eql t (scalar "SELECT 42 = 42")))
     (should (eql nil (scalar "SELECT 53 = 33")))
@@ -752,7 +752,7 @@ bar$$"))))
         (pg-exec con sql))
       (should (pgtest-have-table con "count_test"))
       (should (member "val" (pg-columns con "count_test")))
-      (unless (member (pgcon-server-variant con) '(cratedb xata ydb spanner questdb))
+      (unless (member (pgcon-server-variant con) '(cratedb xata ydb spanner questdb thenile))
         (let ((user (or (nth 4 (pgcon-connect-info con))
                         "pgeltestuser"))
               (owner (pg-table-owner con "count_test")))
@@ -766,7 +766,7 @@ bar$$"))))
                for sql = (format "INSERT INTO count_test VALUES(%s, %s)"
                                  i (* i i))
                do (pg-exec con sql))
-      (unless (member (pgcon-server-variant con) '(cratedb cockroachdb ydb risingwave materialize xata))
+      (unless (member (pgcon-server-variant con) '(cratedb cockroachdb ydb risingwave materialize xata thenile))
         (pg-exec con "VACUUM ANALYZE count_test"))
       (pgtest-flush-table con "count_test")
       (should (eql count (scalar "SELECT count(*) FROM count_test")))
@@ -2780,7 +2780,7 @@ bar$$"))))
             (pg-test-insert-literal-ts con)
             (when (version<= "29.1" emacs-version)
               (pg-test-insert-parsed-ts con))))
-      (pg-exec con "DROP TABLE tz_test"))))
+      (pg-exec con "DROP TABLE IF EXISTS tz_test"))))
 
 (defun pg-test-iso8601-regexp ()
   (message "Test iso8601 regexp ...")
