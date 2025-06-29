@@ -119,7 +119,7 @@ The following PostgreSQL-compatible databases have been tested:
 
 - The [RisingWave](https://github.com/risingwavelabs/risingwave) event streaming database (Apache
   license) is mostly working. It does not support `GENERATED ALWAYS AS IDENTITY` or `SERIAL`
-  columns, nor `VACUUM ANALYZE`. Last tested 2025-06 with v2.4.1.
+  columns, nor `VACUUM ANALYZE`. Last tested 2025-06 with v2.4.2.
 
 - The [CrateDB](https://crate.io/) distributed database (Apache licence). CrateDB does not support
   rows (e.g. `SELECT (1,2)`), does not support the `time`, `varbit`, `bytea`, `jsonb` and `hstore`
