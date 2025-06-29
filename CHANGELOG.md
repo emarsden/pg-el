@@ -1,7 +1,7 @@
 # Changelog
 
 
-## [0.55] - Unreleased
+## [0.55] - 2025-06-29
 
 - New error class `pg-duplicate-prepared-statement`.
 
