@@ -244,7 +244,7 @@
       (message "List of schemas in db: %s" (pg-schemas con))
       (message "List of tables in db: %s" (pg-tables con))
       (when (eq 'orioledb (pgcon-server-variant con))
-        (pg-exec con "CREATE EXTENSION orioledb"))
+        (pg-exec con "CREATE EXTENSION IF NOT EXISTS orioledb"))
       (unless (member (pgcon-server-variant con) '(clickhouse alloydb risingwave))
         (pg-setup-postgis con))
       (unless (member (pgcon-server-variant con) '(clickhouse risingwave))
@@ -418,10 +418,11 @@
     (unless (member (pgcon-server-variant con) '(immudb))
       (should (equal (list t nil) (row "SELECT $1, $2" `((t . "bool") (nil . "bool")))))
       (should (equal (list -33 "ZZz" 9999) (row "SELECT $1,$2,$3" `((-33 . "int4") ("ZZz" . "text") (9999 . "int8"))))))
+    (unless (member (pgcon-server-variant con) '(risingwave))
+      (pg-exec con "DEALLOCATE ALL"))
     (unless (member (pgcon-server-variant con) '(ydb))
-      (unless (member (pgcon-server-variant con) '(risingwave))
-        (pg-exec con "DEALLOCATE ALL"))
-      (should (equal nil (scalar "" (list))))
+      (should (equal nil (scalar "" (list)))))
+    (unless (member (pgcon-server-variant con) '(risingwave))
       (pg-exec con "PREPARE pgtest_foobles(integer) AS SELECT $1 + 1")
       (let* ((res (pg-exec con "EXECUTE pgtest_foobles(41)"))
              (row (pg-result res :tuple 0)))
@@ -795,18 +796,19 @@ bar$$"))))
     (let ((count 100))
       (when (pgtest-have-table con "count_test")
         (pg-exec con "DROP TABLE count_test"))
-      (pg-exec con "CREATE TABLE count_test(key INT PRIMARY KEY, val INT)")
-      (should (pgtest-have-table con "count_test"))
-      (should (member "val" (pg-columns con "count_test")))
-      (unless (member (pgcon-server-variant con) '(cratedb risingwave ydb))
-        (pg-exec con "TRUNCATE TABLE count_test"))
-      (dotimes (i count)
-        (pg-exec-prepared con "INSERT INTO count_test VALUES($1, $2)"
-                          `((,i . "int4") (,(* i i) . "int4"))))
-      (pgtest-flush-table con "count_test")
-      (should (eql count (scalar "SELECT COUNT(*) FROM count_test")))
-      (should (eql (/ (* (1- count) count) 2) (scalar "SELECT sum(key) FROM count_test")))
-      (pg-exec con "DROP TABLE count_test")
+      (when-let* ((sql (pgtest-massage con "CREATE TABLE count_test(key INT PRIMARY KEY, val INT)")))
+        (pg-exec con sql)
+        (should (pgtest-have-table con "count_test"))
+        (should (member "val" (pg-columns con "count_test")))
+        (unless (member (pgcon-server-variant con) '(cratedb risingwave ydb materialize))
+          (pg-exec con "TRUNCATE TABLE count_test"))
+        (dotimes (i count)
+          (pg-exec-prepared con "INSERT INTO count_test VALUES($1, $2)"
+                            `((,i . "int4") (,(* i i) . "int4"))))
+        (pgtest-flush-table con "count_test")
+        (should (eql count (scalar "SELECT COUNT(*) FROM count_test")))
+        (should (eql (/ (* (1- count) count) 2) (scalar "SELECT sum(key) FROM count_test")))
+        (pg-exec con "DROP TABLE count_test"))
       (should (not (pgtest-have-table con "count_test"))))))
 
 ;; Check the mixing of prepared queries, cached prepared statements, normal simple queries, to check
@@ -821,33 +823,34 @@ bar$$"))))
               (let ((res (pg-fetch-prepared con ps-name args)))
                 (cl-first (pg-result res :tuple 0)))))
     (pg-exec con "DROP TABLE IF EXISTS prep")
-    (pg-exec con "CREATE TABLE prep(a INTEGER PRIMARY KEY, b INTEGER)")
-    (dotimes (i 10)
-      (pg-exec-prepared con "INSERT INTO prep VALUES($1, $2)"
-                        `((,i . "int4") (,(* i i) . "int4"))))
-    (pgtest-flush-table con "prep")
-    (should (eql 10 (scalar "SELECT COUNT(*) FROM prep")))
-    (let* ((ps1 (pg-ensure-prepared-statement
-                 con "PGT-count1" "SELECT COUNT(*) FROM prep" nil))
-           (ps2 (pg-ensure-prepared-statement
-                 con "PGT-count2" "SELECT COUNT(*) FROM prep WHERE a >= $1" '("int4")))
-           (ps3 (pg-ensure-prepared-statement
-                 con "PGT-count3" "SELECT COUNT(*) FROM prep WHERE a + b >= $1" '("int4"))))
+    (when-let* ((sql (pgtest-massage con "CREATE TABLE prep(a INTEGER PRIMARY KEY, b INTEGER)")))
+      (pg-exec con sql)
+      (dotimes (i 10)
+        (pg-exec-prepared con "INSERT INTO prep VALUES($1, $2)"
+                          `((,i . "int4") (,(* i i) . "int4"))))
+      (pgtest-flush-table con "prep")
       (should (eql 10 (scalar "SELECT COUNT(*) FROM prep")))
-      (should (eql 10 (pfp ps1 nil)))
-      (should (eql 10 (pfp ps2 `((0 . "int4")))))
-      (should (eql 10 (pfp ps3 `((0 . "int4")))))
-      (should (eql 10 (scalar "SELECT COUNT(*) FROM prep")))
-      (should (eql 10 (pfp ps2 `((0 . "int4")))))
-      (should (eql 10 (scalar "SELECT COUNT(*) FROM prep WHERE b >= 0")))
-      (dotimes (i 1000)
-        (let ((v (pcase (random 4)
-                   (0 (scalar "SELECT COUNT(*) FROM prep"))
-                   (1 (pfp ps1 nil))
-                   (2 (pfp ps2 `((0 . "int4"))))
-                   (3 (pfp ps3 `((0 . "int4")))))))
-          (should (eql v 10)))))
-    (pg-exec con "DROP TABLE prep")))
+      (let* ((ps1 (pg-ensure-prepared-statement
+                   con "PGT-count1" "SELECT COUNT(*) FROM prep" nil))
+             (ps2 (pg-ensure-prepared-statement
+                   con "PGT-count2" "SELECT COUNT(*) FROM prep WHERE a >= $1" '("int4")))
+             (ps3 (pg-ensure-prepared-statement
+                   con "PGT-count3" "SELECT COUNT(*) FROM prep WHERE a + b >= $1" '("int4"))))
+        (should (eql 10 (scalar "SELECT COUNT(*) FROM prep")))
+        (should (eql 10 (pfp ps1 nil)))
+        (should (eql 10 (pfp ps2 `((0 . "int4")))))
+        (should (eql 10 (pfp ps3 `((0 . "int4")))))
+        (should (eql 10 (scalar "SELECT COUNT(*) FROM prep")))
+        (should (eql 10 (pfp ps2 `((0 . "int4")))))
+        (should (eql 10 (scalar "SELECT COUNT(*) FROM prep WHERE b >= 0")))
+        (dotimes (i 1000)
+          (let ((v (pcase (random 4)
+                     (0 (scalar "SELECT COUNT(*) FROM prep"))
+                     (1 (pfp ps1 nil))
+                     (2 (pfp ps2 `((0 . "int4"))))
+                     (3 (pfp ps3 `((0 . "int4")))))))
+            (should (eql v 10))))
+        (pg-exec con "DROP TABLE prep")))))
 
 
 ;; https://www.postgresql.org/docs/current/multibyte.html
@@ -2200,7 +2203,7 @@ bar$$"))))
     (unless (member (pgcon-server-variant con) '(risingwave materialize))
       (pg-exec con "REINDEX INDEX idx_foobles"))
     (when (and (> (pgcon-server-version-major con) 11)
-               (not (member (pgcon-server-variant con) '(risingwave greenplum))))
+               (not (member (pgcon-server-variant con) '(risingwave greenplum orioledb))))
       (pg-exec con "REINDEX TABLE CONCURRENTLY foobles"))
     (pg-exec con "DROP TABLE foobles"))
   (let* ((r (pg-exec con "SHOW ALL"))
@@ -2570,7 +2573,7 @@ bar$$"))))
                        (condition-case nil
                            (pg-exec con "INSERT INTO pgtest_notnull(a) VALUES (NULL)")
                          (pg-not-null-violation 'ok)))
-                   (pg-exec con "DROP TABLE pgtest_notnull"))))
+                   (pg-exec con "DROP TABLE IF EXISTS pgtest_notnull"))))
     (should (eql 'ok
                  (unwind-protect
                      (progn
@@ -2579,7 +2582,7 @@ bar$$"))))
                        (condition-case nil
                            (pg-exec con "INSERT INTO pgtest_unique(a) VALUES (6)")
                          (pg-unique-violation 'ok)))
-                   (pg-exec con "DROP TABLE pgtest_unique"))))
+                   (pg-exec con "DROP TABLE IF EXISTS pgtest_unique"))))
     (should (eql 'ok
                  (unwind-protect
                      (progn
@@ -2588,9 +2591,9 @@ bar$$"))))
                        (condition-case nil
                            (pg-exec con "INSERT INTO pgtest_check(a) VALUES (-2)")
                          (pg-check-violation 'ok)))
-                   (pg-exec con "DROP TABLE pgtest_check"))))
-    ;; As of 2025-02, yugabyte and CockroachDB do not implement EXCLUDE constraints.
-    (unless (member (pgcon-server-variant con) '(yugabyte cockroachdb))
+                   (pg-exec con "DROP TABLE IF EXISTS pgtest_check"))))
+    ;; As of 2025-02, yugabyte, CockroachDB and OrioleDB do not implement EXCLUDE constraints.
+    (unless (member (pgcon-server-variant con) '(yugabyte cockroachdb orioledb))
       (should (eql 'ok
                    (unwind-protect
                        (progn
@@ -2599,7 +2602,7 @@ bar$$"))))
                          (condition-case nil
                              (pg-exec con "INSERT INTO pgtest_exclude(a) VALUES (6)")
                            (pg-exclusion-violation 'ok)))
-                   (pg-exec con "DROP TABLE pgtest_exclude")))))
+                   (pg-exec con "DROP TABLE IF EXISTS pgtest_exclude")))))
     ;; Greenplum does not implement FOREIGN KEY integrity constraints
     (unless (member (pgcon-server-variant con) '(greenplum))
       (unwind-protect
@@ -2614,8 +2617,8 @@ bar$$"))))
                          (condition-case nil
                              (pg-exec con "INSERT INTO pgtest_referencing(a) VALUES (1)")
                            (pg-foreign-key-violation 'ok)))))
-        (pg-exec con "DROP TABLE pgtest_referencing")
-        (pg-exec con "DROP TABLE pgtest_referenced")))
+        (pg-exec con "DROP TABLE IF EXISTS pgtest_referencing")
+        (pg-exec con "DROP TABLE IF EXISTS pgtest_referenced")))
     (should (eql 'ok
                  (unwind-protect
                      (progn
