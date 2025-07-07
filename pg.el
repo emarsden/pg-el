@@ -551,8 +551,8 @@ presented to the user."
     ;; immediately close their connection on error, so we ignore any errors here.
     (ignore-errors
       (let ((c (pg-read-char con)))
-        (unless (eql c ?Z)
-          (message "Unexpected message type after ErrorMsg: %s" c)
+        (unless (member c '(?Z ?E))
+          (message "Unexpected message type after ErrorMsg (error was %s): %s" e c)
           (pg-unread-char con)))
       ;; Read message length then status, which we discard.
       (pg-read-net-int con 4)
