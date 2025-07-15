@@ -3,6 +3,7 @@
 [![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0.html)
 [![Latest tagged version](https://img.shields.io/github/v/tag/emarsden/pg-el?label=Latest%20tagged%20version)](https://github.com/emarsden/pg-el/)
 [![MELPA](https://melpa.org/packages/pg-badge.svg)](https://melpa.org/#/pg)
+[![NonGNU ELPA](https://elpa.nongnu.org/nongnu/pg.svg)](https://elpa.nongnu.org/nongnu/pg.html)
 [![test-pgv16](https://github.com/emarsden/pg-el/workflows/test-pgv16/badge.svg)](https://github.com/emarsden/pg-el/actions/)
 [![Documentation build](https://img.shields.io/github/actions/workflow/status/emarsden/pg-el/mdbook.yml?label=Documentation)](https://github.com/emarsden/pg-el/actions/)
 
@@ -75,10 +76,10 @@ The following PostgreSQL-compatible databases have been tested:
   adds some features for compatibility with Oracle). Last tested 2025-04 with version 4.4.
 
 - The [Timescale DB](https://www.timescale.com/) extension for time series data, source available
-  but non open source. This works perfectly (last tested 2025-05 with version 2.19.3).
+  but non open source. This works perfectly (last tested 2025-07 with version 2.19.3).
 
 - The [CitusDB](https://github.com/citusdata/citus) extension for sharding PostgreSQL over multiple
-  hosts (AGPLv3 licence). Works perfectly (last tested 2025-05 with Citus version 13.0).
+  hosts (AGPLv3 licence). Works perfectly (last tested 2025-07 with Citus version 13.0).
   
 - The [OrioleDB](https://github.com/orioledb/orioledb) extension, which adds a new storage engine
   designed for better multithreading and solid state storage, works perfectly. Last tested 2025-07
@@ -144,7 +145,7 @@ The following PostgreSQL-compatible databases have been tested:
 - The [Materialize](https://materialize.com/) operational database (a proprietary differential
   dataflow database) has many limitations in its PostgreSQL compatibility: no support for primary
   keys, unique constraints, check constraints, for the `bit` type for example. It works with these
-  limitations with pg-el (last tested 2025-07 with Materialize v0.149).
+  limitations with pg-el (last tested 2025-07 with Materialize v0.150).
 
 - The [QuestDB](https://questdb.io/) time series database (Apache licensed) has very limited
   PostgreSQL support, and does not support the `integer` type for example. Last tested 2025-06 with
@@ -184,7 +185,7 @@ The following PostgreSQL-compatible databases have been tested:
 
 PostgreSQL variants that **don't work** with pg-el:
 
-- The ClickHouse database, whose PostgreSQL support is too limited. As of version 25.4 in 2025-06,
+- The ClickHouse database, whose PostgreSQL support is too limited. As of version 25.6 in 2025-07,
   there is no implementation of the `pg_types` system table, no support for basic PostgreSQL-flavoured
   SQL commands such as `SET`, no support for the extended query mechanism.
   
@@ -214,8 +215,13 @@ that enables access to PostgreSQL from Emacs by binding to the libpq library.
 
 ## Installation
 
-Install via the [MELPA package archive](https://melpa.org/partials/getting-started.html) by
-including the following in your Emacs initialization file (`.emacs.el` or `init.el`):
+Install via the [NonGNU ELPA package archive](https://elpa.nongnu.org/) by running the command
+
+    M-x package-install RET pg
+
+Alternatively, install via the [MELPA package
+archive](https://melpa.org/partials/getting-started.html) by including the following in your Emacs
+initialization file (`.emacs.el` or `init.el`):
 
     (require 'package)
     (add-to-list 'package-archives '("melpa" . "https://melpa.org/packages/") t)

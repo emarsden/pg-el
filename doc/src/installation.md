@@ -1,6 +1,16 @@
 # Installation
 
-You can install via the MELPA package archive, or with `package-vc-install`, or with `use-package`.
+You can install via the NonGNU ELPA package archive, or via the MELPA package archive, or with
+`package-vc-install`, or with `use-package`.
+
+
+## Installing via NonGNU ELPA
+
+From Emacs, run
+
+    M-x package-install RET pg
+
+to install the pg package from the [NonGNU ELPA](https://elpa.nongnu.org/) package archive.
 
 
 ## Installing via MELPA
