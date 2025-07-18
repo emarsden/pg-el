@@ -14,6 +14,7 @@
 (require 'ert)
 
 
+(defvar pgtest--enable-query-log t)
 (setq debug-on-error t)
 
 
@@ -123,6 +124,7 @@
 
 ;; Connect to the database using the "direct TLS" method introduced in PostgreSQL 18
 (defmacro with-pgtest-connection-direct-tls (con &rest body)
+  (declare (indent 1) (debug (symbolp body)))
   (cond ((getenv "PGURI")
          `(let ((,con (pg-connect/uri ,(getenv "PGURI"))))
             (unwind-protect
@@ -138,17 +140,17 @@
                 (trust-ca-file (and trust-ca (expand-file-name trust-ca)))
                 (trust (list :trustfiles (list trust-ca-file))))
            `(progn
-              (unless trust-ca
+              (unless ',trust-ca
                 (error "Need PGEL_TRUST_CA env variable"))
               (let ((,con (pg-connect/direct-tls ,db ,user ,password ,host ,port ',trust)))
                 (unwind-protect
                     (progn ,@body)
                   (when ,con (pg-disconnect ,con)))))))))
-(put 'with-pgtest-connection-direct-tls 'lisp-indent-function 'defun)
 
 
 ;; Connect to the database presenting a client certificate as authentication
 (defmacro with-pgtest-connection-client-cert (con &rest body)
+  (declare (indent 1) (debug (symbolp body)))
   (cond ((getenv "PGURI")
          `(let ((,con (pg-connect/uri ,(getenv "PGURI"))))
             (unwind-protect
@@ -169,10 +171,10 @@
                (error "Set $PGEL_CLIENT_CERT_KEY to point to file containing client certificate key"))
              (with-pg-connection ,con (,db ,user ,password ,host ,port '(:keylist ((,key ,cert))))
                                  ,@body))))))
-(put 'with-pgtest-connection-client-cert 'lisp-indent-function 'defun)
 
 
 (defmacro with-pgtest-connection-local (con &rest body)
+  (declare (indent 1) (debug (symbolp body)))
   (cond ((getenv "PGURI")
          `(let ((,con (pg-connect/uri ,(getenv "PGURI"))))
             (unwind-protect
@@ -186,7 +188,6 @@
                 (path (or (getenv "PGEL_PATH") (format "/var/run/postgresql/.s.PGSQL.%s" port))))
            `(with-pg-connection-local ,con (,path ,db ,user ,password)
                ,@body)))))
-(put 'with-pg-connection-local 'lisp-indent-function 'defun)
 
 
 (defun pg-connection-tests ()
@@ -226,17 +227,18 @@
                 (unless (member (pgcon-server-variant con) skip-variants)
                   (when (if need-emacs (version<= need-emacs emacs-version) t)
                     (push fun tests)))))
-      ;; (pg-enable-query-log con)
+      (when pgtest--enable-query-log
+        (pg-enable-query-log con))
       (message "Backend major-version is %s" (pgcon-server-version-major con))
       (message "Detected backend variant: %s" (pgcon-server-variant con))
       (unless (member (pgcon-server-variant con)
-                      '(cockroachdb cratedb yugabyte ydb xata greptimedb risingwave clickhouse octodb))
+                      '(cockroachdb cratedb yugabyte ydb xata greptimedb risingwave clickhouse octodb vertica))
         (when (> (pgcon-server-version-major con) 11)
           (let* ((res (pg-exec con "SELECT current_setting('ssl_library')"))
                  (row (pg-result res :tuple 0)))
             (message "Backend compiled with SSL library %s" (cl-first row)))))
       (unless (member (pgcon-server-variant con)
-                      '(questdb cratedb ydb xata greptimedb risingwave clickhouse materialize))
+                      '(questdb cratedb ydb xata greptimedb risingwave clickhouse materialize vertica))
         (let* ((res (pg-exec con "SHOW ssl"))
                (row (pg-result res :tuple 0)))
           (message "PostgreSQL connection TLS: %s" (cl-first row))))
@@ -253,7 +255,7 @@
       (pgtest-add #'pg-test-insert)
       (pgtest-add #'pg-test-edge-cases)
       (pgtest-add #'pg-test-procedures
-                  :skip-variants '(cratedb spanner risingwave materialize ydb xata questdb thenile))
+                  :skip-variants '(cratedb spanner risingwave materialize ydb xata questdb thenile vertica))
       ;; RisingWave is not able to parse a TZ value of "UTC-01:00" (POSIX format).
       (pgtest-add #'pg-test-date
                   :skip-variants '(cratedb risingwave materialize ydb)
@@ -261,15 +263,19 @@
       ;; QuestDB does not support the timestamptz column type.
       (pgtest-add #'pg-run-tz-tests
                   :skip-variants '(risingwave materialize ydb clickhouse spanner questdb readyset))
-      (pgtest-add #'pg-test-numeric)
+      ;; Vertica does not implement types like int2
+      (pgtest-add #'pg-test-numeric
+                  :skip-variants '(vertica))
       (pgtest-add #'pg-test-numeric-range
-                  :skip-variants '(xata cratedb cockroachdb ydb risingwave questdb clickhouse greptimedb spanner octodb))
+                  :skip-variants '(xata cratedb cockroachdb ydb risingwave questdb clickhouse greptimedb spanner octodb vertica))
       (pgtest-add #'pg-test-prepared
                   :skip-variants '(ydb cratedb)
                   :need-emacs "28")
-      ;; Risingwave v2.2.0 panics on this test (https://github.com/risingwavelabs/risingwave/issues/20367)
+      ;; Risingwave v2.2.0 panics on this test
+      ;; (https://github.com/risingwavelabs/risingwave/issues/20367). Vertica does not implement
+      ;; generate_series()
       (pgtest-add #'pg-test-prepared/multifetch
-                  :skip-variants '(risingwave ydb)
+                  :skip-variants '(risingwave ydb vertica)
                   :need-emacs "28")
       (pgtest-add #'pg-test-insert/prepared
                   :skip-variants '(ydb)
@@ -279,64 +285,65 @@
                   :skip-variants '(risingwave ydb)
                   :need-emacs "28")
       (pgtest-add #'pg-test-collation
-                  :skip-variants '(xata cratedb questdb clickhouse greptimedb octodb))
+                  :skip-variants '(xata cratedb questdb clickhouse greptimedb octodb vertica))
       (pgtest-add #'pg-test-xml
-                  :skip-variants '(xata ydb cockroachdb yugabyte clickhouse alloydb))
+                  :skip-variants '(xata ydb cockroachdb yugabyte clickhouse alloydb vertica))
       (pgtest-add #'pg-test-uuid
-                  :skip-variants '(cratedb risingwave ydb clickhouse greptimedb spanner octodb))
-      ;; Risingwave doesn't support VARCHAR(N) type. YDB doesn't support SELECT generate_series().
+                  :skip-variants '(cratedb risingwave ydb clickhouse greptimedb spanner octodb vertica))
+      ;; Risingwave doesn't support VARCHAR(N) type. YDB and Vertica don't support SELECT generate_series().
       (pgtest-add #'pg-test-result
-                  :skip-variants  '(risingwave ydb spanner clickhouse))
+                  :skip-variants  '(risingwave ydb spanner clickhouse vertica))
       (pgtest-add #'pg-test-cursors
                   :skip-variants '(xata cratedb cockroachdb risingwave questdb greptimedb ydb materialize spanner octodb))
       ;; CrateDB does not support the BYTEA type (!), nor sequences. Spanner does not support the encode() function.
       (pgtest-add #'pg-test-bytea
                   :skip-variants '(cratedb risingwave spanner materialize))
-      ;; Spanner does not support the INCREMENT clause in CREATE SEQUENCE.
+      ;; Spanner does not support the INCREMENT clause in CREATE SEQUENCE. Vertica does not
+      ;; implement the pg_sequences system table.
       (pgtest-add #'pg-test-sequence
-                  :skip-variants '(cratedb risingwave questdb materialize greptimedb ydb spanner clickhouse thenile))
+                  :skip-variants '(cratedb risingwave questdb materialize greptimedb ydb spanner clickhouse thenile vertica))
       (pgtest-add #'pg-test-array
                   :skip-variants '(cratedb risingwave questdb materialize clickhouse octodb))
       (pgtest-add #'pg-test-enums
-                  :skip-variants '(cratedb risingwave questdb greptimedb ydb materialize spanner octodb clickhouse))
+                  :skip-variants '(cratedb risingwave questdb greptimedb ydb materialize spanner octodb clickhouse vertica))
       (pgtest-add #'pg-test-server-prepare
                   :skip-variants '(cratedb risingwave questdb greptimedb ydb octodb))
       (pgtest-add #'pg-test-comments
                    :skip-variants '(ydb cratedb cockroachdb spanner questdb thenile))
       (pgtest-add #'pg-test-metadata
-                  :skip-variants '(cratedb cockroachdb risingwave materialize questdb greptimedb ydb spanner))
+                  :skip-variants '(cratedb cockroachdb risingwave materialize questdb greptimedb ydb spanner vertica))
       ;; CrateDB doesn't support the JSONB type. CockroachDB doesn't support casting to JSON.
       (pgtest-add #'pg-test-json
-                  :skip-variants '(xata cratedb risingwave questdb greptimedb ydb materialize spanner octodb))
+                  :skip-variants '(xata cratedb risingwave questdb greptimedb ydb materialize spanner octodb vertica))
       (pgtest-add #'pg-test-schemas
                   :skip-variants '(xata cratedb risingwave questdb ydb materialize))
       (pgtest-add #'pg-test-hstore
-                  :skip-variants '(risingwave materialize octodb readyset))
+                  :skip-variants '(risingwave materialize octodb readyset vertica))
       ;; Xata doesn't support extensions, but doesn't signal an SQL error when we attempt to load the
       ;; pgvector extension, so our test fails despite being intended to be robust.
       (pgtest-add #'pg-test-vector
-                  :skip-variants '(xata cratedb materialize octodb))
+                  :skip-variants '(xata cratedb materialize octodb vertica))
       (pgtest-add #'pg-test-tsvector
-                  :skip-variants '(xata cratedb cockroachdb risingwave questdb greptimedb ydb materialize spanner octodb))
+                  :skip-variants '(xata cratedb cockroachdb risingwave questdb greptimedb ydb materialize spanner octodb vertica))
       (pgtest-add #'pg-test-bm25
-                  :skip-variants '(xata cratedb cockroachdb risingwave materialize octodb))
+                  :skip-variants '(xata cratedb cockroachdb risingwave materialize octodb vertica))
       (pgtest-add #'pg-test-geometric
-                  :skip-variants '(xata cratedb cockroachdb risingwave questdb materialize spanner octodb))
+                  :skip-variants '(xata cratedb cockroachdb risingwave questdb materialize spanner octodb vertica))
       (pgtest-add #'pg-test-gis
                   :skip-variants '(xata cratedb cockroachdb risingwave materialize octodb))
       (pgtest-add #'pg-test-copy
-                  :skip-variants '(spanner ydb cratedb risingwave materialize questdb xata))
+                  :skip-variants '(spanner ydb cratedb risingwave materialize questdb xata vertica))
       ;; QuestDB fails due to lack of support for the NUMERIC type
       (pgtest-add #'pg-test-copy-large
                   :skip-variants '(spanner ydb cratedb risingwave questdb materialize))
       ;; Apparently Xata does not support CREATE DATABASE
       (pgtest-add #'pg-test-createdb
-                  :skip-variants '(xata cratedb questdb ydb))
+                  :skip-variants '(xata cratedb questdb ydb vertica))
       ;; Many PostgreSQL variants only support UTF8 as the client encoding.
       (pgtest-add #'pg-test-client-encoding
                   :skip-variants '(cratedb cockroachdb ydb risingwave materialize spanner greptimedb xata))
       (pgtest-add #'pg-test-unicode-names
-                  :skip-variants '(xata cratedb cockroachdb risingwave questdb ydb spanner))
+                  :skip-variants '(xata cratedb cockroachdb risingwave questdb ydb spanner vertica))
       (pgtest-add #'pg-test-returning
                   :skip-variants '(risingwave questdb))
       (pgtest-add #'pg-test-parameter-change-handlers
@@ -348,7 +355,7 @@
                   :skip-variants '(cratedb risingwave))
       (pgtest-add #'pg-test-notice)
       (pgtest-add #'pg-test-notify
-                  :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb ydb questdb spanner))
+                  :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb ydb questdb spanner vertica))
       (dolist (test (reverse tests))
         (message "== Running test %s" test)
         (condition-case err
@@ -357,7 +364,7 @@
         (pg-sync con)))))
 
 
-(defun pg-test-note-param-change (con name value)
+(defun pg-test-note-param-change (_con name value)
   (message "PG> backend parameter %s=%s" name value))
 
 (defun pg-test ()
@@ -843,7 +850,7 @@ bar$$"))))
         (should (eql 10 (scalar "SELECT COUNT(*) FROM prep")))
         (should (eql 10 (pfp ps2 `((0 . "int4")))))
         (should (eql 10 (scalar "SELECT COUNT(*) FROM prep WHERE b >= 0")))
-        (dotimes (i 1000)
+        (dotimes (_ 1000)
           (let ((v (pcase (random 4)
                      (0 (scalar "SELECT COUNT(*) FROM prep"))
                      (1 (pfp ps1 nil))
@@ -2006,8 +2013,8 @@ bar$$"))))
   (cl-flet ((ascii (n) (+ ?A (mod n 26)))
             (random-word () (apply #'string (cl-loop for count to 10 collect (+ ?a (random 26))))))
     (with-temp-buffer
-      (let* ((res (pg-copy-to-buffer con "COPY (values (1, 'hello'), (2, 'world')) TO STDOUT" (current-buffer))))
-        (should (string= "1\thello\n2\tworld\n" (buffer-string)))))
+      (pg-copy-to-buffer con "COPY (values (1, 'hello'), (2, 'world')) TO STDOUT" (current-buffer))
+      (should (string= "1\thello\n2\tworld\n" (buffer-string))))
     (pg-exec con "DROP TABLE IF EXISTS copy_tsv")
     (pg-exec con "CREATE TABLE copy_tsv (a INTEGER, b CHAR, c TEXT)")
     (with-temp-buffer
@@ -2640,7 +2647,7 @@ bar$$"))))
                              (should (cl-search "undef" (prin1-to-string e)))
                              (throw 'pgtest-undefined-function 'ok)))
                           (pg-error
-                           (lambda (e)
+                           (lambda (_e)
                              (error "Unexpected error class"))))
                        (scalar "SELECT undef(42)"))
                      'nok))))
