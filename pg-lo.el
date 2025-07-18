@@ -69,7 +69,7 @@
 ;; fn is either an integer, in which case it is the OID of an element
 ;; in the pg_proc table, and otherwise it is a string which we look up
 ;; in the alist `pg-lo-functions' to find the corresponding OID.
-(defun pg-fn (con fn integer-result &rest args)
+(cl-defun pg-fn (con fn integer-result &rest args)
   (pg-connection-set-busy con t)
   (unless pg-lo-initialized
     (pg-lo-init con))

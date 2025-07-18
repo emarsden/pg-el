@@ -1,6 +1,14 @@
 # Changelog
 
 
+## [0.56] - Unreleased
+
+- Allow for two successive messages of type `ErrorMessage` (which is unusual, but used by the OctoDB
+  variant).
+
+- Detect and implement workarounds for the semi-compatible PostgreSQL variant Vertica.
+
+
 ## [0.55] - 2025-06-29
 
 - New error class `pg-duplicate-prepared-statement`.

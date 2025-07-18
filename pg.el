@@ -34,7 +34,7 @@
 ;; Supported features:
 ;;
 ;;  - SCRAM-SHA-256 authentication (the default method since PostgreSQL version 14) and MD5
-;;  - authentication.
+;;    authentication.
 ;;
 ;;  - Encrypted (TLS) connections between Emacs and the PostgreSQL backend.
 ;;
@@ -501,6 +501,8 @@ Uses connection CON. The variant can be accessed by `pgcon-server-variant'."
               (setf (pgcon-server-variant con) 'greenplum))
              ((cl-search "(Materialize " version)
               (setf (pgcon-server-variant con) 'materialize))
+             ((cl-search "Vertica Analytic" version)
+              (setf (pgcon-server-variant con) 'vertica))
              ;; A more expensive test is needed for Google AlloyDB. If this parameter is defined,
              ;; the query will return "on" or "off" as a string, and if the parameter is not defined
              ;; the query (second argument meaning no-error) will return '((nil)).
@@ -1485,6 +1487,7 @@ Uses PostgreSQL connection CON."
               (let ((msg (format "Unknown PostgreSQL oid %d" oid)))
                 (signal 'pg-error (list msg))))))))
 
+;; TODO: this function does not work with the Vertica variant, where the pg_type table is not implemented.
 (defun pg-lookup-type-name (con oid)
   "Return the PostgreSQL type name associated with OID.
 Uses PostgreSQL connection CON."
@@ -3282,6 +3285,21 @@ Uses database connection CON."
             (res (pg-exec con sql))
             (row (pg-result res :tuple 0)))
        (cl-first row)))
+    ('vertica
+     (let* ((schema (when (pg-qualified-name-p table)
+                      (pg-qualified-name-schema table)))
+            (table-name (if (pg-qualified-name-p table)
+                            (pg-qualified-name-name table)
+                          table))
+            (schema-sql (if schema " AND table_schema=$2" ""))
+            ;; FIXME is this returning a name/string or a referene to the v_catalog.users table?
+            ;; https://dataedo.com/kb/query/vertica/list-schemas-in-database
+            (sql (concat "SELECT owner_name FROM v_catalog.tables WHERE table_name=$1" schema-sql))
+            (args (if schema
+                      `((,table-name . "text") (,schema . "text"))
+                    `((,table-name . "text"))))
+            (res (pg-exec-prepared con sql args)))
+       (cl-first (pg-result res :tuple 0))))
     (_
      (let* ((schema (when (pg-qualified-name-p table)
                       (pg-qualified-name-schema table)))
@@ -3405,6 +3423,11 @@ Uses database connection CON."
             (rows (pg-result res :tuples)))
        (not (null rows))))
        ;; (cl-position name rows :key #'cl-first :test #'string=)))
+    ('vertica
+     ;; Vertica provides the v_catalog.user_functions and v_catalog.user_procedures tables that list
+     ;; all user-defined functions and procedures, but current versions do not have any information
+     ;; on builtin functions or procedures.
+     (signal 'pg-user-error (list "pg-function-p not implemented for Vertica")))
     (_
      (let* ((sql "SELECT * FROM pg_catalog.pg_proc WHERE proname = $1")
             (res (pg-exec-prepared con sql `((,name . "text")))))
@@ -3423,8 +3446,14 @@ Uses database connection CON."
 ;; =====================================================================
 (defun pg-databases (con)
   "List of the databases in the PostgreSQL server we are connected to via CON."
-  (let ((res (pg-exec con "SELECT datname FROM pg_catalog.pg_database")))
-    (apply #'append (pg-result res :tuples))))
+  (pcase (pgcon-server-variant con)
+    ('vertica
+     (let* ((sql "SELECT database_name FROM v_catalog.databases")
+            (res (pg-exec con sql)))
+       (apply #'append (pg-result res :tuples))))
+    (_
+     (let ((res (pg-exec con "SELECT datname FROM pg_catalog.pg_database")))
+       (apply #'append (pg-result res :tuples))))))
 
 (defun pg-current-schema (con)
   "Return the current schema in the PostgreSQL server we are connected to via CON."
@@ -3447,6 +3476,9 @@ Uses database connection CON."
     ('questdb (list "sys" "public"))
     ((or 'risingwave 'octodb)
      (let ((res (pg-exec con "SELECT DISTINCT table_schema FROM information_schema.tables")))
+       (apply #'append (pg-result res :tuples))))
+    ('vertica
+     (let ((res (pg-exec con "SELECT DISTINCT schema_name FROM v_catalog.schemata")))
        (apply #'append (pg-result res :tuples))))
     (_
      (let ((res (pg-exec con "SELECT schema_name FROM information_schema.schemata")))
@@ -3532,6 +3564,15 @@ Queries legacy internal PostgreSQL tables."
      for row in rows
      collect (make-pg-qualified-name :schema (cl-first row) :name (cl-second row)))))
 
+;; https://docs.vertica.com/24.2.x/en/sql-reference/system-tables/v-catalog-schema/
+(defun pg--tables-vertica (con)
+  (let* ((sql "SELECT table_schema,table_name FROM v_catalog.tables")
+         (res (pg-exec con sql))
+         (rows (pg-result res :tuples)))
+    (cl-loop
+     for row in rows
+     collect (make-pg-qualified-name :schema (cl-first row) :name (cl-second row)))))
+
 (defun pg-tables (con)
   "List of the tables present in the database we are connected to via CON.
 Only tables to which the current user has access are listed."
@@ -3545,6 +3586,8 @@ Only tables to which the current user has access are listed."
            (pg--tables-materialize con))
           ((eq (pgcon-server-variant con) 'clickhouse)
            (pg--tables-clickhouse con))
+          ((eq (pgcon-server-variant con) 'vertica)
+           (pg--tables-vertica con))
           ((eq (pgcon-server-variant con) 'octodb)
            (pg--tables-legacy con))
           ((> (pgcon-server-version-major con) 11)
@@ -3574,7 +3617,7 @@ Only tables to which the current user has access are listed."
 
 (defun pg-columns (con table)
   "List of the columns present in TABLE over PostgreSQL connection CON."
-  (cond ((eq (pgcon-server-variant con) 'ydb)
+  (cond ((member (pgcon-server-variant con) '(ydb vertica))
          (pg--columns-legacy con table))
         ((> (pgcon-server-version-major con) 7)
          (pg--columns-information-schema con table))

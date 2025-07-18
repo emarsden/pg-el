@@ -145,7 +145,7 @@ The following PostgreSQL-compatible databases have been tested:
 - The [Materialize](https://materialize.com/) operational database (a proprietary differential
   dataflow database) has many limitations in its PostgreSQL compatibility: no support for primary
   keys, unique constraints, check constraints, for the `bit` type for example. It works with these
-  limitations with pg-el (last tested 2025-07 with Materialize v0.150).
+  limitations with pg-el (last tested 2025-07 with Materialize v0.151).
 
 - The [QuestDB](https://questdb.io/) time series database (Apache licensed) has very limited
   PostgreSQL support, and does not support the `integer` type for example. Last tested 2025-06 with
@@ -157,6 +157,12 @@ The following PostgreSQL-compatible databases have been tested:
   compatibility, for example refusing to create tables that do not have a primary key. It does not
   recognize basic PostgreSQL types such as `INT2`. It also does not for example support the `CHR`
   and `MD5` functions, row expressions, and `WHERE` clauses without a `FROM` clause.
+
+- The [Vertica](https://www.vertica.com/) distributed database (a propriety column-oriented database
+  targeting analytics workloads). Its PostgreSQL compatibility is limited: it does not support
+  certain datatypes such as `int2`, `int4` and `text`, the parsing of `timetz` strings is not
+  compatible with PostgreSQL, the serialization of arrays is not PostgreSQL-compatible. Last tested
+  2025-07 with the community edition, version 25.3.
 
 - [YottaDB Octo](https://gitlab.com/YottaDB/DBMS/YDBOcto), which is built on the YottaDB key-value
   store (which is historically based on the MUMPS programming language). GNU AGPL v3 licence. There

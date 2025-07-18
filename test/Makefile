@@ -1001,6 +1001,21 @@ test-octodb: test-pg.el
 	${DOCKER} stop octodb
 
 
+# https://hub.docker.com/r/opentext/vertica-ce
+# https://github.com/vertica/vertica-containers/blob/main/one-node-ce/Dockerfile_Ubuntu
+test-vertica: test-pg.el
+	${DOCKER} run --rm --name vertica \
+           --pull=newer \
+           --publish 127.0.0.1:5433:5433 --publish 127.0.0.1:5444:5444 \
+           -e VERTICA_DB_NAME=pgeltestdb \
+           -e VERTICA_DB_USER=pgeltestuser \
+           -e VERTICA_DB_PASSWORD=pgeltest \
+           -d docker.io/opentext/vertica-ce:latest
+	sleep 10
+	PGURI=postgresql://dbadmin:pgeltest@127.0.0.1:5433/pgeltestdb $(MAKE) test
+	${DOCKER} stop vertica
+
+
 # https://github.com/risinglightdb/risinglight
 #
 # This educational database implementation is not very PostgreSQL compatible; it doesn't implement
