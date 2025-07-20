@@ -63,7 +63,7 @@ main points where this compatibility may be problematic:
   particular the official client library libpq) use OpenSSL for TLS support, whereas Emacs uses
   GnuTLS, and you may encounter incompatibilities.
 
-The following PostgreSQL-compatible databases have been tested:
+The following PostgreSQL-compatible databases or extensions have been tested:
 
 - [Neon](https://neon.tech/) “serverless PostgreSQL” works perfectly. This is a commercially hosted
   service using a new storage engine for PostgreSQL, that they make available under the Apache
@@ -83,7 +83,7 @@ The following PostgreSQL-compatible databases have been tested:
   
 - The [OrioleDB](https://github.com/orioledb/orioledb) extension, which adds a new storage engine
   designed for better multithreading and solid state storage, works perfectly. Last tested 2025-07
-  with version beta11.
+  with version beta12.
 
 - The [Microsoft DocumentDB](https://github.com/microsoft/documentdb) extension for MongoDB-like
   queries (MIT licensed). Works perfectly. Note that this is not the same product as Amazon
@@ -91,6 +91,9 @@ The following PostgreSQL-compatible databases have been tested:
 
 - The [Hydra Columnar](https://github.com/hydradatabase/columnar) extension for column-oriented
   storage and parallel queries (Apache license). Works perfectly (last tested 2025-05 with v1.1.2).
+
+- The [AgensGraph](https://github.com/skaiworldwide-oss/agensgraph) extension for transactional
+  graph processing (Apache 2 license) works perfectly. Last tested 2025-07 with version 2.15.
 
 - The [PgBouncer](https://www.pgbouncer.org/) connection pooler for PostgreSQL (open source, ISC
   licensed). Works fine (last tested 2025-06 with version 1.24 in the default session pooling mode).
@@ -105,8 +108,13 @@ The following PostgreSQL-compatible databases have been tested:
 
 - [Google AlloyDB Omni](https://cloud.google.com/alloydb/omni/docs/quickstart) is a proprietary fork
   of PostgreSQL with Google-developed extensions, including a columnar storage extension, adaptive
-  autovacuum, and an index advisor. It works perfectly with pg-el as of 2025-06 (version that
+  autovacuum, and an index advisor. It works perfectly with pg-el as of 2025-07 (version that
   reports itself as "15.7").
+
+- [PolarDB for PostgreSQL](https://github.com/ApsaraDB/PolarDB-for-PostgreSQL) is free software
+  (Apache 2 licence) developed by Alibaba Cloud, also available as a commercial hosted service with
+  a proprietary distributed storage architecture. It works perfectly with pg-el (last tested 2025-07
+  with version 15.13).
 
 - [Xata](https://xata.io/) “serverless PostgreSQL” has many limitations including lack of support
   for `CREATE DATABASE`, `CREATE COLLATION`, for XML processing, for temporary tables, for cursors,
@@ -169,14 +177,14 @@ The following PostgreSQL-compatible databases have been tested:
   are many limitations in the PostgreSQL compatibility: no user metainformation, no cursors, no
   server-side prepared statements, no support for various types including arrays, JSON, UUID,
   vectors, tsvector, numeric ranges, geometric types. It works with these limitations with pg-el
-  (last tested 2025-05 with YottaDB 2.0.2).
+  (last tested 2025-07 with YottaDB 2.0.2).
 
 - The [GreptimeDB](https://github.com/GrepTimeTeam/greptimedb) time series database (Apache license)
   implements quite a lot of the PostgreSQL wire protocol, but the names it uses for types in the
   `pg_catalog.pg_types` table are not the same as those used by PostgreSQL (e.g. `Int64` instead of
   `int8`), so our parsing machinery does not work. This database also has more restrictions on the
   use of identifiers than PostgreSQL (for example, `id` is not accepted as a column name, nor are
-  identifiers containing Unicode characters). Last tested v0.14.3 in 2025-06.
+  identifiers containing Unicode characters). Last tested v0.15.2 in 2025-07.
 
 - Hosted PostgreSQL services that have been tested: as of 2025-06 render.com is running a Debian
   build of PostgreSQL 16.8 and works fine (requires TLS connection), as of 2024-12
@@ -197,7 +205,7 @@ PostgreSQL variants that **don't work** with pg-el:
   
 - The [ReadySet cache](https://github.com/readysettech/readyset) does not work in a satisfactory
   manner: it generate spurious errors such as `invalid binary data value` when using the extended
-  query protocol (last tested 2025-06).
+  query protocol (last tested 2025-07).
 
 
 Tested **Emacs versions**: mostly tested with versions 31 pre-release, 30.1 and 29.4. Emacs versions

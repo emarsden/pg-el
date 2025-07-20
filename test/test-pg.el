@@ -14,7 +14,7 @@
 (require 'ert)
 
 
-(defvar pgtest--enable-query-log t)
+(defvar pgtest--enable-query-log nil)
 (setq debug-on-error t)
 
 
@@ -232,13 +232,13 @@
       (message "Backend major-version is %s" (pgcon-server-version-major con))
       (message "Detected backend variant: %s" (pgcon-server-variant con))
       (unless (member (pgcon-server-variant con)
-                      '(cockroachdb cratedb yugabyte ydb xata greptimedb risingwave clickhouse octodb vertica))
+                      '(cockroachdb cratedb yugabyte ydb xata greptimedb risingwave clickhouse octodb vertica arcadedb))
         (when (> (pgcon-server-version-major con) 11)
           (let* ((res (pg-exec con "SELECT current_setting('ssl_library')"))
                  (row (pg-result res :tuple 0)))
             (message "Backend compiled with SSL library %s" (cl-first row)))))
       (unless (member (pgcon-server-variant con)
-                      '(questdb cratedb ydb xata greptimedb risingwave clickhouse materialize vertica))
+                      '(questdb cratedb ydb xata greptimedb risingwave clickhouse materialize vertica arcadedb))
         (let* ((res (pg-exec con "SHOW ssl"))
                (row (pg-result res :tuple 0)))
           (message "PostgreSQL connection TLS: %s" (cl-first row))))

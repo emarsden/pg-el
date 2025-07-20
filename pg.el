@@ -503,6 +503,11 @@ Uses connection CON. The variant can be accessed by `pgcon-server-variant'."
               (setf (pgcon-server-variant con) 'materialize))
              ((cl-search "Vertica Analytic" version)
               (setf (pgcon-server-variant con) 'vertica))
+             ((cl-search "PolarDB " version)
+              (setf (pgcon-server-variant con) 'polardb))
+             ;; TODO: find a better detection method for ArcadeDB
+             ((string-suffix-p "/main)" version)
+              (setf (pgcon-server-variant con) 'arcadedb))
              ;; A more expensive test is needed for Google AlloyDB. If this parameter is defined,
              ;; the query will return "on" or "off" as a string, and if the parameter is not defined
              ;; the query (second argument meaning no-error) will return '((nil)).
@@ -639,6 +644,8 @@ Uses database DBNAME, user USER and password PASSWORD."
                           (1+ (length dbname))
                           (1+ (length "application_name"))
                           (1+ (length pg-application-name))
+                          (1+ (length "client_encoding"))
+                          (1+ (length "UTF8"))
                           1)))
     (pg-send-uint con packet-octets 4)
     (pg-send-uint con 3 2)              ; Protocol major version = 3
@@ -649,6 +656,8 @@ Uses database DBNAME, user USER and password PASSWORD."
     (pg-send-string con dbname)
     (pg-send-string con "application_name")
     (pg-send-string con pg-application-name)
+    (pg-send-string con "client_encoding")
+    (pg-send-string con "UTF8")
     ;; A zero byte is required as a terminator after the last name/value pair.
     (pg-send-uint con 0 1)
     (pg-flush con))
@@ -3451,6 +3460,9 @@ Uses database connection CON."
      (let* ((sql "SELECT database_name FROM v_catalog.databases")
             (res (pg-exec con sql)))
        (apply #'append (pg-result res :tuples))))
+    ('arcadedb
+     (let ((res (pg-exec con "SELECT FROM schema:database")))
+       (apply #'append (pg-result res :tuples))))
     (_
      (let ((res (pg-exec con "SELECT datname FROM pg_catalog.pg_database")))
        (apply #'append (pg-result res :tuples))))))
@@ -3462,6 +3474,7 @@ Uses database connection CON."
      (let* ((res (pg-exec con "SELECT currentDatabase()"))
             (row (pg-result res :tuple 0)))
        (cl-first row)))
+    ('arcadedb nil)
     (_
      (let* ((res (pg-exec con "SELECT current_schema()"))
             (row (pg-result res :tuple 0)))
@@ -3474,6 +3487,7 @@ Uses database connection CON."
   (pcase (pgcon-server-variant con)
     ;; QuestDB doesn't really support schemas.
     ('questdb (list "sys" "public"))
+    ('arcadedb nil)
     ((or 'risingwave 'octodb)
      (let ((res (pg-exec con "SELECT DISTINCT table_schema FROM information_schema.tables")))
        (apply #'append (pg-result res :tuples))))
@@ -3573,6 +3587,10 @@ Queries legacy internal PostgreSQL tables."
      for row in rows
      collect (make-pg-qualified-name :schema (cl-first row) :name (cl-second row)))))
 
+(defun pg--tables-arcadedb (con)
+  (let ((res (pg-exec con "SELECT FROM schema:types")))
+    (apply #'append (pg-result res :tuples))))
+
 (defun pg-tables (con)
   "List of the tables present in the database we are connected to via CON.
 Only tables to which the current user has access are listed."
@@ -3588,6 +3606,8 @@ Only tables to which the current user has access are listed."
            (pg--tables-clickhouse con))
           ((eq (pgcon-server-variant con) 'vertica)
            (pg--tables-vertica con))
+          ((eq (pgcon-server-variant con) 'arcadedb)
+           (pg--tables-arcadedb con))
           ((eq (pgcon-server-variant con) 'octodb)
            (pg--tables-legacy con))
           ((> (pgcon-server-version-major con) 11)
