@@ -67,7 +67,7 @@ The following PostgreSQL-compatible databases or extensions have been tested:
 
 - [Neon](https://neon.tech/) “serverless PostgreSQL” works perfectly. This is a commercially hosted
   service using a new storage engine for PostgreSQL, that they make available under the Apache
-  licence. Last tested 2025-05.
+  licence. Last tested 2025-07.
 
 - [ParadeDB](https://www.paradedb.com/) version 0.13.1 works perfectly (it's really a PostgreSQL
   extension rather than a distinct database implementation).

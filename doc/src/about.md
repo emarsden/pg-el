@@ -2,6 +2,7 @@
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0.html) 
 [![Latest tagged version](https://img.shields.io/github/v/tag/emarsden/pg-el?label=Latest%20tagged%20version)](https://github.com/emarsden/pg-el/)
+[![NonGNU ELPA](https://elpa.nongnu.org/nongnu/pg.svg)](https://elpa.nongnu.org/nongnu/pg.html)
 [![MELPA](https://melpa.org/packages/pg-badge.svg)](https://melpa.org/#/pg) 
 [![test-pgv16](https://github.com/emarsden/pg-el/workflows/test-pgv16/badge.svg)](https://github.com/emarsden/pg-el/workflows/test-pgv16/badge.svg)
 
@@ -39,7 +40,7 @@ PostgreSQL or a compatible database.
 - Connections over TCP or (on Unix machines) a local Unix socket.
 ~~~
 
-The code has been tested with **PostgreSQL versions** 17.4, 16.3, 15.4, 13.8, 11.17, and 10.22 on
+The code has been tested with **PostgreSQL versions** 17.5, 16.4, 15.4, 13.8, 11.17, and 10.22 on
 Linux. It is also tested via GitHub actions on MacOS and Microsoft Windows. This library also works,
 to a variable extent, against other databases that implement the PostgreSQL wire protocol; please
 see our [README](https://github.com/emarsden/pg-el/blob/main/README.md) for the up to date list.
@@ -71,13 +72,13 @@ AlloyDB variants:
 
 
 
-Tested with **Emacs versions** 30-pre-release, 29.4, 28.2, 27.2 and 26.3. Emacs versions older than
-26.1 will not work against a recent PostgreSQL version (whose default configuration requires
-SCRAM-SHA-256 authentication), because they don’t include the GnuTLS support which we use to
-calculate HMACs. They may however work against a database set up to allow unauthenticated local
-connections. Emacs versions before 28.1 will not support the extended query protocol, because the
-`bindat` package is required. We mostly test with Emacs on Linux, but the library also works fine on
-Microsoft Windows and MacOS.
+Tested with **Emacs versions** 31 pre-release, 30.1 and 29.4. Emacs versions older than 26.1 will
+not work against a recent PostgreSQL version (whose default configuration requires SCRAM-SHA-256
+authentication), because they don’t include the GnuTLS support which we use to calculate HMACs. They
+may however work against a database set up to allow unauthenticated local connections. Emacs
+versions before 28.1 will not support the extended query protocol, because the `bindat` package is
+required. We mostly test with Emacs on Linux, but the library also works fine on Microsoft Windows
+and MacOS.
 
 You may be interested in an alternative library [emacs-libpq](https://github.com/anse1/emacs-libpq)
 that enables access to PostgreSQL from Emacs by binding to the libpq library.
