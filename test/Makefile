@@ -442,7 +442,7 @@ test-timescale: test-pg.el
 test-citus: test-pg.el
 	${DOCKER} run --rm --name citus \
            --pull=newer \
-	   --publish 5409:5409 \
+	   --publish 127.0.0.1:5409:5409 \
 	   -e POSTGRES_DB=pgeltestdb \
 	   -e POSTGRES_USER=pgeltestuser \
 	   -e POSTGRES_PASSWORD=pgeltest \
@@ -461,7 +461,7 @@ test-citus: test-pg.el
 test-orioledb: test-pg.el
 	${DOCKER} run --rm --name orioledb \
           --pull=newer \
-	  --publish 5317:5317 \
+	  --publish 127.0.0.1:5317:5317 \
 	   -e POSTGRES_DB=pgeltestdb \
 	   -e POSTGRES_USER=pgeltestuser \
 	   -e POSTGRES_PASSWORD=pgeltest \
@@ -479,7 +479,7 @@ test-orioledb: test-pg.el
 test-ivorysql: test-pg.el
 	${DOCKER} run --rm --name ivorydb \
           --pull=newer \
-	  --publish 5437:5432 \
+	  --publish 127.0.0.1:5437:5432 \
 	  -e LANG=C.UTF8 \
 	  -e LC_CTYPE=C.UTF8 \
 	  -e IVORYSQL_DB=pgeltestdb \
@@ -559,6 +559,20 @@ test-age: test-pg.el
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5455/pgeltestdb $(MAKE) test
 	${DOCKER} stop age
 
+
+# An open source graph database based on PostgreSQL
+#
+# https://github.com/skaiworldwide-oss/agensgraph
+test-agensgraph: test-pg.el
+	${DOCKER} run --rm --name agensgraph \
+          --publish 127.0.0.1:5455:5432 \
+          -e POSTGRES_USER=pgeltestuser \
+          -e POSTGRES_PASSWORD=pgeltest \
+          -e POSTGRES_DB=pgeltestdb \
+          -d docker.io/skaiworldwide/agensgraph:latest
+	sleep 5
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5455/pgeltestdb $(MAKE) test
+	${DOCKER} stop agensgraph
 
 
 # Microsoft DocumentDB (PostgreSQL-based). This is not the same product as Amazon DocumentDB.
@@ -748,6 +762,23 @@ test-yugabyte: test-pg.el
 	sleep 10
 	PGURI=postgresql://pgeltestuser@127.0.0.1:5493/pgeltestdb $(MAKE) test
 	${DOCKER} stop yugabyte
+
+
+# https://github.com/ApsaraDB/PolarDB-for-PostgreSQL from Alibaba Cloud
+#
+# Note: primary runs on $POLARDB_PORT, replicas on ${POLARDB_PORT}+1 and ${POLARDB_PORT}+2
+# We don't seem to be able to set POLARDB_DATABASE or equivalent
+test-polardb: test-pg.el
+	${DOCKER} run --rm --name polardb \
+          --pull=newer \
+          --publish 127.0.0.1:5998:5998 \
+          -e POLARDB_PORT=5998 \
+          -e POLARDB_USER=pgeltestuser \
+          -e POLARDB_PASSWORD=pgeltest \
+          -d docker.io/polardb/polardb_pg_local_instance:15
+	sleep 10
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5998/postgres $(MAKE) test
+	${DOCKER} stop polardb
 
 
 # Materialize (here the "Materialize emulator" running in Docker). This proprietary differential
@@ -1014,6 +1045,37 @@ test-vertica: test-pg.el
 	sleep 10
 	PGURI=postgresql://dbadmin:pgeltest@127.0.0.1:5433/pgeltestdb $(MAKE) test
 	${DOCKER} stop vertica
+
+
+# https://docs.arcadedb.com/#postgres-driver
+# https://github.com/ArcadeData/arcadedb
+#
+# Note: syntax compatibility with PostgreSQL is very low
+# https://docs.arcadedb.com/#sql-syntax
+# In particular, "CREATE TABLE" does not work, needs "CREATE TYPE"
+test-arcadedb: test-pg.el
+	${DOCKER} run --rm --name arcadedb \
+          --pull=newer \
+          --publish 127.0.0.1:5600:5432 \
+          -e JAVA_OPTS="-Darcadedb.server.plugins=Postgres:com.arcadedb.postgres.PostgresProtocolPlugin -Darcadedb.server.rootPassword=pgeltest -Darcadedb.server.defaultDatabases=pgeltestdb[pgeltestuser:pgeltest]" \
+          -d docker.io/arcadedata/arcadedb:latest
+	sleep 10
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5600/pgeltestdb $(MAKE) test
+	${DOCKER} stop arcadedb
+
+
+# https://github.com/surrealdb/surrealdb?tab=readme-ov-file#run-using-docker
+#
+# It looks like PostgreSQL wire protocol support is "in development".
+test-surrealdb: test-pg.el
+	${DOCKER} run --rm --name surrealdb \
+           --pull=newer \
+           --publish 127.0.0.1:8000:8000 \
+           -d docker.io/surrealdb/surrealdb:latest start memory \
+              --user pgeltestuser --pass pgeltest --log info --allow-experimental
+	sleep 5
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5433/pgeltestdb $(MAKE) test
+	${DOCKER} stop surrealdb
 
 
 # https://github.com/risinglightdb/risinglight
