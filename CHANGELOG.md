@@ -1,12 +1,13 @@
 # Changelog
 
 
-## [0.56] - Unreleased
+## [0.56] - 2025-07-20
 
 - Allow for two successive messages of type `ErrorMessage` (which is unusual, but used by the OctoDB
   variant).
 
-- Detect and implement workarounds for the semi-compatible PostgreSQL variant Vertica.
+- Detect and implement workarounds for the semi-compatible PostgreSQL variants Vertica, PolarDB,
+  and ArcadeDB, and the graph processing extension AgensGraph.
 
 
 ## [0.55] - 2025-06-29
