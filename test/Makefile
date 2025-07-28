@@ -164,15 +164,15 @@ test-postgresql18beta1tls: test-pg.el
 	${DOCKER} volume import pgcerts ${WORKDIR}/certs.tar
 	${DOCKER} run --rm --name pgsql \
            --pull=newer \
-	   -v pgcerts:/certs:U \
-	   --publish 5418:5418 \
-	   -e POSTGRES_DB=pgeltestdb \
-	   -e POSTGRES_USER=pgeltestuser \
-	   -e POSTGRES_PASSWORD=pgeltest \
-	   -e PGPORT=5418 \
-	   -e TZ=Asia/Tokyo \
+           -v pgcerts:/certs:U \
+           --publish 5418:5418 \
+           -e POSTGRES_DB=pgeltestdb \
+           -e POSTGRES_USER=pgeltestuser \
+           -e POSTGRES_PASSWORD=pgeltest \
+           -e PGPORT=5418 \
+           -e TZ=Asia/Tokyo \
            --user postgres \
-	   localhost/postgres:18-beta1 \
+           -d docker.io/library/postgres:18beta1-alpine \
               -c ssl=on \
               -c ssl_cert_file=/certs/server.crt \
               -c ssl_key_file=/certs/server.key
@@ -599,6 +599,22 @@ test-documentdb: test-pg.el
 	${DOCKER} stop documentdb
 
 
+# https://babelfishpg.org/
+# https://hub.docker.com/r/jonathanpotts/babelfishpg
+#
+# This behaves exactly like PostgreSQL (which it is forked from).
+test-babelfish: test-pg.el
+	${DOCKER} run --rm --name babelfish \
+          --publish 127.0.0.1:5410:5432 \
+          -e POSTGRES_USER=pgeltestuser \
+          -e POSTGRES_PASSWORD=pgeltest \
+          -e POSTGRES_DB=pgeltestdb \
+          -d docker.io/jonathanpotts/babelfishpg:latest
+	sleep 5
+	PGURI=postgresql://babelfish_user:12345678@127.0.0.1:5410/postgres $(MAKE) test
+	${DOCKER} stop babelfish
+
+
 # Test pgbouncer proxying to our local PostgreSQL (in session pooling mode, so that functionality
 # such as LISTEN works).
 #
@@ -690,10 +706,9 @@ test-readyset: test-pg.el
 test-cratedb: test-pg.el
 	${DOCKER} run --rm --name cratedb \
           --pull=newer \
-	  --net host \
+          --net host \
           -e CRATE_HEAP_SIZE=1g \
-          -d docker.io/crate \
-	  -Cnetwork.host=127.0.0.1 -Cdiscovery.type=single-node -Cpsql.port=5789
+          -d docker.io/crate -Cnetwork.host=127.0.0.1 -Cdiscovery.type=single-node -Cpsql.port=5789
 	sleep 5
 	PGURI=postgresql://crate@127.0.0.1:5789/postgres $(MAKE) test
 	${DOCKER} stop cratedb
@@ -1062,6 +1077,31 @@ test-arcadedb: test-pg.el
 	sleep 10
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5600/pgeltestdb $(MAKE) test
 	${DOCKER} stop arcadedb
+
+
+# https://stoolap.io/
+# https://github.com/stoolap/stoolap
+#
+# We don't currently bother recognizing this as a PostgreSQL variant, because its PostgreSQL
+# compatibility at the SQL level is very low. For instance, it doesn't recognize schema-qualified
+# names such as schema.table.
+test-stoolap: test-pg.el
+	cd /tmp/ && git clone --depth 1 https://github.com/stoolap/stoolap.git
+	cd /tmp/stoolap && go build -o /tmp/stoolap-pgserver ./cmd/stoolap-pgserver
+	/tmp/stoolap-pgserver --database memory:// --bind 127.0.0.1:5401 &
+	sleep 2
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5401/stoolap $(MAKE) test
+	rm -rf /tmp/stoolap-pgserver /tmp/stoolap
+
+
+# https://www.kinetica.com/kinetica-developer-edition/
+test-kinetica: test-pg.el
+	${DOCKER} run --rm --name kinetica \
+          --pull=newer \
+          --publish 127.0.0.1:5434:5432 \
+          -d docker.io/kinetica/kinetica-cpu:latest /bin/sh -c "/opt/gpudb/core/bin/gpudb start && sleep 1000"
+	sleep 120   # fantastically slow to start up!
+	PGURI=postgresql://admin:admin@127.0.0.1:5434/kinetica $(MAKE) test
 
 
 # https://github.com/surrealdb/surrealdb?tab=readme-ov-file#run-using-docker
