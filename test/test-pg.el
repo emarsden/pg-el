@@ -690,7 +690,7 @@
 (defun pg-test-edge-cases (con)
   (cl-labels ((row (sql) (pg-result (pg-exec con sql) :tuple 0))
               (scalar (sql) (cl-first (pg-result (pg-exec con sql) :tuple 0))))
-    (unless (member (pgcon-server-variant con) '(cratedb))
+    (unless (member (pgcon-server-variant con) '(cratedb clickhouse))
       (should (eql t (scalar "SELECT bool 'f' < bool 't' AS true")))
       (should (eql t (scalar "SELECT bool 'f' <= bool 't' AS true"))))
     ;; Empty strings are equal
