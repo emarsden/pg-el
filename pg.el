@@ -429,17 +429,6 @@ tag called pg-finished."
   (remove-function (process-filter (pgcon-process con)) #'pg-process-filter))
 
 
-(defconst pg--AUTH_REQ_OK       0)
-(defconst pg--AUTH_REQ_KRB4     1)
-(defconst pg--AUTH_REQ_KRB5     2)
-(defconst pg--AUTH_REQ_PASSWORD 3)   ; AuthenticationCleartextPassword
-(defconst pg--AUTH_REQ_CRYPT    4)
-
-(defconst pg--STARTUP_MSG            7)
-(defconst pg--STARTUP_KRB4_MSG      10)
-(defconst pg--STARTUP_KRB5_MSG      11)
-(defconst pg--STARTUP_PASSWORD_MSG  14)
-
 (cl-defgeneric pg-do-variant-specific-setup (con variant)
   "Run any setup actions on connnection establishment specific to VARIANT.
 Uses PostgreSQL connection CON.")
@@ -715,30 +704,41 @@ Uses database DBNAME, user USER and password PASSWORD."
      (?R
       (let ((_msglen (pg-read-net-int con 4))
             (areq (pg-read-net-int con 4)))
-        (cond
+        (cl-case areq
          ;; AuthenticationOK message
-         ((= areq pg--AUTH_REQ_OK)
-          ;; Continue processing server messages and wait for the ReadyForQuery
-          ;; message
-          nil)
+          (0
+           ;; Continue processing server messages and wait for the ReadyForQuery
+           ;; message
+           nil)
 
-         ((= areq pg--AUTH_REQ_PASSWORD)
+          ;; AUTH_REQ_KRB4
+          (1
+           (signal 'pg-protocol-error '("Kerberos4 authentication not supported")))
+
+          ;; AUTH_REQ_KRB5
+          (2
+           (signal 'pg-protocol-error '("Kerberos5 authentication not supported")))
+
+          ;; AUTH_REQ_CLEARTEXT_PASSWORD
+          (3
           ;; send a PasswordMessage
           (pg-send-char con ?p)
           (pg-send-uint con (+ 5 (length password)) 4)
           (pg-send-string con password)
           (pg-flush con))
-         ;; AuthenticationSASL request
-         ((= areq 10)
-          (pg-do-sasl-authentication con user password))
-         ((= areq 5)
-          (pg-do-md5-authentication con user password))
-         ((= areq pg--AUTH_REQ_CRYPT)
+
+         ;; AUTH_REQ_CRYPT
+         (4
           (signal 'pg-protocol-error '("Crypt authentication not supported")))
-         ((= areq pg--AUTH_REQ_KRB4)
-          (signal 'pg-protocol-error '("Kerberos4 authentication not supported")))
-         ((= areq pg--AUTH_REQ_KRB5)
-          (signal 'pg-protocol-error '("Kerberos5 authentication not supported")))
+
+         ;; AUTH_REQ_MD5
+         (5
+          (pg-do-md5-authentication con user password))
+
+         ;; AuthenticationSASL request
+         (10
+          (pg-do-sasl-authentication con user password))
+
          (t
           (let ((msg (format "Can't do that type of authentication: %s" areq)))
             (signal 'pg-protocol-error (list msg)))))))
@@ -902,7 +902,6 @@ are passed to GnuTLS."
     (signal 'pg-error '("Connecting over TLS requires GnuTLS support in Emacs")))
   ;; Here we make a "direct" TLS connection to PostgreSQL, rather than the STARTTLS-like
   ;; connection upgrade handshake.
-  (message "Making direct GnuTLS connection")
   (let* ((buf (generate-new-buffer " *PostgreSQL*"))
          (process (make-network-process :name "postgres"
                                         :buffer buf
@@ -919,18 +918,18 @@ are passed to GnuTLS."
                        (when (listp tls-options) tls-options)))
          (gnutls-log-level 3)
          (gnutls-verify-error nil))
-    (message "Connecting to %s:%s with TLS opts %s" host port opts)
+    (with-current-buffer buf
+      (set-process-coding-system process 'binary 'binary)
+      (set-buffer-multibyte nil)
+      (setq-local pgcon--position 1
+                  pgcon--busy t
+                  pgcon--notification-handlers (list)))
     (condition-case err
         (apply #'gnutls-negotiate opts)
       (gnutls-error
        (let ((msg (format "TLS error connecting to PostgreSQL: %s"
                           (error-message-string err))))
          (signal 'pg-protocol-error (list msg)))))
-    (sit-for 1)
-    ;; FIXME here we are reading "Process postgres connection broken by remote peer"
-    (cl-loop for ch = (pg-read-char con)
-             until (eql ?S ch)
-             do (message "TLS chatter> %c" ch))
     (unless (zerop pg-connect-timeout)
       (run-at-time pg-connect-timeout nil
                    (lambda ()
@@ -938,12 +937,6 @@ are passed to GnuTLS."
                        (delete-process process)
                        (kill-buffer buf)
                        (signal 'pg-connect-timeout (list "PostgreSQL connection timed out"))))))
-    (with-current-buffer buf
-      (set-process-coding-system process 'binary 'binary)
-      (set-buffer-multibyte nil)
-      (setq-local pgcon--position 1
-                  pgcon--busy t
-                  pgcon--notification-handlers (list)))
     ;; Save connection info in the pgcon object, for possible later use by pg-cancel
     (setf (pgcon-connect-info con) (list :tcp host port dbname user password))
     ;; the remainder of the startup sequence is common to TCP and Unix socket connections
