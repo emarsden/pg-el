@@ -15,7 +15,7 @@ install-deps:
 
 test: test-pg.el install-deps
 	${EMACS} -Q --batch -L .. -L . -l load-deps.el ../pg.el \
-	   -l pg.el -l pg-geometry.el -l pg-gis.el -l test-pg.el -f pg-test
+	   -l pg.el -l pg-geometry.el -l pg-gis.el -l pg-lo.el -l test-pg.el -f pg-test
 
 test-interactive: test-pg.el install-deps
 	${EMACS} -Q -L .. -L . -l load-deps.el ../pg.el \
@@ -573,6 +573,26 @@ test-agensgraph: test-pg.el
 	sleep 5
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5455/pgeltestdb $(MAKE) test
 	${DOCKER} stop agensgraph
+
+
+# https://docs.geldata.com/reference/running/deployment/docker
+# https://docs.geldata.com/reference/running/configuration
+# https://hub.docker.com/r/geldata/gel
+# https://github.com/geldata/gel
+#
+# We don't bother detecting this as a specific PostgreSQL variant, because the SQL syntax it accepts
+# is too different from standard PostgreSQL (no support for CREATE, for DROP, for EXPLAIN
+test-geldata: test-pg.el
+	${DOCKER} run --rm --name geldata \
+          --publish 127.0.0.1:5656:5656 \
+          -e GEL_SERVER_USER=pgeltestuser \
+          -e GEL_SERVER_PASSWORD=pgeltest \
+          -e GEL_SERVER_PORT=5656 \
+          -e GEL_SERVER_SECURITY=insecure_dev_mode \
+          -d docker.io/geldata/gel:nightly
+	sleep 20
+	PGURI="postgresql://pgeltestuser:pgeltest@127.0.0.1:5656/edgedb?sslmode=require" $(MAKE) test-tls
+	${DOCKER} stop geldata
 
 
 # Microsoft DocumentDB (PostgreSQL-based). This is not the same product as Amazon DocumentDB.
