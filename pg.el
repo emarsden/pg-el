@@ -497,12 +497,22 @@ Uses connection CON. The variant can be accessed by `pgcon-server-variant'."
              ;; TODO: find a better detection method for ArcadeDB
              ((string-suffix-p "/main)" version)
               (setf (pgcon-server-variant con) 'arcadedb))
-             ;; A more expensive test is needed for Google AlloyDB. If this parameter is defined,
-             ;; the query will return "on" or "off" as a string, and if the parameter is not defined
-             ;; the query (second argument meaning no-error) will return '((nil)).
-             ((let ((res (pg-exec con "SELECT current_setting('omni_disk_cache_enabled', true)")))
-                (stringp (cl-first (pg-result res :tuple 0))))
-              (setf (pgcon-server-variant con) 'alloydb))
+             ;; A more expensive test is needed for Google AlloyDB. If the `omni_disk_cache_enabled'
+             ;; parameter is defined, the query will return "on" or "off" as a string, and if the
+             ;; parameter is not defined the query (second argument meaning no-error) will return
+             ;; '((nil)).
+             ;;
+             ;; We avoid using the two-argument version of the current_setting() function, because
+             ;; it raises errors in various semi-compatible PostgreSQL variants that only implement
+             ;; the single argument version. Instead, query the
+             ;; pg_settings table.
+             ;;
+             ;;   "SELECT current_setting('omni_disk_cache_enabled', true)"
+             ((let* ((res (pg-exec-prepared con "SELECT setting FROM pg_catalog.pg_settings WHERE name=$1"
+                                            `(("omni_disk_cache_enabled" . "text"))))
+                     (rows (pg-result res :tuples)))
+                (unless (null rows)
+                  (setf (pgcon-server-variant con) 'alloydb))))
              ;; TODO: we could also detect CitusDB in the same way by checking for citus.cluster_name
              ;; setting for example, but in practice it is very PostgreSQL compatible so identifying
              ;; it as a variant doesn't seem mandatory.
