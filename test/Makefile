@@ -550,6 +550,7 @@ test-hydra: test-pg.el
 # https://age.apache.org/getstarted/quickstart
 test-age: test-pg.el
 	${DOCKER} run --rm --name age \
+          --pull=newer \
           -p 5455:5432 \
           -e POSTGRES_USER=pgeltestuser \
           -e POSTGRES_PASSWORD=pgeltest \
@@ -565,6 +566,7 @@ test-age: test-pg.el
 # https://github.com/skaiworldwide-oss/agensgraph
 test-agensgraph: test-pg.el
 	${DOCKER} run --rm --name agensgraph \
+          --pull=newer \
           --publish 127.0.0.1:5455:5432 \
           -e POSTGRES_USER=pgeltestuser \
           -e POSTGRES_PASSWORD=pgeltest \
@@ -584,6 +586,7 @@ test-agensgraph: test-pg.el
 # is too different from standard PostgreSQL (no support for CREATE, for DROP, for EXPLAIN
 test-geldata: test-pg.el
 	${DOCKER} run --rm --name geldata \
+          --pull=newer \
           --publish 127.0.0.1:5656:5656 \
           -e GEL_SERVER_USER=pgeltestuser \
           -e GEL_SERVER_PASSWORD=pgeltest \
@@ -593,6 +596,19 @@ test-geldata: test-pg.el
 	sleep 20
 	PGURI="postgresql://pgeltestuser:pgeltest@127.0.0.1:5656/edgedb?sslmode=require" $(MAKE) test-tls
 	${DOCKER} stop geldata
+
+
+# https://hub.docker.com/r/pgedge/pgedge
+# https://github.com/pgEdge/pgedge-docker
+test-pgedge: test-pg.el
+	${DOCKER} run --rm --name pgedge \
+           --pull=newer \
+           --publish 127.0.0.1:5481:5432 \
+           -v "./pgedge-config.json:/home/pgedge/db.json" \
+           -d docker.io/pgedge/pgedge:pg17-latest
+	sleep 10
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5481/pgeltestdb $(MAKE) test
+	${DOCKER} stop pgedge
 
 
 # Microsoft DocumentDB (PostgreSQL-based). This is not the same product as Amazon DocumentDB.
