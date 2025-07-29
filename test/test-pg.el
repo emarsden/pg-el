@@ -11,6 +11,7 @@
 (require 'pg-geometry)
 (require 'pg-gis)
 (require 'pg-bm25)
+(require 'pg-lo)
 (require 'ert)
 
 
@@ -355,6 +356,8 @@
                   :skip-variants '(cratedb risingwave))
       (pgtest-add #'pg-test-notice)
       (pgtest-add #'pg-test-notify
+                  :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb ydb questdb spanner vertica))
+      (pgtest-add #'pg-test-lo
                   :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb ydb questdb spanner vertica))
       (dolist (test (reverse tests))
         (message "== Running test %s" test)
@@ -2720,26 +2723,80 @@ bar$$"))))
 ;     (should (> notice-counter 0)))))
 
 
-;; test of large-object interface. Note the use of with-pg-transaction
-;; to wrap the requests in a BEGIN..END transaction which is necessary
-;; when working with large objects.
+(defun pg-test-lo (con)
+  (pg-test-lo-read con)
+  (pg-test-lo-ensure-size con)
+  (pg-test-lo-import con))
+
+;; Note the use of with-pg-transaction to wrap the requests in a BEGIN..END transaction which is
+;; necessary when working with large objects.
 (defun pg-test-lo-read (con)
+  (message "Testing lo-read and friends")
   (with-pg-transaction con
     (let* ((oid (pg-lo-create con "rw"))
            (fd (pg-lo-open con oid "rw")))
-      (message "==================================================")
+      (let* ((sql "SELECT oid FROM pg_catalog.pg_largeobject_metadata WHERE oid=$1")
+             (res (pg-exec-prepared con sql `((,oid . "int4"))))
+             (rows (pg-result res :tuples)))
+        (should (eql 1 (length rows))))
       (pg-lo-write con fd "Hi there mate")
-      (pg-lo-lseek con fd 3 0)         ; SEEK_SET = 0
-      (unless (= 3 (pg-lo-tell con fd))
-        (error "lo-tell test failed!"))
-      (message "Read %s from lo" (pg-lo-read con fd 7))
-      (message "==================================================")
+      (pg-lo-lseek con fd 3 pg--SEEK_SET)
+      (should (eql 3 (pg-lo-tell con fd)))
+      (let ((substring (pg-lo-read con fd 7)))
+        (should (string= substring "there m")))
+      ;; Test the server-side function lo_get(), as per
+      ;; https://www.postgresql.org/docs/current/lo-funcs.html We don't have to decode this value
+      ;; from hex because the prepared statement infrastructure in pg-el does that for us.
+      (let ((res (pg-exec-prepared con "SELECT lo_get($1, 9, 4)" `((,oid . "int4")))))
+        (should (string= "mate" (cl-first (pg-result res :tuple 0)))))
       (pg-lo-close con fd)
       (pg-lo-unlink con oid))))
 
+(defun pg-test-lo-ensure-size (con)
+  (message "Testing lo-lseek and friends")
+  (with-pg-transaction con
+    (let* ((oid (pg-lo-create con "rw"))
+           (fd (pg-lo-open con oid "rw"))
+           (filler (make-string (* 1024 1024) ?Z))
+           (target-len (* 1024 1024 1024)))
+      (dotimes (i 512)
+        (pg-exec-prepared con "SELECT lo_put($1, $2, $3)"
+                          `((,oid . "int4") (,(* i 1024 1024) . "int8") (,filler . "bytea"))))
+      (pg-lo-lseek con fd (* 512 1024 1024) pg--SEEK_SET)
+      (dotimes (i 512)
+        (should (eql (* 1024 1024) (pg-lo-write con fd filler))))
+      ;; Now check that the octets have been written as expected
+      (let ((pos (pg-lo-lseek con fd 0 pg--SEEK_CUR)))
+        (should (eql pos target-len)))
+      (let ((pos (pg-lo-tell con fd)))
+        (should (eql pos target-len)))
+      (let ((pos (pg-lo-lseek con fd 0 pg--SEEK_END)))
+        (should (eql pos target-len)))
+      (dotimes (i 100)
+        (let ((pos (random target-len)))
+          (pg-lo-lseek con fd pos pg--SEEK_SET)
+          (should (string= "Z" (pg-lo-read con fd 1)))))
+      (let* ((halfway (* 512 1024 1024)))
+        (pg-lo-truncate con fd halfway)
+        (should (eql halfway (pg-lo-lseek con fd 0 pg--SEEK_END)))
+        (pg-lo-lseek con fd 0 pg--SEND_SET)
+        (let ((filler (make-string (* 1024 1024) ?#)))
+          (dotimes (i 512)
+            (pg-lo-write con fd filler)))
+        (dotimes (i 100)
+          (let ((pos (random halfway)))
+            (pg-lo-lseek con fd pos pg--SEEK_SET)
+            (should (string= "#" (pg-lo-read con fd 1)))))))))
+
 (defun pg-test-lo-import (con)
+  (message "Testing lo-import and friends")
    (with-pg-transaction con
-    (let ((oid (pg-lo-import con "/etc/group")))
+    (let* ((oid (pg-lo-import con "/etc/group"))
+           (sql "SELECT oid FROM pg_catalog.pg_largeobject_metadata WHERE oid=$1")
+           (res (pg-exec-prepared con sql `((,oid . "int4"))))
+           (rows (pg-result res :tuples)))
+      (should (eql 1 (length rows)))
+      (should (eql oid (caar rows)))
       (pg-lo-export con oid "/tmp/group")
       (cond ((zerop (call-process "diff" nil nil nil "/tmp/group" "/etc/group"))
              (message "lo-import test succeeded")

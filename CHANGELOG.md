@@ -1,6 +1,11 @@
 # Changelog
 
 
+## [0.57] - Unreleased
+
+- Fix the large object functionality to work with version 3 of the frontend-backend wire protocol.
+
+
 ## [0.56] - 2025-07-20
 
 - Allow for two successive messages of type `ErrorMessage` (which is unusual, but used by the OctoDB
