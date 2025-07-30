@@ -10,6 +10,7 @@
 - [PostGIS support](./postgis.md)
 - [Collation support](./collation.md)
 - [The COPY protocol](./copy-protocol.md)
+- [Large objects](./large-objects.md)
 - [Using schema-qualified names](./schemas.md)
 - [Error handling](./error-handling.md)
 - [Special pg-el features](./special-features.md)
