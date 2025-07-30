@@ -900,9 +900,9 @@ test-immudb: test-pg.el
 test-greenplum: test-pg.el
 	${DOCKER} run --rm --name greenplum \
           --pull=newer \
-	  --publish 5433:5432 \
-	  -e PGPORT=5433 \
-	  -d docker.io/andruche/greenplum:7
+          --publish 5433:5432 \
+          -e PGPORT=5433 \
+          -d docker.io/andruche/greenplum:7
 	sleep 10
 	PGURI=postgresql://gpadmin@localhost:5433/postgres $(MAKE) test
 	${DOCKER} stop greenplum
@@ -929,8 +929,8 @@ test-cloudberry: test-pg.el
 test-spanner: test-pg.el
 	${DOCKER} run --rm --name spanner \
           --pull=newer \
-	  --publish 127.0.0.1:5499:5432 \
-	  -d gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:latest -d pgeltestdb
+          --publish 127.0.0.1:5499:5432 \
+          -d gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:latest -d pgeltestdb
 	sleep 2
 	PGURI=postgresql://postgres@127.0.0.1:5499/pgeltestdb $(MAKE) test
 	${DOCKER} stop spanner

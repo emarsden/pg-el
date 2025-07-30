@@ -342,7 +342,7 @@
                   :skip-variants '(xata cratedb questdb ydb vertica))
       ;; Many PostgreSQL variants only support UTF8 as the client encoding.
       (pgtest-add #'pg-test-client-encoding
-                  :skip-variants '(cratedb cockroachdb ydb risingwave materialize spanner greptimedb xata))
+                  :skip-variants '(cratedb cockroachdb ydb risingwave materialize spanner greptimedb xata vertica))
       (pgtest-add #'pg-test-unicode-names
                   :skip-variants '(xata cratedb cockroachdb risingwave questdb ydb spanner vertica))
       (pgtest-add #'pg-test-returning
@@ -358,7 +358,7 @@
       (pgtest-add #'pg-test-notify
                   :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb ydb questdb spanner vertica))
       (pgtest-add #'pg-test-lo
-                  :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb ydb questdb spanner vertica))
+                  :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb ydb questdb spanner vertica greenplum))
       (dolist (test (reverse tests))
         (message "== Running test %s" test)
         (condition-case err
@@ -440,9 +440,12 @@
     ;; https://github.com/kagis/pgwire/blob/main/test/test.js
     (let ((typ (scalar "SELECT pg_typeof($1)::text" '((42 . "int4")))))
       (should (or (string= "integer" typ)
-                  (string= "bigint" typ)))) 
-    (should (equal (list "text" "foobles")
-                   (row "SELECT pg_typeof($1)::text, $1::text" '(("foobles" . "text")))))
+                  (string= "bigint" typ))))
+    (let ((typs (row "SELECT pg_typeof($1)::text, $1::text" '(("foobles" . "text")))))
+      (should (string= "foobles" (cl-second typs)))
+      (should (or (string= "text" (cl-first typs))
+                  ;; RisingWave returns this
+                  (string=" character varying" (cl-first typs)))))
     (unless (member (pgcon-server-variant con) '(cratedb risingwave materialize ydb))
       (let ((bv1 (make-bool-vector 1 nil))
             (bv2 (make-bool-vector 1 t)))
