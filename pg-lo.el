@@ -17,7 +17,9 @@
 ;; For example, the user can define a new type called "circle", and define a C
 ;; or Tcl function called `circumference' which will act on circles. There is
 ;; also an inheritance mechanism in PostgreSQL.
-
+;;
+;; https://www.postgresql.org/docs/current/lo-interfaces.html
+;; https://www.postgresql.org/docs/current/lo-funcs.html
 
 ;;; Code:
 
@@ -38,7 +40,6 @@
 (declare-function pg-exec "pg" (con &rest args))
 
 
-
 (defvar pg-lo-initialized nil)
 (defvar pg-lo-functions '())
 
@@ -51,6 +52,7 @@
                        "proname = 'lo_unlink' OR "
                        "proname = 'lo_lseek' OR "
                        "proname = 'lo_tell' OR "
+                       "proname = 'lo_truncate' OR "
                        "proname = 'loread' OR "
                        "proname = 'lowrite'")))
     (setq pg-lo-functions '())
@@ -121,7 +123,7 @@
 
                ;; FunctionCallResult
                (?V
-                (let ((msg-len (pg-read-net-int con 4))
+                (let ((_msg-len (pg-read-net-int con 4))
                       (value-len (pg-read-net-int con 4)))
                   (setq result (if integer-result
                                    (pg-read-net-int con value-len)
@@ -174,8 +176,7 @@ ignored in PostgreSQL releases after v8.1."
            (error "Can't create large object"))
           (t oid))))
 
-;; mode = modestring (default "r", or "w" or "rw")
-(defun pg-lo-open (connection oid &optional mode)
+(defun pg-lo-open (con oid &optional mode)
   "Open the PostgreSQL large object designated by OID for reading.
 Uses PostgreSQL connection CON. The string MODE determines whether the
 object is opened for reading (`r'), or writing (`w'), or both (`rw').
@@ -189,47 +190,76 @@ Returns a large object descriptor that can be used with functions
                       (logior pg--INV_READ pg--INV_WRITE))
                      (t (let ((msg (format "pg-lo-open: bad mode %s" mode)))
                           (signal 'pg-user-error (list msg))))))
-         (fd (pg-fn connection "lo_open" t oid mode)))
+         (fd (pg-fn con "lo_open" t oid mode)))
     (unless (integerp fd)
       (error "Couldn't open large object"))
     fd))
 
-;; TODO: should we be checking the return value and signalling a pg-error on failure?
-(defsubst pg-lo-close (connection fd)
-  (pg-fn connection "lo_close" t fd))
+(defsubst pg-lo-close (con fd)
+  "Closes the PostgreSQL large object designated by FD.
+Uses PostgreSQL connection CON."
+  (pg-fn con "lo_close" t fd))
 
-(defun pg-lo-read (connection fd bytes)
-  (let* ((encoded (pg-fn connection "loread" nil fd bytes))
+(defun pg-lo-read (con fd bytes)
+  "Read BYTES octets from large object designated by FD.
+Uses PostgreSQL connection CON."
+  (let* ((encoded (pg-fn con "loread" nil fd bytes))
          (hexdigits (substring encoded 2)))
-    ;; (message "lo-read: hex encoded is %s" encoded)
     (unless (and (eql 92 (aref encoded 0))   ; \ character
                  (eql ?x (aref encoded 1)))
       (signal 'pg-protocol-error
               (list "Unexpected format for BYTEA binary string")))
     (decode-hex-string hexdigits)))
 
-(defsubst pg-lo-write (connection fd buf)
-  (pg-fn connection "lowrite" t fd buf))
+(defsubst pg-lo-write (con fd buf)
+  "Write the contents of BUF to the large object designated by FD.
+Uses PostgreSQL connection CON."
+  (pg-fn con "lowrite" t fd buf))
 
 
-(defconst pg--SEEK_SET 0)
-(defconst pg--SEEK_CUR 1)
-(defconst pg--SEEK_END 2)
+(defconst pg-SEEK_SET 0)
+(defconst pg-SEEK_CUR 1)
+(defconst pg-SEEK_END 2)
 
+(defun pg-lo-lseek (con fd offset whence)
+  "Seek to position OFFSET in PostgreSQL large object designated by FD.
+WHENCE can be `pg-SEEK_SET' (seek from object start),
+`pg-SEEK_CUR' (seek from current position), or `pg-SEEK_END' (seek from
+object end). OFFSET may be a large integer (int8 type in PostgreSQL;
+this function calls the PostgreSQL backend function `lo_lseek64'). Uses
+PostgreSQL connection CON."
+  (let* ((res (pg-exec-prepared con "SELECT lo_lseek64($1, $2, $3)"
+                                `((,fd . "int4") (,offset . "int8") (,whence . "int4"))))
+         (ret (cl-first (pg-result res :tuple 0))))
+    (if (eql -1 ret)
+        (signal 'pg-operational-error (list "lo_lseek64 function call failed"))
+      ret)))
 
-;; Whence can be SEEK_SET (seek from object start), SEEK_CUR (seek from current
-;; position), and SEEK_END (seek from object end).
-(defsubst pg-lo-lseek (connection fd offset whence)
-  (pg-fn connection "lo_lseek" t fd offset whence))
+(defun pg-lo-tell (con fd)
+  "Return the current file position in PostgreSQL large object FD.
+Uses PostgreSQL connection CON. Uses the PostgreSQL backend function
+`lo_tell64' to work with large objects."
+  (let* ((res (pg-exec-prepared con "SELECT lo_tell64($1)" `((,fd . "int4"))))
+         (ret (cl-first (pg-result res :tuple 0))))
+    (if (eql -1 ret)
+        (signal 'pg-operational-error (list "lo_tell64 function call failed"))
+      ret)))
 
-(defsubst pg-lo-tell (connection oid)
-  (pg-fn connection "lo_tell" t oid))
+(defun pg-lo-truncate (con fd len)
+  "Truncate the PostgreSQL large object FD to size LEN.
+LEN may be a large integer (int8 type in PostgreSQL); this calls the
+PostgreSQL backend function `lo_truncate64'. Uses PostgreSQL connection
+CON."
+  (let* ((res (pg-exec-prepared con "SELECT lo_truncate64($1, $2)"
+                                `((,fd . "int4") (,len . "int8"))))
+         (ret (cl-first (pg-result res :tuple 0))))
+    (unless (zerop ret)
+      (signal 'pg-operational-error (list "lo_truncate64 function call failed"))))) 
 
-(defsubst pg-lo-truncate (con oid len)
-  (pg-fn con "lo_truncate" oid len))
-
-(defsubst pg-lo-unlink (connection oid)
-  (pg-fn connection "lo_unlink" t oid))
+(defun pg-lo-unlink (con oid)
+  "Unlink the PostgreSQL large object identified by OID.
+Uses PostgreSQL connection CON."
+  (pg-fn con "lo_unlink" t oid))
 
 ;; FIXME should use unwind-protect here
 (defun pg-lo-import (con filename)
@@ -249,7 +279,7 @@ Uses PostgreSQL connection CON. Returns the OID of the new object."
     oid))
 
 (defun pg-lo-export (con oid filename)
-  "Export PostgreSQL large object desingated by OID to FILENAME.
+  "Export PostgreSQL large object identified by OID to FILENAME.
 Uses PostgreSQL connection CON."
   (let* ((buf (get-buffer-create (format " *pg-%d" oid)))
          (fdin (pg-lo-open con oid "r")))
