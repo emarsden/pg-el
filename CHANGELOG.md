@@ -1,9 +1,11 @@
 # Changelog
 
 
-## [0.57] - Unreleased
+## [0.57] - 2025-07-30
 
 - Fix the large object functionality to work with version 3 of the frontend-backend wire protocol.
+  The large object functions use the 64-bit versions of the backend functions (`lo_lseek64`,
+  `lo_truncate64` etc.) to support interactions with large objects up to 4TB in size.
 
 
 ## [0.56] - 2025-07-20
