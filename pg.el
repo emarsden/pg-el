@@ -925,9 +925,7 @@ are passed to GnuTLS."
                        ;; see https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
                        (list :alpn-protocols (list "postgresql"))
                        (when cert (list :keylist cert))
-                       (when (listp tls-options) tls-options)))
-         (gnutls-log-level 3)
-         (gnutls-verify-error nil))
+                       (when (listp tls-options) tls-options))))
     (with-current-buffer buf
       (set-process-coding-system process 'binary 'binary)
       (set-buffer-multibyte nil)
@@ -2270,7 +2268,8 @@ PostgreSQL and Emacs. CON should no longer be used."
     (kill-buffer (pgcon-query-log con)))
   (clrhash (pgcon-parser-by-oid con))
   (clrhash (pgcon-typname-by-oid con))
-  (clrhash (pgcon-oid-by-typname con)))
+  (clrhash (pgcon-oid-by-typname con))
+  nil)
 
 
 
