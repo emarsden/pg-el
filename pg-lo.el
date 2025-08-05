@@ -69,6 +69,12 @@
 ;; corresponding OID.
 (cl-defun pg-fn (con fn integer-result &rest args)
   (pg-connection-set-busy con t)
+  (when (pgcon-query-log con)
+    (let ((query (format "EXEC pg-fn %s %s %s" fn integer-result args)))
+      (with-current-buffer (pgcon-query-log con)
+        (insert query "\n"))
+      (when noninteractive
+        (message "%s" query))))
   (unless pg-lo-initialized
     (pg-lo-init con))
   (let ((fnid (cond ((integerp fn) fn)
@@ -150,10 +156,13 @@
                ;; end of FunctionResult
                (?0 nil)
 
-               (t (error "Unexpected character in pg-fn: %s" c))))))
+               (t
+                (let ((msg (format "Unexpected data from backend in pg-fn: %s" c)))
+                  (signal 'pg-protocol-error (list msg))))))))
 
-(defconst pg--INV_WRITE   131072)       ; fe-lobj.c
-(defconst pg--INV_READ    262144)
+;; These constants are defined in libpq-fs.h in the PostgreSQL source.
+(defconst pg--INV_WRITE   #x20000)
+(defconst pg--INV_READ    #x40000)
 
 ;; Note: recent versions of PostgreSQL support an alternative function lo_create
 ;; which takes the desired oid as a parameter.
@@ -171,17 +180,22 @@ ignored in PostgreSQL releases after v8.1."
                           (signal 'pg-user-error (list msg))))))
          (oid (pg-fn con "lo_creat" t mode)))
     (cond ((not (integerp oid))
-           (error "Returned value not an OID: %s" oid))
-          ((zerop oid)
-           (error "Can't create large object"))
+           (let ((msg (format "Returned value not an OID: %s" oid)))
+             (signal 'pg-operational-error (list msg))))
+          ((eql -1 oid)
+           (signal 'pg-operational-error (list "Can't create large object")))
           (t oid))))
 
 (defun pg-lo-open (con oid &optional mode)
   "Open the PostgreSQL large object designated by OID for reading.
-Uses PostgreSQL connection CON. The string MODE determines whether the
-object is opened for reading (`r'), or writing (`w'), or both (`rw').
-Returns a large object descriptor that can be used with functions
-`pg-lo-read', `pg-lo-write', `pg-lo-lseek', `pg-lo-tell' and `pg-lo-close'."
+The string MODE determines whether the object is opened for
+reading (`r'), or writing (`w'), or both (`rw'); it is ignored in
+PostgreSQL releases after v8.1. Returns a large object descriptor that
+can be used with functions `pg-lo-read', `pg-lo-write', `pg-lo-lseek',
+`pg-lo-tell' and `pg-lo-close'. Uses PostgreSQL connection CON."
+  (unless (> oid 0)
+    (let ((msg (format "%s is not a valid PostgreSQL OID" oid)))
+      (signal 'pg-user-error (list msg))))
   (let* ((modestr (or mode "r"))
          (mode (cond ((integerp modestr) modestr)
                      ((string= "r" modestr) pg--INV_READ)
@@ -191,18 +205,32 @@ Returns a large object descriptor that can be used with functions
                      (t (let ((msg (format "pg-lo-open: bad mode %s" mode)))
                           (signal 'pg-user-error (list msg))))))
          (fd (pg-fn con "lo_open" t oid mode)))
-    (unless (integerp fd)
-      (error "Couldn't open large object"))
-    fd))
+    (if (eql -1 fd)
+      (signal 'pg-operational-error (list "Couldn't open large object"))
+    fd)))
 
-(defsubst pg-lo-close (con fd)
+(defun pg-lo-close (con fd)
   "Closes the PostgreSQL large object designated by FD.
 Uses PostgreSQL connection CON."
-  (pg-fn con "lo_close" t fd))
+  (unless (>= fd 0)
+    (let ((msg (format "pg-lo-close: invalid FD %s" fd)))
+      (signal 'pg-user-error (list msg))))
+  (let ((ret (pg-fn con "lo_close" t fd)))
+    (if (eql -1 ret)
+        (signal 'pg-operational-error (list "lo_close function call failed"))
+      ret)))
 
 (defun pg-lo-read (con fd bytes)
-  "Read BYTES octets from large object designated by FD.
+  "Read BYTES octets from PostgreSQL large object designated by FD.
 Uses PostgreSQL connection CON."
+  (unless (>= bytes 0)
+    (signal 'pg-user-error (list "pg-lo-read: BYTES must be >= 0")))
+  ;; This error will be caught and reported by the PostgreSQL backend, but instead of being detected
+  ;; immediately when handling this function call request, it is detected after the next request is
+  ;; made. It's more practical to detect it immediately on the client side.
+  (unless (>= fd 0)
+    (let ((msg (format "pg-lo-read: invalid FD %s" fd)))
+      (signal 'pg-user-error (list msg))))
   (let* ((encoded (pg-fn con "loread" nil fd bytes))
          (hexdigits (substring encoded 2)))
     (unless (and (eql 92 (aref encoded 0))   ; \ character
@@ -211,10 +239,18 @@ Uses PostgreSQL connection CON."
               (list "Unexpected format for BYTEA binary string")))
     (decode-hex-string hexdigits)))
 
-(defsubst pg-lo-write (con fd buf)
+(defun pg-lo-write (con fd buf)
   "Write the contents of BUF to the large object designated by FD.
 Uses PostgreSQL connection CON."
-  (pg-fn con "lowrite" t fd buf))
+  (unless (>= fd 0)
+    (let ((msg (format "pg-lo-write: invalid FD %s" fd)))
+      (signal 'pg-user-error (list msg))))
+  (unless (stringp buf)
+    (signal 'pg-user-error (list "pg-lo-write: invalid BUF argument")))
+  (let ((ret (pg-fn con "lowrite" t fd buf)))
+    (if (eql -1 ret)
+        (signal 'pg-operational-error (list "lo_write function call failed"))
+      ret)))
 
 
 (defconst pg-SEEK_SET 0)
@@ -228,6 +264,9 @@ WHENCE can be `pg-SEEK_SET' (seek from object start),
 object end). OFFSET may be a large integer (int8 type in PostgreSQL;
 this function calls the PostgreSQL backend function `lo_lseek64'). Uses
 PostgreSQL connection CON."
+  (unless (>= fd 0)
+    (let ((msg (format "pg-lo-lseek: invalid FD %s" fd)))
+      (signal 'pg-user-error (list msg))))
   (let* ((res (pg-exec-prepared con "SELECT lo_lseek64($1, $2, $3)"
                                 `((,fd . "int4") (,offset . "int8") (,whence . "int4"))))
          (ret (cl-first (pg-result res :tuple 0))))
@@ -239,6 +278,9 @@ PostgreSQL connection CON."
   "Return the current file position in PostgreSQL large object FD.
 Uses PostgreSQL connection CON. Uses the PostgreSQL backend function
 `lo_tell64' to work with large objects."
+  (unless (>= fd 0)
+    (let ((msg (format "pg-lo-tell: invalid FD %s" fd)))
+      (signal 'pg-user-error (list msg))))
   (let* ((res (pg-exec-prepared con "SELECT lo_tell64($1)" `((,fd . "int4"))))
          (ret (cl-first (pg-result res :tuple 0))))
     (if (eql -1 ret)
@@ -250,6 +292,9 @@ Uses PostgreSQL connection CON. Uses the PostgreSQL backend function
 LEN may be a large integer (int8 type in PostgreSQL); this calls the
 PostgreSQL backend function `lo_truncate64'. Uses PostgreSQL connection
 CON."
+  (unless (>= fd 0)
+    (let ((msg (format "pg-lo-truncate: invalid FD %s" fd)))
+      (signal 'pg-user-error (list msg))))
   (let* ((res (pg-exec-prepared con "SELECT lo_truncate64($1, $2)"
                                 `((,fd . "int4") (,len . "int8"))))
          (ret (cl-first (pg-result res :tuple 0))))
@@ -257,20 +302,29 @@ CON."
       (signal 'pg-operational-error (list "lo_truncate64 function call failed"))))) 
 
 (defun pg-lo-unlink (con oid)
-  "Unlink the PostgreSQL large object identified by OID.
+  "Unlink (delete) the PostgreSQL large object identified by OID.
 Uses PostgreSQL connection CON."
-  (pg-fn con "lo_unlink" t oid))
+  (unless (> oid 0)
+    (let ((msg (format "%s is not a valid PostgreSQL OID" oid)))
+      (signal 'pg-user-error (list msg))))
+  (let ((ret (pg-fn con "lo_unlink" t oid)))
+    (if (eql -1 ret)
+        (signal 'pg-operational-error (list "lo_unlink function call failed"))
+      ret)))
 
 ;; FIXME should use unwind-protect here
 (defun pg-lo-import (con filename)
   "Import FILENAME as a PostgreSQL large object.
-Uses PostgreSQL connection CON. Returns the OID of the new object."
+Returns the OID of the new object. Note that FILENAME is a client-side
+file path, rather than a server-side path as used by the `lo_import'
+function in libpq. Uses PostgreSQL connection CON."
   (let* ((buf (get-buffer-create (format " *pg-%s" filename)))
          (oid (pg-lo-create con "rw"))
          (fdout (pg-lo-open con oid "w"))
-         (pos (point-min)))
+         (pos nil))
     (with-current-buffer buf
       (insert-file-contents-literally filename)
+      (setq pos (point-min))
       (while (< pos (point-max))
         (pg-lo-write con fdout
          (buffer-substring-no-properties pos (min (point-max) (cl-incf pos 1024)))))
@@ -278,9 +332,13 @@ Uses PostgreSQL connection CON. Returns the OID of the new object."
     (kill-buffer buf)
     oid))
 
+;; Note that we are not using the lo_export fastpath function, in order to use a client-side output
+;; path, rather than an output path on the server where PostgreSQL is running.
 (defun pg-lo-export (con oid filename)
   "Export PostgreSQL large object identified by OID to FILENAME.
-Uses PostgreSQL connection CON."
+Note that FILENAME is a client-side file path, rather than a server-side
+path as used by the `lo_export' function in libpq. Uses PostgreSQL
+connection CON."
   (let* ((buf (get-buffer-create (format " *pg-%d" oid)))
          (fdin (pg-lo-open con oid "r")))
     (with-current-buffer buf
