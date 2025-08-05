@@ -364,7 +364,10 @@
         (condition-case err
             (funcall test con)
           (error (message "\033[31;1mTest failed\033[0m: %s" err)))
-        (pg-sync con)))))
+        (pg-sync con))
+      (memory-report)
+      (with-current-buffer "*Memory Report*"
+        (message "%s" (buffer-string))))))
 
 
 (defun pg-test-note-param-change (_con name value)
@@ -445,7 +448,7 @@
       (should (string= "foobles" (cl-second typs)))
       (should (or (string= "text" (cl-first typs))
                   ;; RisingWave returns this
-                  (string=" character varying" (cl-first typs)))))
+                  (string= "character varying" (cl-first typs)))))
     (unless (member (pgcon-server-variant con) '(cratedb risingwave materialize ydb))
       (let ((bv1 (make-bool-vector 1 nil))
             (bv2 (make-bool-vector 1 t)))
@@ -580,7 +583,6 @@
 
 ;; Materialize is returning incorrect values here, failing the test.
 (cl-defun pg-test-prepared/multifetch (con &optional (rows 1000))
-  (message "Running multiple fetch/suspended portal test")
   (let* ((res (pg-exec-prepared con "" nil))
          (tuples (pg-result res :tuples)))
     (should (eql 0 (length tuples)))
@@ -2015,7 +2017,6 @@ bar$$"))))
 
 ;; https://www.postgresql.org/docs/current/sql-copy.html
 (defun pg-test-copy (con)
-  (message "Testing COPY...")
   (cl-flet ((ascii (n) (+ ?A (mod n 26)))
             (random-word () (apply #'string (cl-loop for count to 10 collect (+ ?a (random 26))))))
     (with-temp-buffer
@@ -2354,8 +2355,9 @@ bar$$"))))
                          ;; numerical overflow on smallint
                          (scalar "SELECT (-32768)::int2 / (-1)::int2")
                        (pg-numeric-value-out-of-range 'ok))))
-    ;; Yugabyte doesn't accept this input syntax for smallint
-    (unless (member (pgcon-server-variant con) '(yugabyte greenplum))
+    ;; Yugabyte doesn't accept this input syntax for smallint, nor PostgreSQL versions < 16
+    (unless (or (member (pgcon-server-variant con) '(yugabyte greenplum))
+                (< (pgcon-server-version-major con) 16))
       (should (eql 'ok (condition-case nil
                            ;; numerical overflow on smallint
                            (scalar "SELECT int2 '-0b1000000000000001'")
@@ -2715,6 +2717,12 @@ bar$$"))))
       (pg-exec con "SELECT pg_notify('yourheart', 'leaving')"))
     (pg-exec con "SELECT 'ignored'")
     (pg-exec con "UNLISTEN yourheart")
+    (should-error
+     (pg-exec con "UNLISTEN invalid-value")
+     :type 'pg-syntax-error)
+    (should-error
+     (pg-exec con "LISTEN 42")
+     :type 'pg-syntax-error)
     (pg-exec con "NOTIFY yourheart, 'Et redit in nihilum quod fuit ante nihil.'")))
 
 
@@ -2729,7 +2737,9 @@ bar$$"))))
 (defun pg-test-lo (con)
   (pg-test-lo-read con)
   (pg-test-lo-ensure-size con)
-  (pg-test-lo-import con))
+  (pg-test-lo-import con)
+  (pg-test-lo-errors con)
+  (pg-exec con "SELECT 42"))
 
 ;; Note the use of with-pg-transaction to wrap the requests in a BEGIN..END transaction which is
 ;; necessary when working with large objects.
@@ -2779,6 +2789,13 @@ bar$$"))))
         (let ((pos (random target-len)))
           (pg-lo-lseek con fd pos pg-SEEK_SET)
           (should (string= "Z" (pg-lo-read con fd 1)))))
+      (dotimes (i 100)
+        (let* ((count (random 20))
+               (pos (max (- target-len count 1) (random target-len)))
+               (res (pg-exec-prepared con "SELECT lo_get($1, $2, $3)"
+                                      `((,oid . "int4") (,pos . "int8") (,count . "int4"))))
+               (actual (cl-first (pg-result res :tuple 0))))
+          (should (string= (make-string count ?Z) actual))))
       (let* ((halfway (* 512 1024 1024)))
         (pg-lo-truncate con fd halfway)
         (should (eql halfway (pg-lo-lseek con fd 0 pg-SEEK_END)))
@@ -2789,11 +2806,13 @@ bar$$"))))
         (dotimes (i 100)
           (let ((pos (random halfway)))
             (pg-lo-lseek con fd pos pg-SEEK_SET)
-            (should (string= "#" (pg-lo-read con fd 1)))))))))
+            (should (string= "#" (pg-lo-read con fd 1))))))
+      (pg-lo-close con fd)
+      (pg-lo-unlink con oid))))
 
 (defun pg-test-lo-import (con)
   (message "Testing lo-import and friends")
-   (with-pg-transaction con
+  (with-pg-transaction con
     (let* ((oid (pg-lo-import con "/etc/group"))
            (sql "SELECT oid FROM pg_catalog.pg_largeobject_metadata WHERE oid=$1")
            (res (pg-exec-prepared con sql `((,oid . "int4"))))
@@ -2808,6 +2827,59 @@ bar$$"))))
              (message "lo-import test failed: check differences")
              (message "between files /etc/group and /tmp/group")))
       (pg-lo-unlink con oid))))
+
+;; This test is not run within a transaction, because each error aborts the current transaction.
+(defun pg-test-lo-errors (con)
+  (message "Testing error handling in lo functions")
+  (cl-flet ((flush-pending ()
+            (let ((res (pg-exec con "SELECT -5")))
+              (should (eql -5 (cl-first (pg-result res :tuple 0)))))))
+    ;; Test for a double close
+    (with-pg-transaction con
+       (let* ((oid (pg-lo-create con "rw"))
+              (fd (pg-lo-open con oid "rw")))
+         (pg-lo-close con fd)
+         (should-error
+          (pg-lo-close con fd)
+          :type 'pg-programming-error)))
+    (flush-pending)
+    ;; Test for a double unlink
+    (with-pg-transaction con
+     (let* ((oid (pg-lo-create con "rw"))
+            (fd (pg-lo-open con oid "rw")))
+       (pg-lo-close con fd)
+       (pg-lo-unlink con oid)
+       (should-error
+        (pg-lo-close con oid)
+        :type 'pg-programming-error)))
+    (flush-pending)
+    (should-error
+     (pg-lo-lseek con -1 0 (+ 10 pg-SEEK_SET)))
+    (flush-pending)
+    (should-error
+     (pg-lo-close con 111)
+     :type 'pg-programming-error)
+    (flush-pending)
+    (should-error
+     (pg-lo-unlink con -6)
+     :type 'pg-user-error)
+    (flush-pending)
+    (should-error
+     (pg-lo-read con 0 -10))
+    (flush-pending)
+    (should-error
+     (pg-lo-read con -106 10))
+    (flush-pending)
+    (should-error
+     (pg-lo-read nil 10 10))
+    (flush-pending)
+    (should-error
+     (pg-lo-truncate 42 42))
+    (flush-pending)
+    (should-error
+     (pg-lo-lseek con 42 42 pg-SEEK_END))
+    (flush-pending)))
+
 
 (defun pg-cleanup ()
   (interactive)
@@ -2831,7 +2903,6 @@ bar$$"))))
             ',test-form ,test-form ,expected)))
 
 (defun pg-run-tz-tests (con)
-  (message "Testing timezone handling ...")
   (pg-exec con "DROP TABLE IF EXISTS tz_test")
   (pg-exec con (pgtest-massage con "CREATE TABLE tz_test(id INTEGER PRIMARY KEY, ts TIMESTAMP, tstz TIMESTAMPTZ)"))
   ;; This is the same as CET: in a Posix time zone specification, a positive sign is used for zones
