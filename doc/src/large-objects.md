@@ -14,8 +14,10 @@ The following functions are available:
 
      (pg-lo-create con &optional mode)
 
-Create a new large object and return its OID. The mode argument is ignored in PostgreSQL releases
-after v8.1
+Create a new large object and return its OID (represented in elisp by an integer). The mode argument
+is ignored in PostgreSQL releases after v8.1.
+
+Large-object functions MUST be used within a transaction (see the macro `with-pg-transaction`).
 
 
     (pg-lo-open con oid &optional mode)
@@ -25,8 +27,9 @@ similarly to a Unix file descriptor).
 
 
     (pg-lo-close con fd)
-    
-Close the large object described by `fd`.
+
+Close the large object described by `fd`. Note that this does not delete the large object; use
+`pg-lo-unlink` for that.
 
 
     (pg-lo-read con fd bytes)
@@ -37,7 +40,7 @@ string.
 
     (pg-lo-write con fd buf)
     
-Write the contents of `buf` to the large object described by `fd`.
+Write the contents of the elisp string `buf` to the large object described by `fd`.
 
 
     (pg-lo-lseek con fd offset whence)
@@ -45,13 +48,13 @@ Write the contents of `buf` to the large object described by `fd`.
 Seek to position `offset` in the large object designated by `fd`. `whence` can be `pg-SEEK_SET`
 (seek from object start), `pg-SEEK_CUR` (seek from current position), or `pg-SEEK_END` (seek from
 object end). `offset` may be a large integer (`int8` type in PostgreSQL; this function calls the
-PostgreSQL backend function `lo_lseek64`).
-
+PostgreSQL backend function `lo_lseek64`). This function works in the same was as `lseek(2)` in Unix.
 
 
     (pg-lo-tell con fd)
     
-Return the current file position in the large object designated by `fd`.
+Return the current file position in the large object designated by `fd`. This function works in the
+same was as `ftell(3)` in Unix.
 
 
     (pg-lo-truncate con fd len)
@@ -61,7 +64,7 @@ Truncate the large object desginated by `fd` to size `len` (in octets).
 
     (pg-lo-unlink con oid)
     
-Unlink the large object identified by `oid`.
+Unlink (remove from the filesystem) the large object identified by `oid`.
 
 
     (pg-lo-import con filename)
