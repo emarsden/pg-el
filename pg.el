@@ -2458,13 +2458,13 @@ the PostgreSQL connection CON."
        (let* ((res (pg-exec con (format "SET client_encoding TO '%s'" encoding)))
               (status (pg-result res :status)))
          (unless (string= "SET" status)
-           (signal 'pg-error (format "Couldn't set client_encoding to %s" encoding)))))
+           (signal 'pg-error (list (format "Couldn't set client_encoding to %s" encoding))))))
       (_
        (let* ((res (pg-exec-prepared con "SELECT set_config('client_encoding', $1, false)"
                                      `((,encoding . "text"))))
               (status (pg-result res :status)))
          (unless (string= "SELECT 1" status)
-           (signal 'pg-error (format "Couldn't set client_encoding to %s" encoding))))))
+           (signal 'pg-error (list (format "Couldn't set client_encoding to %s" encoding)))))))
     (setf (pgcon-client-encoding con) emacs-encoding-name)))
 
 ;; Note that if you register a parser for a new type-name after a PostgreSQL connection has been
