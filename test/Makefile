@@ -577,6 +577,20 @@ test-agensgraph: test-pg.el
 	${DOCKER} stop agensgraph
 
 
+# https://cedardb.com/docs/
+test-cedardb: test-pg.el
+	${DOCKER} run --rm --name cedardb \
+           --pull=newer \
+           --publish 127.0.0.1:6778:5432 \
+           -e CEDAR_USER=pgeltestuser \
+           -e CEDAR_PASSWORD=pgeltest \
+           -e CEDAR_DB=pgeltestdb \
+           -d docker.io/cedardb/cedardb:latest
+	sleep 10
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:6778/pgeltestdb $(MAKE) test
+	${DOCKER} stop cedardb
+
+
 # https://docs.geldata.com/reference/running/deployment/docker
 # https://docs.geldata.com/reference/running/configuration
 # https://hub.docker.com/r/geldata/gel
