@@ -24,11 +24,13 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'hex-util)
 
 (declare-function pg-read-string "pg" (con maxbytes))
 (declare-function pg-read-char "pg" (con))
 (declare-function pg-read-chars "pg" (con count))
 (declare-function pg-read-net-int "pg" (con bytes))
+(declare-function pg-read-error-response "pg" (con))
 (declare-function pg-handle-error-response "pg" (con &optional context))
 (declare-function pg-flush "pg" (con))
 (declare-function pg-send "pg" (con str &optional bytes))
@@ -38,7 +40,12 @@
 (declare-function pg-connection-set-busy "pg" (con busy))
 (declare-function pg-result "pg" (result what &rest arg))
 (declare-function pg-exec "pg" (con &rest args))
+(declare-function pg-exec-prepared "pg" (con query typed-arguments &rest args))
+(declare-function pgcon-query-log "pg" (pgcon))
 
+
+;; Forward declaration to pacify the bytecode compiler. This variable is defined in pg.el.
+(defvar pg-handle-notice-functions)
 
 (defvar pg-lo-initialized nil)
 (defvar pg-lo-functions '())
