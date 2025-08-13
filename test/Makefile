@@ -597,7 +597,7 @@ test-cedardb: test-pg.el
 # https://github.com/geldata/gel
 #
 # We don't bother detecting this as a specific PostgreSQL variant, because the SQL syntax it accepts
-# is too different from standard PostgreSQL (no support for CREATE, for DROP, for EXPLAIN
+# is too different from standard PostgreSQL (no support for CREATE, for DROP, for EXPLAIN...)
 test-geldata: test-pg.el
 	${DOCKER} run --rm --name geldata \
           --pull=newer \
@@ -614,6 +614,9 @@ test-geldata: test-pg.el
 
 # https://hub.docker.com/r/pgedge/pgedge
 # https://github.com/pgEdge/pgedge-docker
+#
+# As of 2025-08, failing on "create extension vector" with a SIGILL
+#   --> https://github.com/pgEdge/pgedge-docker/issues/20
 test-pgedge: test-pg.el
 	${DOCKER} run --rm --name pgedge \
            --pull=newer \
@@ -721,7 +724,7 @@ test-pgdog: test-pg.el
 test-readyset: test-pg.el
 	${DOCKER} run --rm --name bitnamipg \
            --pull=newer \
-	   --publish 5488:5488 \
+	   --publish 127.0.0.1:5488:5488 \
 	   -e POSTGRESQL_PORT_NUMBER=5488 \
 	   -e POSTGRESQL_DATABASE=pgeltestdb \
 	   -e POSTGRESQL_USERNAME=pgeltestuser \
@@ -805,10 +808,10 @@ test-questdb: test-pg.el
 	${DOCKER} stop questdb
 
 
-# Last tested 2025-03, Yugabyte 2.25 is based on PostgreSQL 15.2. This works very well, including
-# the HSTORE and pgvector extensions. The sequence test fails (SELECT last_value FROM pg_sequences).
-# Some more recent SQL evolutions such as "INTEGER GENERATED ALWAYS AS expression STORED" are not
-# supported. LISTEN/NOTIFY is not supported.
+# Yugabyte 2.25 is based on PostgreSQL 15.2. This works very well, including the HSTORE and pgvector
+# extensions. The sequence test fails (SELECT last_value FROM pg_sequences). Some more recent SQL
+# evolutions such as "INTEGER GENERATED ALWAYS AS expression STORED" are not supported.
+# LISTEN/NOTIFY is not supported.
 #
 # TODO: test YSQL_PASSWORD
 # https://docs.yugabyte.com/preview/reference/configuration/yugabyted/
@@ -854,7 +857,7 @@ test-polardb: test-pg.el
 test-materialize: test-pg.el
 	${DOCKER} run --rm --name materialize \
           --pull=newer \
-          --publish 6875:6875 \
+          --publish 127.0.0.1:6875:6875 \
           -d docker.io/materialize/materialized:latest
 	sleep 10
 	PGURI=postgresql://materialize@127.0.0.1:6875/materialize $(MAKE) test
@@ -914,7 +917,7 @@ test-immudb: test-pg.el
 test-greenplum: test-pg.el
 	${DOCKER} run --rm --name greenplum \
           --pull=newer \
-          --publish 5433:5432 \
+          --publish 127.0.0.1:5433:5432 \
           -e PGPORT=5433 \
           -d docker.io/andruche/greenplum:7
 	sleep 10
@@ -925,9 +928,11 @@ test-greenplum: test-pg.el
 # The Cloudberry fork of Greenplum, incubated at Apache.
 # https://github.com/apache/cloudberry/
 # https://hub.docker.com/r/apache/incubator-cloudberry/
+#
+# No prebuilt Docker image seems to be available.
 test-cloudberry: test-pg.el
 	${DOCKER} run --rm --name cloudberry \
-	  --publish 5661:5661 \
+	  --publish 127.0.0.1:5661:5661 \
 	  -h cdw -e PGPORT=5661 \
 	  -d docker.io/apache/incubator-cloudberry:cbdb-test-rocky9-latest
 	sleep 5
@@ -977,10 +982,11 @@ test-ydb: test-pg.el
 	${DOCKER} stop ydb
 
 
-# Very limited PostgreSQL support: there is no pg_type table
-# so we can't retrieve information regarding the OID of builtin types. We have to be careful during
-# the initialization sequence not to send the query "SET datestyle = 'ISO'", which would fail and cause
-# the network connection to be reset (!).
+# Very limited PostgreSQL support: there is no pg_type table so we can't retrieve information
+# regarding the OID of builtin types. We have to be careful during the initialization sequence not
+# to send the query "SET datestyle = 'ISO'", which would fail and cause the network connection to be
+# reset (!).
+# 
 # Default values for config.xml file at
 # https://github.com/ClickHouse/ClickHouse/blob/c7996d54536492ebd4f436672e466464e8474ff9/programs/server/config.xml
 test-clickhouse: test-pg.el
@@ -1001,20 +1007,29 @@ test-clickhouse: test-pg.el
 	${DOCKER} stop clickhouse
 
 
-# https://github.com/timeplus-io/proton
+# https://github.com/timeplus-io/proton (Apache 2 licence)
+
+# This stream processing database is built on ClickHouse and suffers from the same defects as it.
 #
-# Apparently this database is supposed to have PostgreSQL wire protocol support, but it doesn't seem
-# to be a priority as it hasn't worked for over a year
-# (https://github.com/timeplus-io/proton/issues/824)
+# We are currently not detecting it as a dedicated variant. Perhaps could query information_schema.schemata
+# or if we have a table system.crash_log it could be assumed to be ClickHouse derived.
 #
-# Alternative container image: ghcr.io/timeplus-io/proton:develop
+# See https://github.com/timeplus-io/proton/blob/a67dc38f072ca7ff663bd56c285983426ab4b169/docker/server/entrypoint.sh#L52
+#
+#           -e PROTON_USER=pgeltestuser 
+#           -e PROTON_DB=pgeltestdb 
+#           -e PROTON_PASSWORD=pgeltest 
 test-proton: test-pg.el
+	cp proton-users.yaml /tmp
 	${DOCKER} run --rm --name proton \
            --pull=newer \
-           --publish 8123:8123 --publish 8463:8463 \
-           -d d.timeplus.com/timeplus-io/proton:latest
+           --publish 127.0.0.1:5113:5432 --publish 127.0.0.1:8123:8123 \
+           -e TELEMETRY_ENABLED=false \
+           -v /tmp/proton-users.yaml:/etc/proton-server/users.yaml \
+           ghcr.io/timeplus-io/proton:latest
 	sleep 5
-	PGURI=postgresql://default@localhost:8463/default $(MAKE) test
+	PGURI=postgresql://pgeltestuser:pgeltest@localhost:5113/default $(MAKE) test
+
 
 
 # https://docs.greptime.com/getting-started/installation/greptimedb-standalone
