@@ -625,6 +625,8 @@
 
 
 ;; https://github.com/postgres/postgres/blob/master/src/test/regress/sql/insert.sql
+;;
+;; https://github.com/denodrivers/postgres/blob/main/tests/data_types_test.ts
 (defun pg-test-basic (con)
   (cl-labels ((row (sql) (pg-result (pg-exec con sql) :tuple 0))
               (scalar (sql) (cl-first (pg-result (pg-exec con sql) :tuple 0))))
@@ -644,6 +646,27 @@
     (should (eql nil (scalar "SELECT '0'::boolean")))
     (should (eql t (scalar "SELECT '1'::boolean")))
     (should (eql -6 (scalar "SELECT -(6)")))
+    (should (eql ?Z (scalar "SELECT 'Z'::char")))
+    (should (eql ?@ (scalar "SELECT '@'::char(1)")))
+    (should (eql ?! (scalar "SELECT '!'::bpchar(1)")))
+    (should (string= "Z" (scalar "SELECT 'Z'::varchar")))
+    (should (string= "É" (scalar "SELECT 'É'::varchar(1)")))
+    (should (string= "AB" (scalar "SELECT 'AB'::char(2)")))
+    (should (string= "ÁÔ" (scalar "SELECT 'ÁÔ'::char(2)")))
+    (should (string= "ÁÔ" (scalar "SELECT 'ÁÔ'::varchar(2)")))
+    (should (string= "12" (scalar "SELECT '12'::bpchar(2)")))
+    (should (string= "£Öí" (scalar "SELECT '£Öí'::text")))
+    (should (string= "Albert" (scalar "SELECT 'Albert'::name")))
+    (should (string= "AB" (scalar "SELECT 'AB'::varchar(4)")))
+    ;; The string is stored internally with space padding. Note that PostgreSQL will automatically
+    ;; strip the space padding upon server-side conversion to TEXT or VARCHAR; for example SELECT
+    ;; '{' || 'A'::character(10) || '}' only returns a TEXT string of length 3, rather than of
+    ;; length 12.
+    (should (string= "AB   " (scalar "SELECT 'AB'::character(5)")))
+    (should (string= "AB    " (scalar "SELECT 'AB'::bpchar(6)")))
+    ;; Just to note that the space padding is stripped before "semantic comparison", as per
+    ;; https://www.postgresql.org/docs/current/datatype-character.html
+    (should (eql t (scalar "SELECT 'A'::char(1000) = 'A'::char(10)")))
     (should (eql t (scalar "SELECT true or false")))
     (should (equal (list "hey" "Jude") (row "SELECT 'hey', 'Jude'")))
     (should (eql nil (scalar "SELECT NULL")))
@@ -862,6 +885,27 @@ bar$$"))))
         (should (eql (/ (* (1- count) count) 2) (scalar "SELECT sum(key) FROM count_test")))
         (pg-exec con "DROP TABLE count_test"))
       (should (not (pgtest-have-table con "count_test")))
+      ;; Serialization functions for character and varchar types
+      (when (pgtest-have-table con "chararray")
+        (pg-exec con "DROP TABLE chararray"))
+      (when-let* ((sql (pgtest-massage con "CREATE TABLE chararray(id SERIAL PRIMARY KEY, val CHAR)")))
+        (pg-exec con sql)
+        (pg-exec-prepared con "INSERT INTO chararray(val) VALUES($1)" '((?A . "char")))
+        (pgtest-flush-table con "chararray")
+        (should (eql ?A (scalar "SELECT val FROM chararray")))
+        (pg-exec con "DROP TABLE chararray"))
+      (when-let* ((sql (pgtest-massage con "CREATE TABLE chararray(id SERIAL PRIMARY KEY, val CHAR(10))")))
+        (pg-exec con sql)
+        (pg-exec-prepared con "INSERT INTO chararray(val) VALUES($1)" '(("AAAA" . "text")))
+        (pgtest-flush-table con "chararray")
+        (should (string= "AAAA      " (scalar "SELECT val FROM chararray")))
+        (pg-exec con "DROP TABLE chararray"))
+      (when-let* ((sql (pgtest-massage con "CREATE TABLE chararray(id SERIAL PRIMARY KEY, val VARCHAR(10))")))
+        (pg-exec con sql)
+        (pg-exec-prepared con "INSERT INTO chararray(val) VALUES($1)" '(("éééé" . "varchar")))
+        (pgtest-flush-table con "chararray")
+        (should (string= "éééé" (scalar "SELECT val FROM chararray")))
+        (pg-exec con "DROP TABLE chararray"))
       ;; Now test the serialization functions for array types
       (when (pgtest-have-table con "sarray")
         (pg-exec con "DROP TABLE sarray"))
@@ -1431,6 +1475,7 @@ bar$$"))))
     (should (equal (vector) (scalar "SELECT '{}'::int4[]")))
     (should (equal (vector) (scalar "SELECT '{}'::int8[]")))
     (should (equal (vector) (scalar "SELECT '{}'::char[]")))
+    (should (equal (vector) (scalar "SELECT '{}'::varchar[]")))
     (should (equal (vector) (scalar "SELECT '{}'::text[]")))
     (should (equal (vector) (scalar "SELECT '{}'::bool[]")))
     (should (equal (vector) (scalar "SELECT '{}'::float4[]")))
@@ -1450,6 +1495,7 @@ bar$$"))))
     ;; Risingwave doesn't implement the CHAR type.
     (unless (member (pgcon-server-variant con) '(risingwave))
       (should (equal (vector ?A ?z ?5) (scalar "SELECT '{A,z,5}'::char[]")))
+      (should (equal (vector ?x ?Y) (scalar "SELECT '{\"x\", \"Y\"}'::char[]")))
       ;; this is returning _bpchar.
       (should (equal (vector ?a ?b ?c) (scalar "SELECT CAST('{a,b,c}' AS CHAR[])"))))
     (should (equal (vector "foo" "bar") (scalar "SELECT '{foo, bar}'::text[]")))
@@ -2498,6 +2544,12 @@ bar$$"))))
                          (scalar "SELECT 1 + true")
                        (pg-undefined-function 'ok)
                        ;; CockroachDB reports this as a pg-data-error.
+                       (pg-data-error 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "SELECT 'foo' + 'a'::character")
+                       (pg-undefined-function 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (scalar "SELECT ''::char(0)")
                        (pg-data-error 'ok))))
     (should (eql 'ok (condition-case nil
                          ;; numerical overflow
