@@ -2385,6 +2385,8 @@ PostgreSQL and Emacs. CON should no longer be used."
                      ("_json" "199")
                      ("_bool" "1000")
                      ("_char" "1002")
+                     ("_bpchar" "1014")
+                     ("_varchar" "1015")
                      ("_int8" "1016")
                      ("_int2" "1005")
                      ("_int4" "1007")
@@ -2524,18 +2526,22 @@ the PostgreSQL connection CON."
       (decode-coding-string str encoding)
     str))
 
+;; STR could be either a single character (char datatype) or a character sequence for the PostgreSQL
+;; character(n) datatype specifier, which is fixed-length and blank-padded. Note that we return
+;; either a single character or a string.
 (defun pg-char-parser (str encoding)
-  (if encoding
-      (aref (pg-text-parser str encoding) 0)
-    (aref str 0)))
+  (let ((len (length str)))
+    (cond ((zerop len)
+           (signal 'pg-protocol-error (list "Unexpected zero-length char data")))
+          ((eql 1 len)
+           (if encoding
+               (aref (pg-text-parser str encoding) 0)
+             (aref str 0)))
+          (t
+           (pg-text-parser str encoding)))))
 
 (pg-register-parser "char" #'pg-char-parser)
 (pg-register-parser "bpchar" #'pg-char-parser)
-
-(pg-register-parser "char2" #'pg-text-parser)
-(pg-register-parser "char4" #'pg-text-parser)
-(pg-register-parser "char8" #'pg-text-parser)
-(pg-register-parser "char16" #'pg-text-parser)
 (pg-register-parser "name" #'pg-text-parser)
 (pg-register-parser "text" #'pg-text-parser)
 (pg-register-parser "varchar" #'pg-text-parser)
@@ -2740,6 +2746,7 @@ Uses text encoding ENCODING."
           (apply #'vector (mapcar (lambda (x) (pg-text-parser x encoding)) items)))))))
 
 (pg-register-parser "_text" #'pg-textarray-parser)
+(pg-register-parser "_varchar" #'pg-textarray-parser)
 
 ;; Anonymouse records in PostgreSQL (oid = 2249) are little used in practice, and difficult to parse
 ;; because we receive no information concerning the types of the different record "columns".
@@ -2980,6 +2987,7 @@ Return nil if the extension could not be set up."
 (pg-register-textual-serializer "varbit" #'pg--serialize-boolvec)
 
 
+;; Here we assume that the value is a single character: if serializing a string, use the "text" datatype specifier.
 (pg-register-serializer "char"
   (lambda (v _encoding)
     (unless (<= 0 v 255)
