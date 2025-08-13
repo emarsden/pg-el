@@ -591,27 +591,6 @@ test-cedardb: test-pg.el
 	${DOCKER} stop cedardb
 
 
-# https://docs.geldata.com/reference/running/deployment/docker
-# https://docs.geldata.com/reference/running/configuration
-# https://hub.docker.com/r/geldata/gel
-# https://github.com/geldata/gel
-#
-# We don't bother detecting this as a specific PostgreSQL variant, because the SQL syntax it accepts
-# is too different from standard PostgreSQL (no support for CREATE, for DROP, for EXPLAIN...)
-test-geldata: test-pg.el
-	${DOCKER} run --rm --name geldata \
-          --pull=newer \
-          --publish 127.0.0.1:5656:5656 \
-          -e GEL_SERVER_USER=pgeltestuser \
-          -e GEL_SERVER_PASSWORD=pgeltest \
-          -e GEL_SERVER_PORT=5656 \
-          -e GEL_SERVER_SECURITY=insecure_dev_mode \
-          -d docker.io/geldata/gel:nightly
-	sleep 20
-	PGURI="postgresql://pgeltestuser:pgeltest@127.0.0.1:5656/edgedb?sslmode=require" $(MAKE) test-tls
-	${DOCKER} stop geldata
-
-
 # https://hub.docker.com/r/pgedge/pgedge
 # https://github.com/pgEdge/pgedge-docker
 #
@@ -749,8 +728,8 @@ test-readyset: test-pg.el
 # implement the BYTEA, JSON, JSONB and HSTORE types, doesn't support COPY, doesn't support Unicode
 # identifiers.
 #
-# It even seems to lose some INSERT statements (failing in pg-test-insert on the count of rows
-# inserted into the row_count table).
+# CrateDB is fantastically slow on some CREATE TABLE statements that include a VARCHAR(n) column,
+# which is why we set the read_timeout to a high value.
 #
 # https://hub.docker.com/_/crate/
 # https://github.com/crate/docker-crate/blob/master/Dockerfile
@@ -763,7 +742,7 @@ test-cratedb: test-pg.el
           -e CRATE_HEAP_SIZE=1g \
           -d docker.io/crate -Cnetwork.host=127.0.0.1 -Cdiscovery.type=single-node -Cpsql.port=5789
 	sleep 5
-	PGURI=postgresql://crate@127.0.0.1:5789/postgres $(MAKE) test
+	PGURI="postgresql://crate@127.0.0.1:5789/postgres?read_timeout=1000" $(MAKE) test
 	${DOCKER} stop cratedb
 
 
@@ -808,45 +787,25 @@ test-questdb: test-pg.el
 	${DOCKER} stop questdb
 
 
-# Yugabyte 2.25 is based on PostgreSQL 15.2. This works very well, including the HSTORE and pgvector
-# extensions. The sequence test fails (SELECT last_value FROM pg_sequences). Some more recent SQL
-# evolutions such as "INTEGER GENERATED ALWAYS AS expression STORED" are not supported.
-# LISTEN/NOTIFY is not supported.
+# https://docs.geldata.com/reference/running/deployment/docker
+# https://docs.geldata.com/reference/running/configuration
+# https://hub.docker.com/r/geldata/gel
+# https://github.com/geldata/gel
 #
-# TODO: test YSQL_PASSWORD
-# https://docs.yugabyte.com/preview/reference/configuration/yugabyted/
-test-yugabyte: test-pg.el
-	${DOCKER} run --rm --name yugabyte \
+# We don't bother detecting this as a specific PostgreSQL variant, because the SQL syntax it accepts
+# is too different from standard PostgreSQL (no support for CREATE, for DROP, for EXPLAIN...)
+test-geldata: test-pg.el
+	${DOCKER} run --rm --name geldata \
           --pull=newer \
-          --net host \
-          -e YSQL_DB=pgeltestdb \
-          -e YSQL_USER=pgeltestuser \
-          -d docker.io/yugabytedb/yugabyte:latest \
-          bin/yugabyted start \
-          --ysql_port 5493 \
-          --advertise_address 127.0.0.1 \
-          --base_dir=/tmp \
-          --background=false
-	sleep 10
-	PGURI=postgresql://pgeltestuser@127.0.0.1:5493/pgeltestdb $(MAKE) test
-	${DOCKER} stop yugabyte
-
-
-# https://github.com/ApsaraDB/PolarDB-for-PostgreSQL from Alibaba Cloud
-#
-# Note: primary runs on $POLARDB_PORT, replicas on ${POLARDB_PORT}+1 and ${POLARDB_PORT}+2
-# We don't seem to be able to set POLARDB_DATABASE or equivalent
-test-polardb: test-pg.el
-	${DOCKER} run --rm --name polardb \
-          --pull=newer \
-          --publish 127.0.0.1:5998:5998 \
-          -e POLARDB_PORT=5998 \
-          -e POLARDB_USER=pgeltestuser \
-          -e POLARDB_PASSWORD=pgeltest \
-          -d docker.io/polardb/polardb_pg_local_instance:15
-	sleep 10
-	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5998/postgres $(MAKE) test
-	${DOCKER} stop polardb
+          --publish 127.0.0.1:5656:5656 \
+          -e GEL_SERVER_USER=pgeltestuser \
+          -e GEL_SERVER_PASSWORD=pgeltest \
+          -e GEL_SERVER_PORT=5656 \
+          -e GEL_SERVER_SECURITY=insecure_dev_mode \
+          -d docker.io/geldata/gel:nightly
+	sleep 20
+	PGURI="postgresql://pgeltestuser:pgeltest@127.0.0.1:5656/edgedb?sslmode=require" $(MAKE) test-tls
+	${DOCKER} stop geldata
 
 
 # Materialize (here the "Materialize emulator" running in Docker). This proprietary differential
@@ -980,6 +939,47 @@ test-ydb: test-pg.el
 	sleep 5
 	PGURI=postgresql://pgeltestuser:pgeltest@localhost:5119/local $(MAKE) test
 	${DOCKER} stop ydb
+
+
+# Yugabyte 2.25 is based on PostgreSQL 15.2. This works very well, including the HSTORE and pgvector
+# extensions. The sequence test fails (SELECT last_value FROM pg_sequences). Some more recent SQL
+# evolutions such as "INTEGER GENERATED ALWAYS AS expression STORED" are not supported.
+# LISTEN/NOTIFY is not supported.
+#
+# TODO: test YSQL_PASSWORD
+# https://docs.yugabyte.com/preview/reference/configuration/yugabyted/
+test-yugabyte: test-pg.el
+	${DOCKER} run --rm --name yugabyte \
+          --pull=newer \
+          --net host \
+          -e YSQL_DB=pgeltestdb \
+          -e YSQL_USER=pgeltestuser \
+          -d docker.io/yugabytedb/yugabyte:latest \
+          bin/yugabyted start \
+          --ysql_port 5493 \
+          --advertise_address 127.0.0.1 \
+          --base_dir=/tmp \
+          --background=false
+	sleep 10
+	PGURI=postgresql://pgeltestuser@127.0.0.1:5493/pgeltestdb $(MAKE) test
+	${DOCKER} stop yugabyte
+
+
+# https://github.com/ApsaraDB/PolarDB-for-PostgreSQL from Alibaba Cloud
+#
+# Note: primary runs on $POLARDB_PORT, replicas on ${POLARDB_PORT}+1 and ${POLARDB_PORT}+2
+# We don't seem to be able to set POLARDB_DATABASE or equivalent
+test-polardb: test-pg.el
+	${DOCKER} run --rm --name polardb \
+          --pull=newer \
+          --publish 127.0.0.1:5998:5998 \
+          -e POLARDB_PORT=5998 \
+          -e POLARDB_USER=pgeltestuser \
+          -e POLARDB_PASSWORD=pgeltest \
+          -d docker.io/polardb/polardb_pg_local_instance:15
+	sleep 10
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5998/postgres $(MAKE) test
+	${DOCKER} stop polardb
 
 
 # Very limited PostgreSQL support: there is no pg_type table so we can't retrieve information
@@ -1176,7 +1176,7 @@ test-surrealdb: test-pg.el
 	${DOCKER} run --rm --name surrealdb \
            --pull=newer \
            --publish 127.0.0.1:8000:8000 \
-           -d docker.io/surrealdb/surrealdb:latest start memory \
+           -d docker.io/surrealdb/surrealdb:nightly start memory \
               --user pgeltestuser --pass pgeltest --log info --allow-experimental
 	sleep 5
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5433/pgeltestdb $(MAKE) test
