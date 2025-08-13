@@ -67,7 +67,7 @@ The following PostgreSQL-compatible databases or extensions have been tested:
 
 - [Neon](https://neon.tech/) “serverless PostgreSQL” works perfectly. This is a commercially hosted
   service using a new storage engine for PostgreSQL, that they make available under the Apache
-  licence. Last tested 2025-07.
+  licence. Last tested 2025-08.
 
 - [ParadeDB](https://www.paradedb.com/) version 0.13.1 works perfectly (it's really a PostgreSQL
   extension rather than a distinct database implementation).
@@ -76,7 +76,7 @@ The following PostgreSQL-compatible databases or extensions have been tested:
   adds some features for compatibility with Oracle). Last tested 2025-04 with version 4.4.
 
 - The [Timescale DB](https://www.timescale.com/) extension for time series data, source available
-  but non open source. This works perfectly (last tested 2025-07 with version 2.19.3).
+  but non open source. This works perfectly (last tested 2025-08 with version 2.19.3).
 
 - The [CitusDB](https://github.com/citusdata/citus) extension for sharding PostgreSQL over multiple
   hosts (AGPLv3 licence). Works perfectly (last tested 2025-07 with Citus version 13.0).
@@ -96,19 +96,19 @@ The following PostgreSQL-compatible databases or extensions have been tested:
   graph processing (Apache 2 license) works perfectly. Last tested 2025-07 with version 2.15.
 
 - The [PgBouncer](https://www.pgbouncer.org/) connection pooler for PostgreSQL (open source, ISC
-  licensed). Works fine (last tested 2025-06 with version 1.24 in the default session pooling mode).
+  licensed). Works fine (last tested 2025-08 with version 1.24 in the default session pooling mode).
 
 - The [PgDog](https://github.com/pgdogdev/pgdog) sharding connection pooler for PostgreSQL (AGPLv3
   licensed). We encounter some errors when using the extended query protocol: unnamed prepared
   statements and prepared statments named `__pgdog_N` are reported not to exist. The pooler also
-  disconnects the client when the client-encoding is switched to `LATIN1` (last tested 2025-06).
+  disconnects the client when the client-encoding is switched to `LATIN1` (last tested 2025-08).
 
 - The [PgCat](https://github.com/postgresml/pgcat) sharding connection pooler for PostgreSQL (MIT
-  license). Mostly works but sometimes runs into read timeouts (last tested 2025-06 with v0.2.5).
+  license). Mostly works but sometimes runs into read timeouts (last tested 2025-08 with v0.2.5).
 
 - [Google AlloyDB Omni](https://cloud.google.com/alloydb/omni/docs/quickstart) is a proprietary fork
   of PostgreSQL with Google-developed extensions, including a columnar storage extension, adaptive
-  autovacuum, and an index advisor. It works perfectly with pg-el as of 2025-07 (version that
+  autovacuum, and an index advisor. It works perfectly with pg-el as of 2025-08 (version that
   reports itself as "15.7").
 
 - [PolarDB for PostgreSQL](https://github.com/ApsaraDB/PolarDB-for-PostgreSQL) is free software
@@ -136,7 +136,7 @@ The following PostgreSQL-compatible databases or extensions have been tested:
   PostgreSQL functions such as `factorial`, does not return a correct type OID for text columns in
   rows returned from a prepared statement, doesn't support Unicode identifiers, doesn't support the
   `COPY` protocol, doesn't support `TRUNCATE TABLE`. It works with these limitations with pg-el
-  (last tested 2025-07 with version 5.10.10).
+  (last tested 2025-08 with version 5.10.11).
 
 - The [CockroachDB](https://github.com/cockroachdb/cockroach) distributed database (source-available
   but non-free software licence). Note that this database does not implement the large object
@@ -160,15 +160,16 @@ The following PostgreSQL-compatible databases or extensions have been tested:
   2025-08 with CedarDB version v2025-08-07.
 
 - The [QuestDB](https://questdb.io/) time series database (Apache licensed) has very limited
-  PostgreSQL support, and does not support the `integer` type for example. Last tested 2025-06 with
-  version 8.3.3.
+  PostgreSQL support, and does not support the `integer` type for example. Last tested 2025-08 with
+  version 9.0.1.
 
 - [Google Spanner](https://cloud.google.com/spanner) proprietary distributed database: tested with
   the Spanner emulator (that reports itself as `PostgreSQL 14.1`) and the PGAdapter library that
   enables support for the PostgreSQL wire protocol. Spanner has very limited PostgreSQL
   compatibility, for example refusing to create tables that do not have a primary key. It does not
-  recognize basic PostgreSQL types such as `INT2`. It also does not for example support the `CHR`
-  and `MD5` functions, row expressions, and `WHERE` clauses without a `FROM` clause.
+  recognize basic PostgreSQL types such as `INT2` and `TIMESTAMP`. It also does not for example
+  support the `CHR` and `MD5` functions, row expressions, and `WHERE` clauses without a `FROM`
+  clause.
 
 - The [Vertica](https://www.vertica.com/) distributed database (a propriety column-oriented database
   targeting analytics workloads). Its PostgreSQL compatibility is limited: it does not support
