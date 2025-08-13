@@ -3007,12 +3007,16 @@ Return nil if the extension could not be set up."
 ;; Here we assume that the value is a single character: if serializing a string, use the "text" datatype specifier.
 (pg-register-serializer "char"
   (lambda (v _encoding)
+    (unless (characterp v)
+      (pg-signal-type-error "Expecting a character, got %s" v))
     (unless (<= 0 v 255)
       (pg-signal-type-error "Value %s out of range for CHAR type" v))
     (string v)))
 
 (pg-register-serializer "bpchar"
   (lambda (v encoding)
+    (unless (characterp v)
+      (pg-signal-type-error "Expecting a character, got %s" v))
     (unless (<= 0 v 255)
       (pg-signal-type-error "Value %s out of range for BPCHAR type" v))
     (pg--serialize-text (string v) encoding)))
@@ -3195,7 +3199,7 @@ Respects floating-point infinities and NaN."
          for uuid across vector
          do (unless (string-match uuid-rx uuid)
               (pg-signal-type-error "Expecting a UUID, got %s" uuid))
-         (insert uuid ","))
+         (insert (pg--serialize-text uuid encoding) ","))
         (delete-char -1)                    ; the last comma
         (insert "}")
         (buffer-string)))))
