@@ -153,7 +153,9 @@ SQL queries. To avoid this overhead on establishing a connection, remove
 (define-error 'pg-undefined-table "PostgreSQL undefined table" 'pg-programming-error)
 (define-error 'pg-undefined-column "PostgreSQL undefined column" 'pg-programming-error)
 (define-error 'pg-undefined-function "PostgreSQL undefined function" 'pg-programming-error)
+(define-error 'pg-duplicate-column "Duplicate column" 'pg-programming-error)
 (define-error 'pg-duplicate-prepared-statement "Duplicate prepared statement" 'pg-programming-error)
+(define-error 'pg-duplicate-table "Duplicate table or sequence" 'pg-programming-error)
 (define-error 'pg-reserved-name "PostgreSQL reserved name" 'pg-programming-error)
 (define-error 'pg-copy-failed "PostgreSQL COPY failed" 'pg-operational-error)
 (define-error 'pg-connect-timeout "PostgreSQL connection attempt timed out" 'pg-operational-error)
@@ -172,6 +174,7 @@ SQL queries. To avoid this overhead on establishing a connection, remove
 (define-error 'pg-datatype-mismatch "PostgreSQL datatype mismatch" 'pg-data-error)
 (define-error 'pg-json-error "PostgreSQL JSON-related error" 'pg-data-error)
 (define-error 'pg-xml-error "PostgreSQL XML-related error" 'pg-data-error)
+(define-error 'pg-sequence-limit-exceeded "PostgreSQL sequence generator limit exceeded" 'pg-data-error)
 (define-error 'pg-integrity-constraint-violation "PostgreSQL integrity constraint violation" 'pg-integrity-error)
 (define-error 'pg-restrict-violation "PostgreSQL restrict violation" 'pg-integrity-error)
 (define-error 'pg-not-null-violation "PostgreSQL not NULL violation" 'pg-integrity-error)
@@ -494,6 +497,8 @@ Uses connection CON. The variant can be accessed by `pgcon-server-variant'."
               (setf (pgcon-server-variant con) 'vertica))
              ((cl-search "PolarDB " version)
               (setf (pgcon-server-variant con) 'polardb))
+             ((cl-search "CedarDB " version)
+              (setf (pgcon-server-variant con) 'cedardb))
              ;; TODO: find a better detection method for ArcadeDB
              ((string-suffix-p "/main)" version)
               (setf (pgcon-server-variant con) 'arcadedb))
@@ -583,6 +588,7 @@ presented to the user."
                         ("2201F" 'pg-floating-point-exception)
                         ("22021" 'pg-character-not-in-repertoire)
                         ((pred (lambda (v) (string-prefix-p "2203" v))) 'pg-json-error)
+                        ("2200H" 'pg-sequence-limit-exceeded)
                         ("2200L" 'pg-xml-error)
                         ("2200M" 'pg-xml-error)
                         ("2200N" 'pg-xml-error)
@@ -610,6 +616,8 @@ presented to the user."
                         ("42601" 'pg-syntax-error)
                         ("42P01" 'pg-undefined-table)
                         ("42P05" 'pg-duplicate-prepared-statement)
+                        ("42P07" 'pg-duplicate-table)
+                        ("42701" 'pg-duplicate-column)
                         ("42703" 'pg-undefined-column)
                         ("42804" 'pg-datatype-mismatch)
                         ("42883" 'pg-undefined-function)
@@ -1517,6 +1525,12 @@ The prepared statement may be given optional NAME (defaults to an
 unnamed prepared statement). ARGUMENT-TYPES is a list of
 PostgreSQL type names of the form (\"int4\" \"text\" \"bool\").
 Returns the prepared statement name (a string)."
+  (when (pgcon-query-log con)
+    (with-current-buffer (pgcon-query-log con)
+      (insert query "\n")
+      (insert (format "   %s\n" argument-types)))
+    (when noninteractive
+      (message "SQL!> %s %s" query argument-types)))
   (cl-flet ((oid-for (type-name)
               ;; If we have defined a serializer for type-name and we know the corresponding OID, we
               ;; will be sending this type in binary form: return that OID. Otherwise, return the
@@ -2362,16 +2376,23 @@ PostgreSQL and Emacs. CON should no longer be used."
                      ("time" "1083")
                      ("timestamp" "1114")
                      ("timestamptz" "1184")
+                     ("bit" "1560")
+                     ("varbit" "1562")
                      ("numeric" "1700")
                      ("uuid" "2950")
                      ("jsonb" "3802")
+                     ("_xml" "143")
+                     ("_json" "199")
                      ("_bool" "1000")
+                     ("_char" "1002")
                      ("_int8" "1016")
                      ("_int2" "1005")
                      ("_int4" "1007")
+                     ("_text" "1009")
                      ("_float4" "1021")
                      ("_float8" "1022")
-                     ("_numeric" "1231")))))
+                     ("_numeric" "1231")
+                     ("_bit" "1561")))))
       (dolist (row rows)
         (let* ((typname (cl-first row))
                (oid (cl-parse-integer (cl-second row)))
@@ -3058,6 +3079,7 @@ Respects floating-point infinities and NaN."
 
 (pg-register-textual-serializer "float4" #'pg--serialize-float)
 (pg-register-textual-serializer "float8" #'pg--serialize-float)
+(pg-register-textual-serializer "numeric" #'pg--serialize-float)
 
 ;; FIXME probably we should be encoding this.
 (defun pg--serialize-json (json _encoding)
@@ -3098,6 +3120,41 @@ Respects floating-point infinities and NaN."
                  (cl-every #'numberp v))
       (pg-signal-type-error "Expecting a vector of numbers, got %s" v))
     (concat "[" (string-join (mapcar #'prin1-to-string v) ",") "]")))
+
+
+(pg-register-textual-serializer "_text"
+  (lambda (vector encoding)
+     (concat "{" (string-join (mapcar (lambda (v) (pg--serialize-text v encoding)) vector) ",") "}")))
+
+;; We currently serialize these in textual format. They could also be serialized in binary form as per
+;; https://stackoverflow.com/questions/4016412/postgresqls-libpq-encoding-for-binary-transport-of-array-data
+;; and https://doxygen.postgresql.org/array_8h_source.html
+(defun pg--serialize-intarray (vector _encoding)
+  (with-temp-buffer
+    (insert "{")
+    (cl-loop
+     for element across vector
+     do (insert (number-to-string element) ","))
+    (delete-char -1)                    ; the last comma
+    (insert "}")
+    (buffer-string)))
+
+(pg-register-textual-serializer "_int2" #'pg--serialize-intarray)
+(pg-register-textual-serializer "_int4" #'pg--serialize-intarray)
+(pg-register-textual-serializer "_int8" #'pg--serialize-intarray)
+(pg-register-textual-serializer "_numeric" #'pg--serialize-intarray)
+(pg-register-textual-serializer "_oid" #'pg--serialize-intarray)
+
+;; We don't know how to serialize floating point numbers in binary format in Emacs Lisp, so
+;; serialize them in textual form.
+(pg-register-textual-serializer "_float4"
+  (lambda (vector encoding)
+    (concat "{" (string-join (mapcar (lambda (v) (pg--serialize-float v encoding)) vector) ",") "}")))
+
+(pg-register-textual-serializer "_float8"
+   (lambda (vector encoding)
+     (concat "{" (string-join (mapcar (lambda (v) (pg--serialize-float v encoding)) vector) ",") "}")))
+
 
 
 ;; pwdhash = md5(password + username).hexdigest()
@@ -3357,6 +3414,8 @@ TABLE can be a string or a schema-qualified name. Uses database connection CON."
     ('questdb nil)
     ('spanner nil)
     ('ydb nil)
+    ;; As of 2025-08, CedarDB returns "Setting comments in not implemented yet" (sic).
+    ('cedardb nil)
     ;; Our query below using PostgreSQL system tables triggers an internal exception in CockroachDB,
     ;; so we use their non-standard "SHOW TABLES" query. The SHOW TABLES command does not accept a
     ;; WHERE clause.
@@ -3403,7 +3462,8 @@ TABLE can be a string or a schema-qualified name. Uses database connection CON."
      ('questdb nil)
      ('spanner nil)
      ('ydb nil)
-     ;; TheNile raises and error "command tag COMMENT unhandled"
+     ('cedardb nil)
+     ;; TheNile raises an error "command tag COMMENT unhandled"
      ('thenile nil)
      (_
       (let* ((cmt (if ,comment

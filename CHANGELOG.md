@@ -1,6 +1,22 @@
 # Changelog
 
 
+## [0.58] - Unreleased
+
+- Add serialization support for the `numeric` data type, for arguments to prepared statements.
+
+- Add serialization support for homogeneous arrays when using the extended query protocol. Types such as
+  `text[]` (known as `_text` in the `pg_type` system table), `int4[]`, `float4[]`, `float8[]` can now
+  be passed as function arguments.
+
+- Add workarounds and detection code for the CedarDB PostgreSQL variant.
+
+- New error classes `pg-duplicate-table` and `pg-duplicate-column`, subclasses of
+  `pg-programming-error`.
+
+- New error class `pg-sequence-limit-exceeded`, a subclass of `pg-data-error`.
+
+
 ## [0.57] - 2025-07-30
 
 - Fix the large object functionality to work with version 3 of the frontend-backend wire protocol.
