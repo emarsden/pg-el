@@ -1,13 +1,19 @@
 # Changelog
 
 
-## [0.58] - Unreleased
+## [0.58] - 2025-08-13
 
 - Add serialization support for the `numeric` data type, for arguments to prepared statements.
 
 - Add serialization support for homogeneous arrays when using the extended query protocol. Types such as
   `text[]` (known as `_text` in the `pg_type` system table), `int4[]`, `float4[]`, `float8[]` can now
   be passed as function arguments.
+
+- Fix parsing of the `bpchar` type, which PostgreSQL uses on the wire to represent `CHARACTER(N)`
+  objects. These objects would previously be truncated to their first character, but are now parsed
+  as a full length string if the length is greater than 1 character, and still as an Emacs Lisp
+  character when the length is equal to 1. The returned string includes trailing padding spaces if
+  the value inserted is less long than the field width. Bug reported by @Tekki.
 
 - Add serialization support for the `_varchar` data type.
 

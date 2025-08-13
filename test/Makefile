@@ -781,7 +781,7 @@ test-questdb: test-pg.el
           --publish 127.0.0.1:9000:9000 \
           -e QDB_PG_USER=pgeltestuser \
           -e QDB_PG_PASSWORD=pgeltest \
-	  -d docker.io/questdb/questdb
+	  -d docker.io/questdb/questdb:latest
 	sleep 5
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:8812/postgres $(MAKE) test
 	${DOCKER} stop questdb
