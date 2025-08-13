@@ -992,7 +992,19 @@ bar$$"))))
                  (rows (pg-result res :tuples)))
             (dotimes (i size)
               (should (string= (format "%04d-value" i) (cl-first (nth i rows)))))))
-        (pg-exec con "DROP TABLE sarray")))))
+        (pg-exec con "DROP TABLE sarray"))
+      (when (pgtest-have-table con "uuidarray")
+        (pg-exec con "DROP TABLE uuidarray"))
+      (when-let* ((sql (pgtest-massage con "CREATE TABLE uuidarray(id SERIAL PRIMARY KEY, val UUID[])")))
+        (pg-exec con sql)
+        (pg-exec-prepared con "INSERT INTO uuidarray(val) VALUES($1)"
+                          '((["a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11" "c4792ecb-c00a-43a2-bd74-5b0ed551c599"] . "_uuid")))
+        (pgtest-flush-table con "uuidarray")
+        (let* ((res (pg-exec con "SELECT val FROM uuidarray"))
+               (ua (cl-first (pg-result res :tuple 0))))
+          (should (string-equal-ignore-case (aref ua 0) "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11")))
+        (pg-exec con "DROP TABLE uuidarray")))))
+
 
 ;; Check the mixing of prepared queries, cached prepared statements, normal simple queries, to check
 ;; that the cache works as expected and that the backend retains prepared statements. TODO: should
@@ -1355,6 +1367,11 @@ bar$$"))))
     (should (string-equal-ignore-case
              "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
              (scalar "SELECT 'A0EEBC99-9C0B-4EF8-BB6D-6BB9BD380A11'::uuid")))
+    (let ((uuids (scalar "SELECT '{\"a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11\",
+                                   \"c4792ecb-c00a-43a2-bd74-5b0ed551c599\"}'::uuid[]")))
+      (should (vectorp uuids))
+      (should (string-equal-ignore-case (aref uuids 0)  "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"))
+      (should (string-equal-ignore-case (aref uuids 1) "c4792ecb-c00a-43a2-bd74-5b0ed551c599")))
     ;; Apparently only defined from PostgreSQL v13 onwards.
     (when (pg-function-p con "gen_random_uuid")
       (dotimes (_i 30)
@@ -1480,6 +1497,7 @@ bar$$"))))
     (should (equal (vector) (scalar "SELECT '{}'::bool[]")))
     (should (equal (vector) (scalar "SELECT '{}'::float4[]")))
     (should (equal (vector) (scalar "SELECT '{}'::float8[]")))
+    (should (equal (vector "AB1234" "4321BA") (scalar "SELECT '{\"AB1234\",\"4321BA\"}'::bpchar[]")))
     (let ((vec (scalar "SELECT ARRAY[3.14::float]")))
       (should (floatp (aref vec 0)))
       (should (pgtest-approx= 3.14 (aref vec 0))))
@@ -1499,9 +1517,9 @@ bar$$"))))
       ;; this is returning _bpchar.
       (should (equal (vector ?a ?b ?c) (scalar "SELECT CAST('{a,b,c}' AS CHAR[])"))))
     (should (equal (vector "foo" "bar") (scalar "SELECT '{foo, bar}'::text[]")))
-;;     (let* ((res (pg-exec-prepared con "SELECT $1" '(("{1,2,3}" . "_int4"))))
-;;            (row (pg-result res :tuple 0)))
-;;       (should (equal (vector 1 2 3) (cl-first row))))
+    (let* ((res (pg-exec-prepared con "SELECT $1" '(([1 2 3] . "_int4"))))
+           (row (pg-result res :tuple 0)))
+      (should (equal (vector 1 2 3) (cl-first row))))
     (let ((vec (scalar "SELECT ARRAY[44.3, 8999.5]")))
       (should (equal 2 (length vec)))
       (should (pgtest-approx= 44.3 (aref vec 0)))

@@ -11,6 +11,8 @@
 
 - Add serialization support for the `_varchar` data type.
 
+- Add parsing and serialization support for the `_uuid` data type.
+
 - Add workarounds and detection code for the CedarDB PostgreSQL variant.
 
 - New error classes `pg-duplicate-table` and `pg-duplicate-column`, subclasses of

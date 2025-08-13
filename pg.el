@@ -2546,6 +2546,8 @@ the PostgreSQL connection CON."
 (pg-register-parser "text" #'pg-text-parser)
 (pg-register-parser "varchar" #'pg-text-parser)
 (pg-register-parser "xml" #'pg-text-parser)
+
+;; TODO; could verify the UUID syntax here, but it seems unnecessary to double guess PostgreSQL.
 (pg-register-parser "uuid" #'pg-text-parser)
 
 (pg-register-parser "bytea"
@@ -2786,6 +2788,21 @@ Uses text encoding ENCODING."
 (pg-register-parser "numrange" #'pg-numrange-parser)
 
 (pg-register-parser "money" #'pg-text-parser)
+
+(defun pg-uuidarray-parser (str encoding)
+  "Parse PostgreSQL value STR as an array of UUID values.
+Uses text encoding ENCODING."
+  (let ((len (length str)))
+    (unless (and (eql (aref str 0) ?{)
+                 (eql (aref str (1- len)) ?}))
+      (signal 'pg-protocol-error (list "Unexpected format for UUID array")))
+    (let ((maybe-items (cl-subseq str 1 (- len 1))))
+      (if (zerop (length maybe-items))
+          (vector)
+        (let ((items (split-string maybe-items ",")))
+          (apply #'vector (mapcar (lambda (x) (pg-text-parser x encoding)) items)))))))
+
+(pg-register-parser "_uuid" #'pg-uuidarray-parser)
 
 ;; format for ISO dates is "1999-10-24"
 (defun pg-date-parser (str _encoding)
@@ -3160,9 +3177,28 @@ Respects floating-point infinities and NaN."
     (concat "{" (string-join (mapcar (lambda (v) (pg--serialize-float v encoding)) vector) ",") "}")))
 
 (pg-register-textual-serializer "_float8"
-   (lambda (vector encoding)
+  (lambda (vector encoding)
      (concat "{" (string-join (mapcar (lambda (v) (pg--serialize-float v encoding)) vector) ",") "}")))
 
+(pg-register-textual-serializer "_uuid"
+  (lambda (vector encoding)
+    (let ((uuid-rx (rx string-start
+                       (group (repeat 8 xdigit)) ?-
+                       (group (repeat 4 xdigit)) ?-
+                       (group (repeat 4 xdigit)) ?-
+                       (group (repeat 4 xdigit)) ?-
+                       (group (repeat 12 xdigit))
+                       string-end)))
+      (with-temp-buffer
+        (insert "{")
+        (cl-loop
+         for uuid across vector
+         do (unless (string-match uuid-rx uuid)
+              (pg-signal-type-error "Expecting a UUID, got %s" uuid))
+         (insert uuid ","))
+        (delete-char -1)                    ; the last comma
+        (insert "}")
+        (buffer-string)))))
 
 
 ;; pwdhash = md5(password + username).hexdigest()
