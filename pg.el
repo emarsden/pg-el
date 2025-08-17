@@ -765,7 +765,7 @@ Uses database DBNAME, user USER and password PASSWORD."
      (?S
       (let* ((msglen (pg-read-net-int con 4))
              (msg (pg-read-chars con (- msglen 4)))
-             (items (split-string msg (string 0)))
+             (items (split-string msg (unibyte-string 0)))
              (key (cl-first items))
              (val (cl-second items)))
         ;; ParameterStatus items sent by the backend include application_name,
@@ -1337,7 +1337,7 @@ Return a result structure which can be decoded using `pg-result'."
             (?S
              (let* ((msglen (pg-read-net-int con 4))
                     (msg (pg-read-chars con (- msglen 4)))
-                    (items (split-string msg (string 0))))
+                    (items (split-string msg (unibyte-string 0))))
                ;; ParameterStatus items sent by the backend include application_name,
                ;; DateStyle, TimeZone, in_hot_standby, integer_datetimes
                (when (> (length (cl-first items)) 0)
@@ -1686,7 +1686,7 @@ Returns a pgresult structure (see function `pg-result')."
        (?S
         (let* ((msglen (pg-read-net-int con 4))
                (msg (pg-read-chars con (- msglen 4)))
-               (items (split-string msg (string 0)))
+               (items (split-string msg (unibyte-string 0)))
                (key (cl-first items))
                (val (cl-second items)))
           ;; ParameterStatus items sent by the backend include application_name,
@@ -1949,7 +1949,7 @@ can be decoded using `pg-result'."
             (?S
              (let* ((msglen (pg-read-net-int con 4))
                     (msg (pg-read-chars con (- msglen 4)))
-                    (items (split-string msg (string 0))))
+                    (items (split-string msg (unibyte-string string 0))))
                (when (> (length (cl-first items)) 0)
                  (dolist (handler pg-parameter-change-functions)
                    (funcall handler con (cl-first items) (cl-second items))))))
@@ -2084,7 +2084,7 @@ can be decoded using `pg-result', but with data in BUF."
             (?S
              (let* ((msglen (pg-read-net-int con 4))
                     (msg (pg-read-chars con (- msglen 4)))
-                    (items (split-string msg (string 0))))
+                    (items (split-string msg (unibyte-string 0))))
                (when (> (length (cl-first items)) 0)
                  (dolist (handler pg-parameter-change-functions)
                    (funcall handler con (cl-first items) (cl-second items))))))
@@ -2988,7 +2988,7 @@ Return nil if the extension could not be set up."
 
 (pg-register-serializer "uuid" #'pg--serialize-uuid)
 
-(pg-register-serializer "bool" (lambda (v _encoding) (if v (string 1) (string 0))))
+(pg-register-serializer "bool" (lambda (v _encoding) (if v (unibyte-string 1) (unibyte-string 0))))
 
 (defun pg--serialize-boolvec (bv _encoding)
   (unless (bool-vector-p bv)
@@ -3011,7 +3011,7 @@ Return nil if the extension could not be set up."
       (pg-signal-type-error "Expecting a character, got %s" v))
     (unless (<= 0 v 255)
       (pg-signal-type-error "Value %s out of range for CHAR type" v))
-    (string v)))
+    (unibyte-string v)))
 
 (pg-register-serializer "bpchar"
   (lambda (v encoding)
@@ -3019,7 +3019,7 @@ Return nil if the extension could not be set up."
       (pg-signal-type-error "Expecting a character, got %s" v))
     (unless (<= 0 v 255)
       (pg-signal-type-error "Value %s out of range for BPCHAR type" v))
-    (pg--serialize-text (string v) encoding)))
+    (pg--serialize-text (unibyte-string v) encoding)))
 
 ;; see https://www.postgresql.org/docs/current/datatype-numeric.html
 (pg-register-serializer "int2"
@@ -3238,7 +3238,7 @@ Authenticate as USER with PASSWORD."
 (defun pg-pbkdf2-hash-sha256 (password salt iterations)
   "Return the PBKDF2 hash of PASSWORD using SALT and ITERATIONS."
   (declare (speed 3))
-  (let* ((hash (gnutls-hash-mac 'SHA256 (cl-copy-seq password) (concat salt (string 0 0 0 1))))
+  (let* ((hash (gnutls-hash-mac 'SHA256 (cl-copy-seq password) (concat salt (unibyte-string 0 0 0 1))))
          (result hash))
     (dotimes (_i (1- iterations))
       (setf hash (gnutls-hash-mac 'SHA256 (cl-copy-seq password) hash))
@@ -4094,10 +4094,12 @@ that will be read."
     (setf extra (butlast extra))
     (when extra
       (setf extra (append (list " (") extra (list ")"))))
-    (message "PostgreSQL %s %s %s"
+    (message "%sPostgreSQL %s %s %s%s"
+             (if noninteractive "\033[38;5;248m" "")
              (pgerror-severity notice)
              (pgerror-message notice)
-             (apply #'concat extra))))
+             (apply #'concat extra)
+             (if noninteractive "\033[0m" ""))))
 
 ;; higher order bits first / little endian
 (defun pg-send-uint (con num bytes)
@@ -4129,7 +4131,7 @@ that will be read."
   (let ((process (pgcon-process con)))
     (process-send-string process string)
     ;; the null-terminator octet
-    (process-send-string process (string 0))))
+    (process-send-string process (unibyte-string 0))))
 
 (defun pg-send-octets (con octets)
   (let ((process (pgcon-process con)))
@@ -4140,7 +4142,7 @@ that will be read."
   (let ((process (pgcon-process con))
         (padding (if (and (numberp bytes) (> bytes (length str)))
                      (make-string (- bytes (length str)) 0)
-                   (make-string 0 0))))
+                   (make-string 0 0 nil))))
     (process-send-string process (concat str padding))))
 
 
