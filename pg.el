@@ -462,6 +462,16 @@ Uses PostgreSQL connection CON.")
   (message "pg-el: running variant-specific setup for YottaDB Octo")
   (pg-set-client-encoding con "UTF8"))
 
+(cl-defmethod pg-do-variant-specific-setup ((con pgcon) (_variant (eql 'yellowbrick)))
+  (message "pg-el: running variant-specific setup for YellowBrick")
+  ;; YellowBrick Community Edition has limited support for server encodings other than LATIN9;
+  ;; databases can be created with UTF8 encoding, but that doesn't change the behaviour for the
+  ;; databaseless SELECT statements that we use in our tests.
+  (pg-set-client-encoding con "UTF8")
+  (pg-exec con "SET enable_full_bytea = true")
+  (pg-exec con "SET enable_full_json = true")
+  (pg-exec con "SET ybd_allow_udf_creation = true"))
+
 (cl-defmethod pg-do-variant-specific-setup ((con pgcon) (variant t))
   ;; This statement fails on ClickHouse (and the database immediately closes the connection!).
   (unless (eq variant 'clickhouse)
@@ -499,6 +509,8 @@ Uses connection CON. The variant can be accessed by `pgcon-server-variant'."
               (setf (pgcon-server-variant con) 'polardb))
              ((cl-search "CedarDB " version)
               (setf (pgcon-server-variant con) 'cedardb))
+             ((cl-search "Yellowbrick Database" version)
+              (setf (pgcon-server-variant con) 'yellowbrick))
              ;; TODO: find a better detection method for ArcadeDB
              ((string-suffix-p "/main)" version)
               (setf (pgcon-server-variant con) 'arcadedb))
@@ -1949,7 +1961,7 @@ can be decoded using `pg-result'."
             (?S
              (let* ((msglen (pg-read-net-int con 4))
                     (msg (pg-read-chars con (- msglen 4)))
-                    (items (split-string msg (unibyte-string string 0))))
+                    (items (split-string msg (unibyte-string 0))))
                (when (> (length (cl-first items)) 0)
                  (dolist (handler pg-parameter-change-functions)
                    (funcall handler con (cl-first items) (cl-second items))))))
@@ -3228,7 +3240,7 @@ Authenticate as USER with PASSWORD."
   (declare (speed 3))
   (let ((len (length s1)))
     (cl-assert (eql len (length s2)))
-    (let ((out (make-string len 0)))
+    (let ((out (make-string len 0 nil)))
       (dotimes (i len)
         (setf (aref out i) (logxor (aref s1 i) (aref s2 i))))
       out)))

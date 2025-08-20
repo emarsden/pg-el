@@ -131,14 +131,12 @@ test-shortnames: test-pg.el
 	PGEL_PORT=5926 PGEL_DATABASE=d PGEL_USER=u PGEL_PASSWORD="~" $(MAKE) test
 	${DOCKER} stop pgsql
 
-# using https://github.com/mbcrawfo/postgres18-docker
-#
 # Note that we need to tell Emacs GnuTLS to trust the root.crt file in order for it to accept the
 # PostgreSQL server TLS certificate (it's not signed by the system CA).
 #
 # Currently failing with Emacs 31.0.50 with
 #   LOG:  received direct SSL connection request without ALPN protocol negotiation extension
-test-postgresql18beta1tls: test-pg.el
+test-postgresql18betatls: test-pg.el
 	openssl req -new -nodes -text -out ${WORKDIR}/root.csr -keyout ${WORKDIR}/root.key \
 	   -subj "/CN=localhost"
 	chmod og-rwx ${WORKDIR}/root.key
@@ -172,7 +170,7 @@ test-postgresql18beta1tls: test-pg.el
            -e PGPORT=5418 \
            -e TZ=Asia/Tokyo \
            --user postgres \
-           -d docker.io/library/postgres:18beta1-alpine \
+           -d docker.io/library/postgres:18beta3-alpine \
               -c ssl=on \
               -c ssl_cert_file=/certs/server.crt \
               -c ssl_key_file=/certs/server.key
@@ -183,7 +181,7 @@ test-postgresql18beta1tls: test-pg.el
 	${DOCKER} volume rm pgcerts
 
 
-test-postgresql18beta1: test-pg.el
+test-postgresql18beta: test-pg.el
 	${DOCKER} run --rm --name pgsql \
            --pull=newer \
 	   --publish 5418:5418 \
@@ -192,7 +190,7 @@ test-postgresql18beta1: test-pg.el
 	   -e POSTGRES_PASSWORD=pgeltest \
 	   -e PGPORT=5418 \
 	   -e TZ=Asia/Tokyo \
-	   -d docker.io/library/postgres:18beta1-alpine
+	   -d docker.io/library/postgres:18beta3-alpine
 	sleep 5
 	PGEL_PORT=5418 $(MAKE) test
 	${DOCKER} stop pgsql
@@ -458,17 +456,23 @@ test-citus: test-pg.el
 #
 # https://github.com/orioledb/orioledb
 # https://hub.docker.com/r/orioledb/orioledb
+#
+# Note: the documentation states that we can use -c default_table_access_method=orioledb in
+# INITDB_ARGS, but that leads to a fatal error "access method "orioledb" does not exist".
 test-orioledb: test-pg.el
 	${DOCKER} run --rm --name orioledb \
-          --pull=newer \
-	  --publish 127.0.0.1:5317:5317 \
-	   -e POSTGRES_DB=pgeltestdb \
-	   -e POSTGRES_USER=pgeltestuser \
-	   -e POSTGRES_PASSWORD=pgeltest \
-	   -e PGPORT=5317 \
-	   -d docker.io/orioledb/orioledb:latest-pg17
+           --pull=newer \
+           --publish 127.0.0.1:5317:5317 \
+           -e POSTGRES_DB=pgeltestdb \
+           -e POSTGRES_USER=pgeltestuser \
+           -e POSTGRES_PASSWORD=pgeltest \
+           -e PGPORT=5317 \
+           -e POSTGRES_INITDB_ARGS="--locale-provider=icu --icu-locale=en" \
+           -e LANG=en_US.UTF8 \
+           -e LC_CTYPE=en_US.UTF8 \
+           docker.io/orioledb/orioledb:latest-pg17
 	sleep 5
-	PGEL_PORT=5317 $(MAKE) test
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5317/pgeltestdb $(MAKE) test
 	${DOCKER} stop orioledb
 
 
@@ -740,7 +744,7 @@ test-cratedb: test-pg.el
           --pull=newer \
           --net host \
           -e CRATE_HEAP_SIZE=1g \
-          -d docker.io/crate -Cnetwork.host=127.0.0.1 -Cdiscovery.type=single-node -Cpsql.port=5789
+          -d docker.io/crate:latest -Cnetwork.host=127.0.0.1 -Cdiscovery.type=single-node -Cpsql.port=5789
 	sleep 5
 	PGURI="postgresql://crate@127.0.0.1:5789/postgres?read_timeout=1000" $(MAKE) test
 	${DOCKER} stop cratedb
@@ -827,7 +831,7 @@ test-materialize: test-pg.el
 #
 # https://docs.yellowbrick.com/7.1.0/platforms/cloud/ce/docker/ce_cloud_docker.html
 # https://hub.docker.com/r/yellowbrickdata/ybd-ce-k0s-amd64
-test-yellowbrick: test-pg.el
+test-yellowbrick-ce: test-pg.el
 	${DOCKER} volume ls --format '{{ .Name }}' | grep -qw ybd-storage-rfs || podman volume create ybd-storage-rfs
 	${DOCKER} volume ls --format '{{ .Name }}' | grep -qw ybd-storage-lfs || podman volume create ybd-storage-lfs
 	mkdir -p /tmp/yellowbrick
@@ -839,11 +843,26 @@ test-yellowbrick: test-pg.el
 	  -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
 	  --publish 5689:5432 \
           -d docker.io/yellowbrickdata/ybd-ce-k0s-amd64:stable
-	sleep 10
+	sleep 100
 	PGURI=postgresql://postgres@127.0.0.1:5689/postgres $(MAKE) test
 	${DOCKER} stop yellowbrick
 	${DOCKER} volume rm ybd-storage-rfs
 	${DOCKER} volume rm ybd-storage-lfs
+
+# https://hub.docker.com/r/yellowbrickdata/yb-community-edition
+#
+# The YM_OFF option disables the web interface. The cluster manager is extremely slow to start
+# up sometimes, so we wait a long time before the test.
+test-yellowbrick: test-pg.el
+	${DOCKER} run --rm --name yellowbrick \
+         --publish 127.0.0.1:5689:5432 \
+         -e YB_ADMIN_PASSWORD=pgeltest \
+         -d docker.io/yellowbrickdata/yb-community-edition:latest --YM_OFF
+	sleep 200
+	psql postgresql://ybdadmin:pgeltest@127.0.0.1:5689/yellowbrick -c "CREATE DATABASE pgeltestdb WITH ENCODING 'UTF8';"
+	sleep 1
+	PGURI="postgresql://ybdadmin:pgeltest@127.0.0.1:5689/pgeltestdb?read_timeout=100" $(MAKE) test
+	${DOCKER} stop yellowbrick
 
 
 
@@ -891,9 +910,9 @@ test-greenplum: test-pg.el
 # No prebuilt Docker image seems to be available.
 test-cloudberry: test-pg.el
 	${DOCKER} run --rm --name cloudberry \
-	  --publish 127.0.0.1:5661:5661 \
-	  -h cdw -e PGPORT=5661 \
-	  -d docker.io/apache/incubator-cloudberry:cbdb-test-rocky9-latest
+          --publish 127.0.0.1:5661:5661 \
+          -h cdw -e PGPORT=5661 \
+          -d docker.io/apache/incubator-cloudberry:cbdb-test-rocky9-latest
 	sleep 5
 	PGEL_DATABASE=postgres PGEL_USER=gpadmin PGEL_PASSWORD="greenplum" PGEL_PORT=5661 $(MAKE) test
 	${DOCKER} stop cloudberry
@@ -950,18 +969,20 @@ test-ydb: test-pg.el
 # https://docs.yugabyte.com/preview/reference/configuration/yugabyted/
 test-yugabyte: test-pg.el
 	${DOCKER} run --rm --name yugabyte \
-          --pull=newer \
-          --net host \
-          -e YSQL_DB=pgeltestdb \
+          --net host --pull=newer \
           -e YSQL_USER=pgeltestuser \
+          -e YSQL_PASSWORD=pgeltest \
+          -e YSQL_DB=pgeltestdb \
           -d docker.io/yugabytedb/yugabyte:latest \
-          bin/yugabyted start \
-          --ysql_port 5493 \
-          --advertise_address 127.0.0.1 \
-          --base_dir=/tmp \
-          --background=false
+            bin/yugabyted start \
+            --advertise_address 127.0.0.1 \
+            --ysql_port=5499 \
+            --base_dir=/tmp \
+            --enable_pg_parity_early_access \
+            --ysql_enable_auth=true \
+            --background=false
 	sleep 10
-	PGURI=postgresql://pgeltestuser@127.0.0.1:5493/pgeltestdb $(MAKE) test
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5499/pgeltestdb $(MAKE) test
 	${DOCKER} stop yugabyte
 
 
@@ -1061,6 +1082,9 @@ test-greptimedb: test-pg.el
 # Fails on query "SELECT 'gday'::varchar(20)"
 #
 # Could test TLS support with environment variables RW_SSL_CERT and RW_SSL_KEY.
+#
+# The "root" user is set explicitly in risingwave/src/cmd_all/src/standalone.rs and there does not
+# seem to be a mechanism to change it; likewise for the "dev" database name.
 test-risingwave: test-pg.el
 	${DOCKER} run --rm --name risingwave \
 	  --pull=newer \

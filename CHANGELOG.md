@@ -1,6 +1,11 @@
 # Changelog
 
 
+## [0.59] - Unreleased
+
+- Add detection code and workarounds for the Yellowbrick PostgreSQL variant.
+
+
 ## [0.58] - 2025-08-13
 
 - Add serialization support for the `numeric` data type, for arguments to prepared statements.

@@ -55,6 +55,7 @@
                   ('risingwave nil)
                   ('questdb "UUID NOT NULL DEFAULT gen_random_uuid()")
                   ('materialize nil)
+                  ('yellowbrick nil)
                   (_ "SERIAL")))
         (pk (pcase (pgcon-server-variant con)
               ('materialize "")
@@ -295,27 +296,27 @@
                   :skip-variants '(risingwave ydb)
                   :need-emacs "28")
       (pgtest-add #'pg-test-collation
-                  :skip-variants '(xata cratedb questdb clickhouse greptimedb octodb vertica))
+                  :skip-variants '(xata cratedb questdb clickhouse greptimedb octodb vertica yellowbrick))
       (pgtest-add #'pg-test-xml
                   :skip-variants '(xata ydb cockroachdb yugabyte clickhouse alloydb vertica))
       (pgtest-add #'pg-test-uuid
-                  :skip-variants '(cratedb risingwave ydb clickhouse greptimedb spanner octodb vertica))
+                  :skip-variants '(cratedb risingwave ydb clickhouse greptimedb spanner octodb vertica yellowbrick))
       ;; Risingwave doesn't support VARCHAR(N) type. YDB and Vertica don't support SELECT generate_series().
       (pgtest-add #'pg-test-result
                   :skip-variants  '(risingwave ydb spanner clickhouse vertica))
       (pgtest-add #'pg-test-cursors
-                  :skip-variants '(xata cratedb cockroachdb risingwave questdb greptimedb ydb materialize spanner octodb cedardb))
+                  :skip-variants '(xata cratedb cockroachdb risingwave questdb greptimedb ydb materialize spanner octodb cedardb yellowbrick))
       ;; CrateDB does not support the BYTEA type (!), nor sequences. Spanner does not support the encode() function.
       (pgtest-add #'pg-test-bytea
                   :skip-variants '(cratedb risingwave spanner materialize))
       ;; Spanner does not support the INCREMENT clause in CREATE SEQUENCE. Vertica does not
       ;; implement the pg_sequences system table.
       (pgtest-add #'pg-test-sequence
-                  :skip-variants '(cratedb risingwave questdb materialize greptimedb ydb spanner clickhouse thenile vertica))
+                  :skip-variants '(cratedb risingwave questdb materialize greptimedb ydb spanner clickhouse thenile vertica yellowbrick))
       (pgtest-add #'pg-test-array
                   :skip-variants '(cratedb risingwave questdb materialize clickhouse octodb))
       (pgtest-add #'pg-test-enums
-                  :skip-variants '(cratedb risingwave questdb greptimedb ydb materialize spanner octodb clickhouse vertica cedardb))
+                  :skip-variants '(cratedb risingwave questdb greptimedb ydb materialize spanner octodb clickhouse vertica cedardb yellowbrick))
       (pgtest-add #'pg-test-server-prepare
                   :skip-variants '(cratedb risingwave questdb greptimedb ydb octodb))
       (pgtest-add #'pg-test-comments
@@ -326,7 +327,7 @@
       (pgtest-add #'pg-test-json
                   :skip-variants '(xata cratedb risingwave questdb greptimedb ydb materialize spanner octodb vertica cedardb))
       (pgtest-add #'pg-test-schemas
-                  :skip-variants '(xata cratedb risingwave questdb ydb materialize))
+                  :skip-variants '(xata cratedb risingwave questdb ydb materialize yellowbrick))
       (pgtest-add #'pg-test-hstore
                   :skip-variants '(risingwave materialize octodb readyset vertica))
       ;; Xata doesn't support extensions, but doesn't signal an SQL error when we attempt to load the
@@ -334,15 +335,15 @@
       (pgtest-add #'pg-test-vector
                   :skip-variants '(xata cratedb materialize octodb vertica))
       (pgtest-add #'pg-test-tsvector
-                  :skip-variants '(xata cratedb cockroachdb risingwave questdb greptimedb ydb materialize spanner octodb vertica cedardb))
+                  :skip-variants '(xata cratedb cockroachdb risingwave questdb greptimedb ydb materialize spanner octodb vertica cedardb yellowbrick))
       (pgtest-add #'pg-test-bm25
                   :skip-variants '(xata cratedb cockroachdb risingwave materialize octodb vertica))
       (pgtest-add #'pg-test-geometric
-                  :skip-variants '(xata cratedb cockroachdb risingwave questdb materialize spanner octodb vertica cedardb))
+                  :skip-variants '(xata cratedb cockroachdb risingwave questdb materialize spanner octodb vertica cedardb yellowbrick))
       (pgtest-add #'pg-test-gis
                   :skip-variants '(xata cratedb cockroachdb risingwave materialize octodb))
       (pgtest-add #'pg-test-copy
-                  :skip-variants '(spanner ydb cratedb risingwave materialize questdb xata vertica))
+                  :skip-variants '(spanner ydb cratedb risingwave materialize questdb xata vertica yellowbrick))
       ;; QuestDB fails due to lack of support for the NUMERIC type
       (pgtest-add #'pg-test-copy-large
                   :skip-variants '(spanner ydb cratedb risingwave questdb materialize))
@@ -367,9 +368,9 @@
       (pgtest-add #'pg-test-notice
                   :skip-variants '(cedardb))
       (pgtest-add #'pg-test-notify
-                  :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb ydb questdb spanner vertica cedardb))
+                  :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb ydb questdb spanner vertica cedardb yellowbrick))
       (pgtest-add #'pg-test-lo
-                  :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb ydb questdb spanner vertica greenplum cedardb))
+                  :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb ydb questdb spanner vertica greenplum cedardb yellowbrick))
       (dolist (test (reverse tests))
         (message "== Running test %s" test)
         (condition-case err
@@ -461,7 +462,7 @@
       (should (or (string= "text" (cl-first typs))
                   ;; RisingWave returns this
                   (string= "character varying" (cl-first typs)))))
-    (unless (member (pgcon-server-variant con) '(cratedb risingwave materialize ydb))
+    (unless (member (pgcon-server-variant con) '(cratedb risingwave materialize ydb yellowbrick))
       (let ((bv1 (make-bool-vector 1 nil))
             (bv2 (make-bool-vector 1 t)))
         (should (equal bv1 (scalar "SELECT $1::bit" `((,bv1 . "bit")))))
@@ -535,7 +536,7 @@
       (let ((json (scalar "SELECT $1::json" '(("[66.7,-42.0,8]" . "text")))))
         (should (pgtest-approx= 66.7 (aref json 0)))
         (should (pgtest-approx= -42.0 (aref json 1)))))
-    ;; CrateDB does not support the JSONB type, not casting {foo=bar} syntax to JSON. CockroachDB
+    ;; CrateDB does not support the JSONB type, nor casting {foo=bar} syntax to JSON. CockroachDB
     ;; supports JSONB but not JSON.
     (unless (member (pgcon-server-variant con) '(cratedb cockroachdb risingwave materialize))
       (let ((json (scalar "SELECT $1::jsonb" '(("[66.7,-42.0,8]" . "text")))))
@@ -1239,7 +1240,7 @@ bar$$"))))
     (unless (member (pgcon-server-variant con) '(risingwave questdb))
       (should (pgtest-approx= 3.14 (scalar "SELECT 3.14::decimal(10,2) as pi"))))
     ;; CrateDB doesn't support the OID type, nor casting integers to bits.
-    (unless (member (pgcon-server-variant con) '(cratedb risingwave materialize octodb))
+    (unless (member (pgcon-server-variant con) '(cratedb risingwave materialize octodb yellowbrick))
       (should (eql 123 (scalar "SELECT 123::oid")))
       (should (equal (make-bool-vector 1 nil) (scalar "SELECT 0::bit")))
       (should (equal (make-bool-vector 1 t) (scalar "SELECT 1::bit")))
@@ -1252,13 +1253,13 @@ bar$$"))))
     ;; Emacs version prior to 27 can't coerce to bool-vector type
     (when (> emacs-major-version 26)
       ;; RisingWave does not implement the bit type
-      (unless (member (pgcon-server-variant con) '(risingwave materialize))
+      (unless (member (pgcon-server-variant con) '(risingwave materialize yellowbrick))
         (should (equal (cl-coerce (vector t nil t nil) 'bool-vector)
                        (scalar "SELECT '1010'::bit(4)"))))
-      (unless (member (pgcon-server-variant con) '(cockroachdb risingwave materialize))
+      (unless (member (pgcon-server-variant con) '(cockroachdb risingwave materialize yellowbrick))
         (should (equal (cl-coerce (vector t nil nil t nil nil nil) 'bool-vector)
                        (scalar "SELECT b'1001000'"))))
-      (unless (member (pgcon-server-variant con) '(cratedb risingwave materialize))
+      (unless (member (pgcon-server-variant con) '(cratedb risingwave materialize yellowbrick))
         (should (equal (cl-coerce (vector t nil t t t t) 'bool-vector)
                        (scalar "SELECT '101111'::varbit(6)")))))
     ;; (should (eql 66 (scalar "SELECT 66::money")))
@@ -1540,7 +1541,7 @@ bar$$"))))
 ;; Test functionality related to "COMMENT ON TABLE" and "COMMENT ON COLUMN"
 (defun pg-test-comments (con)
   (pg-exec con "DROP TABLE IF EXISTS comment_test")
-  (pg-exec con "CREATE TABLE comment_test(cola INTEGER, colb TEXT)")
+  (pg-exec con "CREATE TABLE comment_test(cola INTEGER, colb VARCHAR)")
   (should (null (pg-table-comment con "comment_test")))
   (dolist (cmt (list "Easy" "+++---" "éàÖ🫎"))
     (setf (pg-table-comment con "comment_test") cmt)
@@ -1561,7 +1562,7 @@ bar$$"))))
   ;; some PostgreSQL variants).
   (pg-exec con "DROP SCHEMA IF EXISTS pgeltestschema CASCADE")
   (pg-exec con "CREATE SCHEMA pgeltestschema")
-  (pg-exec con "CREATE TABLE pgeltestschema.comment_test(cola INTEGER, colb TEXT)")
+  (pg-exec con "CREATE TABLE pgeltestschema.comment_test(cola INTEGER, colb VARCHAR)")
   (let ((tname (make-pg-qualified-name :schema "pgeltestschema" :name "comment_test")))
     (should (null (pg-table-comment con tname)))
     (dolist (cmt (list "Easy" "ç+++---" "éàÖ🐘"))
@@ -1594,7 +1595,7 @@ bar$$"))))
   ;; nodes to ingest data in parallel.
   (unless (member (pgcon-server-variant con) '(cratedb))
     (pg-exec con "DROP TABLE IF EXISTS coldefault")
-    (pg-exec con "CREATE TABLE coldefault(id SERIAL PRIMARY KEY, comment TEXT)")
+    (pg-exec con "CREATE TABLE coldefault(id SERIAL PRIMARY KEY, comment VARCHAR)")
     ;; note that the id column has a DEFAULT value due to the SERIAL (this is not present for a
     ;; GENERATED ALWAYS AS INTEGER column).
     (pg-exec con "INSERT INTO coldefault(comment) VALUES ('foobles')")
@@ -2459,7 +2460,7 @@ bar$$"))))
 (defun pg-test-unicode-names (con)
   (when (member "pgel😎" (pg-databases con))
     (pg-exec con "DROP DATABASE pgel😎"))
-  (pg-exec con "CREATE DATABASE pgel😎")
+  (pg-exec con "CREATE DATABASE pgel😎 WITH ENCODING 'UTF8'")
   (should (member "pgel😎" (pg-databases con)))
   (pg-exec con "DROP DATABASE pgel😎")
   (pg-exec con "CREATE TEMPORARY TABLE pgel😏(data TEXT)")
@@ -3039,7 +3040,7 @@ bar$$"))))
         (pg-exec-prepared con "SELECT lo_put($1, $2, $3)"
                           `((,oid . "int4") (,(* i 1024 1024) . "int8") (,filler . "bytea"))))
       (pg-lo-lseek con fd (* 512 1024 1024) pg-SEEK_SET)
-      (dotimes (i 512)
+      (dotimes (_ 512)
         (should (eql (* 1024 1024) (pg-lo-write con fd filler))))
       ;; Now check that the octets have been written as expected
       (let ((pos (pg-lo-lseek con fd 0 pg-SEEK_CUR)))
@@ -3052,7 +3053,7 @@ bar$$"))))
         (let ((pos (random target-len)))
           (pg-lo-lseek con fd pos pg-SEEK_SET)
           (should (string= "Z" (pg-lo-read con fd 1)))))
-      (dotimes (i 100)
+      (dotimes (_ 100)
         (let* ((count (random 20))
                (pos (max (- target-len count 1) (random target-len)))
                (res (pg-exec-prepared con "SELECT lo_get($1, $2, $3)"

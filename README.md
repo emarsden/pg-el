@@ -43,7 +43,7 @@ This library has support for:
 - Connections over TCP or (on Unix machines) a local Unix socket.
 
 
-Tested **PostgreSQL versions**: The code has been tested with versions 18beta1, 17.5, 16.4, 15.4,
+Tested **PostgreSQL versions**: The code has been tested with versions 18beta3, 17.5, 16.4, 15.4,
 13.8, 11.17, and 10.22 on Linux. It is also tested via GitHub actions on MacOS and Windows. This
 library also works, more or less, against other “PostgreSQL-compatible” databases. There are four
 main points where this compatibility may be problematic:
@@ -163,6 +163,12 @@ The following PostgreSQL-compatible databases or extensions have been tested:
   PostgreSQL support, and does not support the `integer` type for example. Last tested 2025-08 with
   version 9.0.1.
 
+- The proprietary [Yellowbrick](https://yellowbrick.com/) distributed database does not implement
+  `SERIAL` columns, nor datatypes such as `text`, `bit` and `timetz`, nor collation, nor enums, nor
+  functions such as `gen_random_uuid`, nor large objects. It has limited support for the UTF8
+  encoding, and its implementation of the `numeric` type is buggy. It works with these limitations
+  with pg-el (last tested 2025-08 with version 7.4.0 of the YellowBrick community edition).
+
 - [Google Spanner](https://cloud.google.com/spanner) proprietary distributed database: tested with
   the Spanner emulator (that reports itself as `PostgreSQL 14.1`) and the PGAdapter library that
   enables support for the PostgreSQL wire protocol. Spanner has very limited PostgreSQL
@@ -200,7 +206,8 @@ The following PostgreSQL-compatible databases or extensions have been tested:
   functions or procedures).
 
 - Untested but likely to work: Amazon RDS, Google Cloud SQL, Azure Database for PostgreSQL, Amazon
-  Aurora. You may however encounter difficulties with TLS connections, as noted above.
+  Aurora, CrunchyData Warehouse. You may however encounter difficulties with TLS connections, as
+  noted above. Reports on success or problems encountered with these databases are welcome.
 
 PostgreSQL variants that **don't work** with pg-el:
 
