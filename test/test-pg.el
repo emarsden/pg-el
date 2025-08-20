@@ -268,7 +268,7 @@
                          (setq con (pg-connect "nonexistent-db" "pgeltestuser" "pgeltest"))
                        (pg-invalid-catalog-name 'ok))
                    (when con
-                     (pg-disconnect con))))))
+                     (pg-disconnect con)))))))
 
 
 

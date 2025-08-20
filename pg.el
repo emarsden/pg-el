@@ -956,7 +956,14 @@ you would like to run specific code in
            (let ((msg (format "TLS error connecting to PostgreSQL: %s" (error-message-string err))))
              (signal 'pg-protocol-error (list msg)))))))
     ;; the remainder of the startup sequence is common to TCP and Unix socket connections
-    (pg-do-startup con dbname user password)))
+    (pg-do-startup con dbname user password)
+    ;; We can't handle PGOPTIONS in pg-do-startup, because that contains code shared with
+    ;; pg-connect/string and pg-connect/uri, and for these other functions any value for the options
+    ;; paramspec specified in the connection string or URI overrides the value of the environment
+    ;; variable.
+    (when-let* ((options (getenv "PGOPTIONS")))
+      (pg-handle-connection-options con options))
+    con))
 
 (cl-defun pg-connect/direct-tls (dbname user
                                         &optional
@@ -1012,7 +1019,15 @@ are passed to GnuTLS."
     ;; Save connection info in the pgcon object, for possible later use by pg-cancel
     (setf (pgcon-connect-info con) (list :tcp host port dbname user password))
     ;; the remainder of the startup sequence is common to TCP and Unix socket connections
-    (pg-do-startup con dbname user password)))
+    (pg-do-startup con dbname user password)
+    ;; We can't handle PGOPTIONS in pg-do-startup, because that contains code shared with
+    ;; pg-connect/string and pg-connect/uri, and for these other functions any value for the options
+    ;; paramspec specified in the connection string or URI overrides the value of the environment
+    ;; variable.
+    (when-let* ((options (getenv "PGOPTIONS")))
+      (pg-handle-connection-options con options))
+    con))
+
 
 (cl-defun pg-connect-local (path dbname user &optional (password ""))
   "Initiate a connection with the PostgreSQL backend over local Unix socket PATH.
@@ -1034,9 +1049,15 @@ opaque type). PASSWORD defaults to an empty string."
       (setq-local pgcon--position 1
                   pgcon--busy t
                   pgcon--notification-handlers (list)))
-    (pg-do-startup connection dbname user password)))
+    (pg-do-startup connection dbname user password)
+    ;; We can't handle PGOPTIONS in pg-do-startup, because that contains code shared with
+    ;; pg-connect/string and pg-connect/uri, and for these other functions any value for the options
+    ;; paramspec specified in the connection string or URI overrides the value of the environment
+    ;; variable.
+    (when-let* ((options (getenv "PGOPTIONS")))
+      (pg-handle-connection-options con options))))
 
-;; e.g. "host=localhost port=5432 dbname=mydb connect_timeout=10"
+
 ;; see https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-PARAMKEYWORDS
 (defun pg-connect/string (connection-string)
   "Connect to PostgreSQL with parameters specified by CONNECTION-STRING.
@@ -1052,7 +1073,7 @@ keywords are `host', `hostaddr', `port', `dbname', `user', `password',
                   for c in components
                   for param-val = (split-string c "=" t "\s")
                   unless (eql 2 (length param-val))
-                  do (error "Invalid connection string component %s" c)
+                  do (signal 'pg-user-error (list (message "Invalid connection string component %s" c)))
                   collect (cons (cl-first param-val) (cl-second param-val))))
          (host (or (cdr (assoc "host" params))
                    (cdr (assoc "hostaddr" params))
@@ -1064,10 +1085,12 @@ keywords are `host', `hostaddr', `port', `dbname', `user', `password',
                    5432))
          (dbname (or (cdr (assoc "dbname" params))
                      (getenv "PGDATABASE")
-                     (error "Database name not specified in connection string or PGDATABASE environment variable")))
+                     (signal 'pg-user-error
+                             (list "Database name not specified in connection string or PGDATABASE environment variable"))))
          (user (or (cdr (assoc "user" params))
                    (getenv "PGUSER")
-                   (error "User not specified in connection string or PGUSER environment variable")))
+                   (signal 'pg-user-error
+                           (list "User not specified in connection string or PGUSER environment variable"))))
          (password (or (cdr (assoc "password" params))
                        (getenv "PGPASSWORD")))
          (sslmode (or (cdr (assoc "sslmode" params))
