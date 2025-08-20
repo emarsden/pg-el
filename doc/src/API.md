@@ -58,8 +58,40 @@ database `DBNAME` with the username `USER`, providing `PASSWORD` if necessary. R
 to the database (as an opaque type). `PASSWORD` defaults to an empty string.
 
 
+
+    (pg-connect/string connection-string) -> con
+
+Connect to PostgreSQL with parameters specified by `CONNECTION-STRING`. A connection string is of
+the form
+
+    host=localhost port=5432 dbname=mydb options=--client_min_messages=DEBUG4
+
+We do not support all the parameter keywords supported by libpq, such as those which specify
+particular aspects of the TCP connection to PostgreSQL (e.g. `keepalives_interval`). The supported
+keywords are `host`, `hostaddr`, `port`, `dbname`, `user`, `password`, `sslmode` (partial support),
+`connect_timeout`, `read_timeout` (a pg-el extension), `client_encoding`, `application_name` and
+`options`. They work in the same way as for libpq (and therefore for the psql commandline tool). The
+same environment variable fallbacks as libpq are used (`PGHOST` for `host`, `PGOPTIONS` for options
+and so on).
+
+
+    (pg-connect/uri connection-uri) -> con
+
+Connect to PostgreSQL with parameters specified by `CONNECTION-uri`. A connection URI is of
+the form
+
+    postgresql://[userspec@][hostspec][/dbname][?paramspec]
+
+where `userspec` is of the form `username:password`. If `hostspec` is a string representing a local
+path (e.g. `%2Fvar%2Flib%2Fpostgresql` with percent-encoding) then it is interpreted as a Unix
+pathname used for a local Unix domain connection. We do not support all the paramspec keywords
+supported by libpq, such as those which specify particular aspects of the TCP connection to
+PostgreSQL (e.g. `keepalives_interval`). The supported paramspec keywords and their fallback
+environment variables are the same as for pg-connect/string (see above).
+
+
     (pg-exec con &rest sql) -> pgresult
-    
+
 Concatenate the SQL strings and send to the PostgreSQL backend over connection `CON`. Retrieve the
 information returned by the database and return it in an opaque record PGRESULT. The content of the
 pgresult should be accessed using the `pg-result` function.
