@@ -5,6 +5,11 @@
 
 - Add detection code and workarounds for the Yellowbrick PostgreSQL variant.
 
+- Add support for parsing an `options` parameter in a connection string or connection URI, or for
+  parsing the contents of the `PGOPTIONS` environment variable (as per the [libpq
+  behaviour](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-PARAMKEYWORDS)). This
+  is an alternative to using elisp code on `pg-new-connection-hook`.
+
 
 ## [0.58] - 2025-08-13
 

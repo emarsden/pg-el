@@ -820,6 +820,50 @@ Uses database DBNAME, user USER and password PASSWORD."
         (signal 'pg-protocol-error (list msg)))))))
 
 
+;; OPTIONS is a string containing commandline-like options of the form "-c geqo=off" and
+;; "--geqo=off". Return an alist of (name . value) pairs.
+;;
+;; Tests:
+;; (pg--parse-connection-options "-c geqo=off")
+;; (pg--parse-connection-options "  -c   geqo=off  ")
+;; (pg--parse-connection-options "-c geqo=off -c bizzle=bazzle")
+;; (pg--parse-connection-options "-c geqo=off --fooble=bazzle")
+;; (pg--parse-connection-options "")
+;; (pg--parse-connection-options "wrong=syntax to-be-refused")
+(defun pg--parse-connection-options (options)
+  (with-temp-buffer
+    (insert options)
+    (goto-char (point-min))
+    (with-peg-rules
+        ((main (* [space]) optionlist (* [space]) (eol))
+         (optionlist (* option) (* (and (+ [space]) option)))
+         (option (or longform shortform))
+         (longform "--" (substring identifier) (char ?=) (substring value)
+                   `(ident val -- (cons ident val)))
+         (shortform "-c" (+ [space]) (substring identifier) (char ?=) (substring value)
+                    `(ident val -- (cons ident val)))
+         (identifier (+ (or [a-z] [A-Z] [0-9] (char ?.) (char ?_))))
+         (value (+ (or [a-z] [A-Z] [0-9] (char ?,) (char ?.) (char ?#) (char ?/) (char ?\") (char ?$)))))
+      (peg-run (peg main)))))
+
+;; OPTIONS is a string containing commandline-like options of the form "-c geqo=off" and
+;; "--geqo=off". We parse it and send them to the backend using SET statements. Valid options are
+;; listed in https://www.postgresql.org/docs/current/config-setting.html#CONFIG-SETTING-SHELL
+(defun pg-handle-connection-options (con option-string)
+  (let ((options (pg--parse-connection-options option-string)))
+    (unless options
+      (signal 'pg-user-error (list (format "Could not parse PGOPTIONS value %s" option-string))))
+    (dolist (option options)
+      (message "££ Setting option %s to %s" (car option) (cdr option))
+      (condition-case e
+          (pg-exec-prepared con "SELECT set_config($1, $2, false)"
+                            `((,(car option) . "text")
+                              (,(cdr option) . "text")))
+        (pg-error
+         (let ((msg (format "Failed to set connection option %s to %s: %s"
+                            (car option) (cdr option) e)))
+           (signal 'pg-operational-error (list msg))))))))
+
 ;; Avoid warning from the bytecode compiler
 (declare-function gnutls-negotiate "gnutls.el")
 (declare-function network-stream-certificate "network-stream.el")
@@ -997,12 +1041,12 @@ opaque type). PASSWORD defaults to an empty string."
 (defun pg-connect/string (connection-string)
   "Connect to PostgreSQL with parameters specified by CONNECTION-STRING.
 A connection string is of the form `host=localhost port=5432
-dbname=mydb'. We do not support all the parameter keywords
-supported by libpq, such as those which specify particular
-aspects of the TCP connection to PostgreSQL (e.g.
-keepalives_interval). The supported keywords are host, hostaddr,
-port, dbname, user, password, sslmode (partial support),
-connect_timeout, client_encoding and application_name."
+dbname=mydb'. We do not support all the parameter keywords supported by
+libpq, such as those which specify particular aspects of the TCP
+connection to PostgreSQL (e.g. keepalives_interval). The supported
+keywords are `host', `hostaddr', `port', `dbname', `user', `password',
+`sslmode' (partial support), `connect_timeout', `read_timeout',
+`client_encoding', `application_name' and `options'."
   (let* ((components (split-string connection-string "[ \t]" t))
          (params (cl-loop
                   for c in components
@@ -1049,7 +1093,9 @@ connect_timeout, client_encoding and application_name."
                                   pg-application-name))
          (client-encoding-str (cadr (assoc "client_encoding" params)))
          (client-encoding (and client-encoding-str
-                               (pg-normalize-encoding-name client-encoding-str))))
+                               (pg-normalize-encoding-name client-encoding-str)))
+         (options (or (cdr (assoc "options" params))
+                      (getenv "PGOPTIONS"))))
     ;; TODO: should handle sslcert, sslkey variables
     ;;
     ;; Some of the parameters are taken from our local variable bindings, but for other parameters we
@@ -1057,6 +1103,8 @@ connect_timeout, client_encoding and application_name."
     (let ((con (pg-connect dbname user password host port tls)))
       (when client-encoding
         (setf (pgcon-client-encoding con) client-encoding))
+      (when options
+        (pg-handle-connection-options con options))
       con)))
 
 (defun pg-parse-url (url)
@@ -1149,16 +1197,15 @@ the host component of the URL."
 (defun pg-connect/uri (uri)
   "Connect to PostgreSQL with parameters specified by URI.
 A connection URI is of the form
-`postgresql://[userspec@][hostspec][/dbname][?paramspec]'.
-`userspec' is of the form username:password. If hostspec is a
-string representing a local path (e.g.
-`%2Fvar%2Flib%2Fpostgresql' with percent-encoding) then it is
-interpreted as a Unix pathname used for a local Unix domain
-connection. We do not support all the paramspec keywords
-supported by libpq, such as those which specify particular
-aspects of the TCP connection to PostgreSQL (e.g.
-keepalives_interval). The supported paramspec keywords are
-sslmode (partial support) and application_name."
+`postgresql://[userspec@][hostspec][/dbname][?paramspec]'. `userspec' is
+of the form username:password. If hostspec is a string representing a
+local path (e.g. `%2Fvar%2Flib%2Fpostgresql' with percent-encoding) then
+it is interpreted as a Unix pathname used for a local Unix domain
+connection. We do not support all the paramspec keywords supported by
+libpq, such as those which specify particular aspects of the TCP
+connection to PostgreSQL (e.g. keepalives_interval). The supported
+paramspec keywords are `sslmode' (partial support), `connect_timeout',
+`read_timeout', `application_name', `client_encoding' and `options'."
   (let* ((parsed (pg-parse-url uri))
          (scheme (url-type parsed)))
     (unless (or (string= "postgres" scheme)
@@ -1210,7 +1257,9 @@ sslmode (partial support) and application_name."
                                     pg-application-name))
            (client-encoding-str (cadr (assoc "client_encoding" params)))
            (client-encoding (and client-encoding-str
-                                 (pg-normalize-encoding-name client-encoding-str))))
+                                 (pg-normalize-encoding-name client-encoding-str)))
+           (options (or (cadr (assoc "options" params))
+                        (getenv "PGOPTIONS"))))
       ;; If the host is empty or looks like an absolute pathname, connect over Unix-domain socket.
       (let ((con (if (or (zerop (length host))
                          (eq ?/ (aref host 0)))
@@ -1218,6 +1267,8 @@ sslmode (partial support) and application_name."
                    (pg-connect dbname user password host port tls))))
         (when client-encoding
           (setf (pgcon-client-encoding con) client-encoding))
+        (when options
+          (pg-handle-connection-options con options))
         con))))
 
 

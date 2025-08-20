@@ -582,6 +582,9 @@ test-agensgraph: test-pg.el
 
 
 # https://cedardb.com/docs/
+#
+# We are sometimes seeing strange "unrecognized startup messages" on connection establishment with
+# CedarDB (running in Docker), which disappear if we pause before sending data to the database.
 test-cedardb: test-pg.el
 	${DOCKER} run --rm --name cedardb \
            --pull=newer \
@@ -591,7 +594,7 @@ test-cedardb: test-pg.el
            -e CEDAR_DB=pgeltestdb \
            -d docker.io/cedardb/cedardb:latest
 	sleep 10
-	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:6778/pgeltestdb $(MAKE) test
+	PGURI="postgresql://pgeltestuser:pgeltest@127.0.0.1:6778/pgeltestdb?sslmode=require" $(MAKE) test
 	${DOCKER} stop cedardb
 
 

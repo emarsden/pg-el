@@ -200,6 +200,8 @@
                ,@body)))))
 
 
+;; These tests are written assuming that PostgreSQL is running on the standard port on localhost,
+;; with our pgeltestuser account set up.
 (defun pg-connection-tests ()
   (dolist (v (list "host=localhost port=5432 dbname=pgeltestdb user=pgeltestuser password=pgeltest"
                    "port=5432 dbname=pgeltestdb user=pgeltestuser password=pgeltest"
@@ -226,10 +228,49 @@
     (let ((con (pg-connect/uri v)))
       (should (process-live-p (pgcon-process con)))
       (pg-disconnect con)))
+  ;; Test that the application_name parameter is properly sent to PostgreSQL.
+  (let* ((uri "postgresql://pgeltestuser:pgeltest@localhost/pgeltestdb?application_name=testingtesting")
+         (con (pg-connect/uri uri)))
+    (should (process-live-p (pgcon-process con)))
+    (let* ((res (pg-exec con "SELECT current_setting('application_name')"))
+           (row (pg-result res :tuple 0)))
+      (should (string= (cl-first row) "testingtesting")))
+    (pg-disconnect con))
+  ;; Test the handling of the PGOPTIONS environment variable, and options URI/connection string param
+  (with-environment-variables (("PGOPTIONS" "--client_min_messages=DEBUG4"))
+    (let* ((con (pg-connect/uri "postgresql://pgeltestuser:pgeltest@localhost/pgeltestdb"))
+           (res (pg-exec con "SELECT current_setting('client_min_messages')"))
+           (row (pg-result res :tuple 0)))
+      (should (string-equal-ignore-case (cl-first row) "DEBUG4"))
+      (pg-disconnect con)))
+  (with-environment-variables (("PGOPTIONS" "-c client_min_messages=DEBUG4"))
+    (let* ((con (pg-connect/uri "postgresql://pgeltestuser:pgeltest@localhost/pgeltestdb"))
+           (res (pg-exec con "SELECT current_setting('client_min_messages')"))
+           (row (pg-result res :tuple 0)))
+      (should (string-equal-ignore-case (cl-first row) "DEBUG4"))
+      (pg-disconnect con)))
+  (let* ((con (pg-connect/uri "postgresql://pgeltestuser:pgeltest@localhost/pgeltestdb?options=--client_min_messages%3DDEBUG3"))
+         (res (pg-exec con "SELECT current_setting('client_min_messages')"))
+         (row (pg-result res :tuple 0)))
+    (should (string-equal-ignore-case (cl-first row) "DEBUG3"))
+    (pg-disconnect con))
+  (with-environment-variables (("PGOPTIONS" "-c search_path=foobles,fabbles -c client_min_messages=DEBUG4"))
+    (let* ((con (pg-connect/uri "postgresql://pgeltestuser:pgeltest@localhost/pgeltestdb"))
+           (res (pg-exec con "SELECT current_setting('client_min_messages'), current_setting('search_path')"))
+           (row (pg-result res :tuple 0)))
+      (should (string-equal-ignore-case (cl-first row) "DEBUG4"))
+      (should (string= "foobles,fabbles" (cl-second row)))
+      (pg-disconnect con)))
   (should (eql 'ok
-               (condition-case nil
-                   (pg-connect "nonexistent-db" "pgeltestuser" "pgeltest")
-                 (pg-invalid-catalog-name 'ok)))))
+               (let ((con nil))
+                 (unwind-protect
+                     (condition-case nil
+                         (setq con (pg-connect "nonexistent-db" "pgeltestuser" "pgeltest"))
+                       (pg-invalid-catalog-name 'ok))
+                   (when con
+                     (pg-disconnect con))))))
+
+
 
 (defun pg-run-tests (con)
   (let ((tests (list)))
