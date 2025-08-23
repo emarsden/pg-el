@@ -3101,13 +3101,18 @@ Return nil if the extension could not be set up."
       (pg-signal-type-error "Value %s out of range for CHAR type" v))
     (unibyte-string v)))
 
+;; The value may be either a single character, or a string (PostgreSQL uses the bpchar oid with a
+;; length field to represent char(n) fields).
 (pg-register-serializer "bpchar"
   (lambda (v encoding)
-    (unless (characterp v)
-      (pg-signal-type-error "Expecting a character, got %s" v))
-    (unless (<= 0 v 255)
-      (pg-signal-type-error "Value %s out of range for BPCHAR type" v))
-    (pg--serialize-text (unibyte-string v) encoding)))
+    (cond ((characterp v)
+           (unless (<= 0 v 255)
+             (pg-signal-type-error "Value %s out of range for BPCHAR type" v))
+           (pg--serialize-text (unibyte-string v) encoding))
+          ((stringp v)
+           (pg--serialize-text v encoding))
+          (t
+           (pg-signal-type-error "Expecting a character or a string, got %s" v)))))
 
 ;; see https://www.postgresql.org/docs/current/datatype-numeric.html
 (pg-register-serializer "int2"
