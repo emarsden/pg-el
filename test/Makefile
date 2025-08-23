@@ -440,12 +440,12 @@ test-timescale: test-pg.el
 test-citus: test-pg.el
 	${DOCKER} run --rm --name citus \
            --pull=newer \
-	   --publish 127.0.0.1:5409:5409 \
-	   -e POSTGRES_DB=pgeltestdb \
-	   -e POSTGRES_USER=pgeltestuser \
-	   -e POSTGRES_PASSWORD=pgeltest \
-	   -e PGPORT=5409 \
-	   -d docker.io/citusdata/citus:latest
+           --publish 127.0.0.1:5409:5409 \
+           -e POSTGRES_DB=pgeltestdb \
+           -e POSTGRES_USER=pgeltestuser \
+           -e POSTGRES_PASSWORD=pgeltest \
+           -e PGPORT=5409 \
+           -d docker.io/citusdata/citus:latest
 	sleep 5
 	PGEL_PORT=5409 $(MAKE) test
 	${DOCKER} stop citus
