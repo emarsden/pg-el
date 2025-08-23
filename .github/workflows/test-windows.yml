@@ -28,7 +28,7 @@ jobs:
         run: choco install --no-progress -y emacs
 
       - name: Check out repository code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Run tests
         run: make -C test test
