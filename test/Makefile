@@ -420,11 +420,11 @@ test-timescale: test-pg.el
 	${DOCKER} run --rm --name timescale \
            --pull=newer \
 	   --publish 5981:5981 \
-	   -e POSTGRES_DB=pgeltestdb \
-	   -e POSTGRES_USER=pgeltestuser \
-	   -e POSTGRES_PASSWORD=pgeltest \
-	   -e PGPORT=5981 \
-	   -d docker.io/timescale/timescaledb:latest-pg17
+           -e POSTGRES_DB=pgeltestdb \
+           -e POSTGRES_USER=pgeltestuser \
+           -e POSTGRES_PASSWORD=pgeltest \
+           -e PGPORT=5981 \
+           -d docker.io/timescale/timescaledb:latest-pg17
 	sleep 5
 	PGEL_PORT=5981 $(MAKE) test
 	${DOCKER} stop timescale
