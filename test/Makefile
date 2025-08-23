@@ -521,7 +521,7 @@ test-paradedb: test-pg.el
 test-vectorchord: test-pg.el
 	${DOCKER} run --rm --name vectorchord \
           --pull=newer \
-	  --publish 5778:5432 \
+          --publish 5778:5432 \
           -e POSTGRES_DB=pgeltestdb \
           -e POSTGRES_USER=pgeltestuser \
           -e POSTGRES_PASSWORD=pgeltest \
