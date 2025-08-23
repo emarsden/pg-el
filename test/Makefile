@@ -535,7 +535,7 @@ test-vectorchord: test-pg.el
 test-hydra: test-pg.el
 	${DOCKER} run --rm --name hydra \
           --pull=newer \
-	  --publish 5167:5167 \
+          --publish 5167:5167 \
           -e POSTGRES_DB=pgeltestdb \
           -e POSTGRESQL_PORT_NUMBER=5167 \
           -e PGPORT=5167 \
