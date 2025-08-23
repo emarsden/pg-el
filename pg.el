@@ -1506,7 +1506,7 @@ and the keyword WHAT should be one of
        (nth which tuples)))
     (:oid
      (let ((status (pgresult-status result)))
-       (if (string= "INSERT" (substring status 0 6))
+       (if (string-prefix-p "INSERT" status)
            (cl-parse-integer (substring status 7 (cl-position ? status :start 7)))
          (let ((msg (format "Only INSERT commands generate an oid: %s" status)))
            (signal 'pg-programming-error (list msg))))))
@@ -2457,6 +2457,7 @@ PostgreSQL and Emacs. CON should no longer be used."
                      ("xml" "142")
                      ("float4" "700")
                      ("float8" "701")
+                     ("bpchar" "1042")
                      ("varchar" "1043")
                      ("date" "1082")
                      ("time" "1083")
