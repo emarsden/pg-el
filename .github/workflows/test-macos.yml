@@ -28,7 +28,7 @@ jobs:
       - name: Install Emacs
         uses: purcell/setup-emacs@master
         with:
-           version: 29.4
+           version: 30.2
 
       - name: Check out repository code
         uses: actions/checkout@v5
