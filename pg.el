@@ -3707,7 +3707,7 @@ Queries the information schema."
   (let* ((default-schema (if (eq (pgcon-server-variant con) 'cratedb)
                              "postgres"
                            "public"))
-         (res (pg-exec con "SELECT table_schema,table_name FROM information_schema.tables
+         (res (pg-exec con "SELECT DISTINCT table_schema,table_name FROM information_schema.tables
                 WHERE table_schema NOT IN ('pg_catalog', 'information_schema') AND table_type='BASE TABLE'")))
     (cl-loop
      for tuple in (pg-result res :tuples)
