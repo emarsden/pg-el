@@ -10,6 +10,9 @@
   behaviour](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-PARAMKEYWORDS)). This
   is an alternative to using elisp code on `pg-new-connection-hook`.
 
+- Fixes for serializing `bpchar` values when they are used by PostgreSQL to represent `CHAR(N)`
+  fields (bug reported by @Tekki).
+
 
 ## [0.58] - 2025-08-13
 
