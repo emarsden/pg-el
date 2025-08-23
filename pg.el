@@ -3092,7 +3092,8 @@ Return nil if the extension could not be set up."
 (pg-register-textual-serializer "varbit" #'pg--serialize-boolvec)
 
 
-;; Here we assume that the value is a single character: if serializing a string, use the "text" datatype specifier.
+;; Here we assume that the value is a single character: if serializing a string, use the "text"
+;; datatype specifier.
 (pg-register-serializer "char"
   (lambda (v _encoding)
     (unless (characterp v)
