@@ -594,7 +594,7 @@ test-cedardb: test-pg.el
            -e CEDAR_DB=pgeltestdb \
            -d docker.io/cedardb/cedardb:latest
 	sleep 10
-	PGURI="postgresql://pgeltestuser:pgeltest@127.0.0.1:6778/pgeltestdb?sslmode=require" $(MAKE) test
+	PGURI="postgresql://pgeltestuser:pgeltest@127.0.0.1:6778/pgeltestdb" $(MAKE) test
 	${DOCKER} stop cedardb
 
 
@@ -678,10 +678,9 @@ test-pgbouncer: test-pg.el
 # https://github.com/postgresml/pgcat
 # https://github.com/postgresml/pgcat/blob/main/Dockerfile
 test-pgcat: test-pg.el
-	cp pgcat-config.toml /tmp
 	${DOCKER} run --rm --name pgcat \
            --pull=newer \
-	   -v /tmp/pgcat-config.toml:/etc/pgcat/pgcat.toml \
+	   -v $(shell pwd)/pgcat-config.toml:/etc/pgcat/pgcat.toml \
 	   --net host \
 	   -d ghcr.io/postgresml/pgcat:latest
 	sleep 5
@@ -703,6 +702,73 @@ test-pgdog: test-pg.el
 	sleep 5
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5469/pgeltestdb $(MAKE) test
 	${DOCKER} stop pgdog
+
+
+# Yandex Odyssey connection pooler
+#
+# https://github.com/yandex/odyssey
+# https://hub.docker.com/r/riftbit/yandex-odyssey
+test-odyssey: test-pg.el
+	${DOCKER} run --rm --name odyssey \
+           --pull=newer \
+           -v $(shell pwd)/setup-odyssey.conf:/etc/odyssey/odyssey.conf \
+           --net host \
+           -d docker.io/riftbit/yandex-odyssey:latest
+	sleep 5
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5633/pgeltestdb $(MAKE) test
+	${DOCKER} stop odyssey
+
+
+# https://supabase.github.io/supavisor/
+#
+# Using it in session mode because this is the only mode which supports prepared statements.
+#
+# We start up two PostgreSQL servers: one as a metadata store for the tenants, used by supavisor,
+# and one to be proxied by supavisor.
+test-supavisor: test-pg.el
+	${DOCKER} run --rm --name supametastore \
+           --pull=newer \
+           --publish 127.0.0.1:5488:5488 \
+           -e POSTGRESQL_PORT_NUMBER=5488 \
+           -e POSTGRESQL_DATABASE=metastore \
+           -e POSTGRESQL_USERNAME=metastore \
+           -e POSTGRESQL_PASSWORD=metastore \
+           -d docker.io/bitnami/postgresql:latest
+	sleep 5
+	curl -L https://raw.githubusercontent.com/supabase/supavisor/refs/heads/main/dev/postgres/00-setup.sql \
+        | psql postgresql://metastore:metastore@127.0.0.1:5488/metastore
+	${DOCKER} run --rm --name supavised \
+           --pull=newer \
+           --publish 127.0.0.1:5489:5489 \
+           -e POSTGRESQL_PORT_NUMBER=5489 \
+           -e POSTGRESQL_DATABASE=pgeltestdb \
+           -e POSTGRESQL_USERNAME=pgeltestuser \
+           -e POSTGRESQL_PASSWORD=pgeltest \
+           -d docker.io/bitnami/postgresql:latest
+	sleep 5
+	${DOCKER} run --rm --name supavisor \
+           --pull=newer \
+           --publish 127.0.0.1:5398:5432 \
+           --publish 127.0.0.1:4000:4000 \
+           -e PROXY_PORT_SESSION=5452 \
+           -e SECRET_KEY_BASE=`openssl rand -base64 48` \
+           -e VAULT_ENC_KEY=`openssl rand -base64 24` \
+           -e API_JWT_SECRET="foo" \
+           -e REGION=local \
+           -e ERL_AFLAGS="-proto_dist inet_tcp" \
+           -e DATABASE_URL=ecto://metastore:metastore@127.0.0.1:5488/metastore \
+           -d docker.io/supabase/supavisor:2.6.1
+	sleep 5
+	# create a tenant in supavisor (the supervised database)
+	curl -i -X PUT \
+  'http://127.0.0.1:4000/api/tenants/pgeltest' \
+  --header 'Accept: */*' \
+  --header 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.wLKpjVW9IRyDIg2Wsrg9_vQ1oo3fk1Hsdi7RmP33giY' \
+  --header 'Content-Type: application/json' \
+  --data-raw @supavisor-newtenant.json
+	PGURI=postgresql://pgeltestuser.pgeltest:pgeltest@127.0.0.1:5452/pgeltestdb $(MAKE) test
+	${DOCKER} stop supavisor
+
 
 
 # https://readyset.io/docs/get-started/install-rs/docker/postgres
