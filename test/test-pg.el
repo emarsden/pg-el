@@ -270,8 +270,6 @@
                    (when con
                      (pg-disconnect con)))))))
 
-
-
 (defun pg-run-tests (con)
   (let ((tests (list)))
     (cl-flet ((pgtest-add (fun &key skip-variants need-emacs)
@@ -306,7 +304,7 @@
       (pgtest-add #'pg-test-insert)
       (pgtest-add #'pg-test-edge-cases)
       (pgtest-add #'pg-test-procedures
-                  :skip-variants '(cratedb spanner risingwave materialize ydb xata questdb thenile vertica))
+                  :skip-variants '(cratedb spanner risingwave materialize ydb xata questdb thenile vertica greptimedb))
       ;; RisingWave is not able to parse a TZ value of "UTC-01:00" (POSIX format). QuestDB does not
       ;; support the timestamptz type. CedarDB des not support the timetz data type.
       (pgtest-add #'pg-test-date
@@ -1511,7 +1509,9 @@ bar$$"))))
       (should (eql 2 (scalar "SELECT nextval('test_seq_nocycle')")))
       (should (eql 'ok (condition-case nil
                            (scalar "SELECT nextval('test_seq_nocycle')")
-                         (pg-sequence-limit-exceeded 'ok))))
+                         (pg-sequence-limit-exceeded 'ok)
+                         ;; CedarDB reports pg-numeric-value-out-of-range
+                         (pg-numeric-value-out-of-range 'ok))))
       (pg-exec con "DROP SEQUENCE test_seq_nocycle")
       (pg-exec con "DROP SEQUENCE IF EXISTS test_seq_cycle")
       (pg-exec con "CREATE SEQUENCE test_seq_cycle START 1 INCREMENT 1 MAXVALUE 2 CYCLE")
