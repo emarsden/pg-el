@@ -854,7 +854,6 @@ Uses database DBNAME, user USER and password PASSWORD."
     (unless options
       (signal 'pg-user-error (list (format "Could not parse PGOPTIONS value %s" option-string))))
     (dolist (option options)
-      (message "££ Setting option %s to %s" (car option) (cdr option))
       (condition-case e
           (pg-exec-prepared con "SELECT set_config($1, $2, false)"
                             `((,(car option) . "text")
