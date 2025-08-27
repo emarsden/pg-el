@@ -1054,7 +1054,7 @@ opaque type). PASSWORD defaults to an empty string."
     ;; paramspec specified in the connection string or URI overrides the value of the environment
     ;; variable.
     (when-let* ((options (getenv "PGOPTIONS")))
-      (pg-handle-connection-options con options))))
+      (pg-handle-connection-options connection options))))
 
 
 ;; see https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-PARAMKEYWORDS
