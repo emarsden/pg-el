@@ -3009,14 +3009,17 @@ Uses text encoding ENCODING."
 (defun pg-vector-setup (con)
   "Prepare for use of VECTOR datatypes on PostgreSQL connection CON.
 Return nil if the extension could not be set up."
-  (when (condition-case nil
-            (pg-exec con "CREATE EXTENSION IF NOT EXISTS vector")
-          (pg-error nil))
-    (let* ((res (pg-exec con "SELECT oid FROM pg_catalog.pg_type WHERE typname='vector'"))
-           (oid (car (pg-result res :tuple 0)))
-           (parser (pg-lookup-parser "vector")))
-      (when parser
-        (puthash oid parser (pgcon-parser-by-oid con))))))
+  ;; Failure of this CREATE EXTENSION statement does not necessarily mean that the database variant
+  ;; does not support the vector datatype (cf. for example CedarDB).
+  (condition-case nil
+      (pg-exec con "CREATE EXTENSION IF NOT EXISTS vector")
+    (pg-error nil))
+  (let* ((res (pg-exec con "SELECT oid FROM pg_catalog.pg_type WHERE typname='vector'"))
+         (oid (car (pg-result res :tuple 0)))
+         (parser (pg-lookup-parser "vector")))
+    (and parser
+         oid
+         (puthash oid parser (pgcon-parser-by-oid con)))))
 
 ;; pgvector embeddings are sent by the database as strings, in the form "[1,2,3]" or ["0.015220831,
 ;; 0.039211094, 0.02235647]"
