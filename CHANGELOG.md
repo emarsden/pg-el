@@ -13,6 +13,11 @@
 - Fixes for serializing `bpchar` values when they are used by PostgreSQL to represent `CHAR(N)`
   fields (bug reported by @Tekki).
 
+- Change the mechanism used to send messages to PostgreSQL: instead of sending data incrementally we
+  accumulate data in a per-connection output buffer and send it in a chunk when `pg-flush` is
+  called. This should reduce the number of small fragmented network packets exchanged with the
+  PostgreSQL backend, and should improve performance.
+
 
 ## [0.58] - 2025-08-13
 

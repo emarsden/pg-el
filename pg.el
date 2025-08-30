@@ -217,9 +217,12 @@ SQL queries. To avoid this overhead on establishing a connection, remove
    (process
     :initarg :process
     :accessor pgcon-process)
+   (output-buffer
+    :initform nil
+    :accessor pgcon-output-buffer)
    (pid
     :type integer
-    :accessor pgcon-pid )
+    :accessor pgcon-pid)
    (server-version-major
     :accessor pgcon-server-version-major)
    ;; Holds something like 'postgresql, 'ydb, 'cratedb
@@ -320,9 +323,6 @@ Queries are logged to a buffer identified by `pgcon-query-log'."
 
 (cl-defstruct pgresult
   connection status attributes tuples portal (incomplete nil))
-
-(defsubst pg-flush (con)
-  (accept-process-output (pgcon-process con) 0.1))
 
 ;; this is ugly because lambda lists don't do destructuring
 (defmacro with-pg-connection (con connect-args &rest body)
@@ -918,9 +918,16 @@ you would like to run specific code in
     (with-current-buffer buf
       (set-process-coding-system process 'binary 'binary)
       (set-buffer-multibyte nil)
+      (buffer-disable-undo)
       (setq-local pgcon--position 1
                   pgcon--busy t
                   pgcon--notification-handlers (list)))
+    (setf (pgcon-output-buffer con)
+          (generate-new-buffer " *PostgreSQL output buffer*"))
+    (with-current-buffer (pgcon-output-buffer con)
+      (set-buffer-multibyte nil)
+      (buffer-disable-undo)
+      (setq-local pgcon--position 1))
     ;; Save connection info in the pgcon object, for possible later use by pg-cancel
     (setf (pgcon-connect-info con) (list :tcp host port dbname user password))
     ;; TLS connections to PostgreSQL are based on a custom STARTTLS-like connection upgrade
@@ -1347,7 +1354,8 @@ Return a result structure which can be decoded using `pg-result'."
         (signal 'pg-user-error (list "Query is too large")))
       (pg-send-char con ?Q)
       (pg-send-uint con (+ 4 len 1) 4)
-      (pg-send-string con encoded))
+      (pg-send-string con encoded)
+      (pg-flush con))
     (cl-loop for c = (pg-read-char con) do
        ;; (message "pg-exec message-type = %c" c)
        (cl-case c
@@ -1638,7 +1646,8 @@ Returns the prepared statement name (a string)."
       (pg-send-string con query/enc)
       (pg-send-uint con (length oids) 2)
       (dolist (oid oids)
-        (pg-send-uint con oid 4)))
+        (pg-send-uint con oid 4))
+      (pg-flush con))
     name))
 
 (cl-defun pg-bind (con statement-name typed-arguments &key (portal ""))
@@ -1698,6 +1707,7 @@ Uses PostgreSQL connection CON."
     ;; the number of result-column format codes: we use zero to indicate that result columns can use
     ;; text format
     (pg-send-uint con 0 2)
+    (pg-flush con)
     portal))
 
 (defun pg-describe-portal (con portal)
@@ -1706,7 +1716,8 @@ Uses PostgreSQL connection CON."
     (pg-send-char con ?D)
     (pg-send-uint con len 4)
     (pg-send-char con ?P)
-    (pg-send-string con portal)))
+    (pg-send-string con portal)
+    (pg-flush con)))
 
 (cl-defun pg-execute (con portal &key (max-rows 0))
   (let* ((ce (pgcon-client-encoding con))
@@ -1718,7 +1729,8 @@ Uses PostgreSQL connection CON."
     ;; the destination portal
     (pg-send-string con pn/encoded)
     ;; Maximum number of rows to return; zero means "no limit"
-    (pg-send-uint con max-rows 4)))
+    (pg-send-uint con max-rows 4)
+    (pg-flush con)))
 
 (cl-defun pg-fetch (con result &key (max-rows 0))
   "Fetch pending rows from portal in RESULT on database connection CON.
@@ -1740,6 +1752,7 @@ Returns a pgresult structure (see function `pg-result')."
            ;; send a Flush message
            (pg-send-char con ?H)
            (pg-send-uint con 4 4)))
+    (pg-flush con)
     ;; In the extended query protocol, the Execute phase is always terminated by the appearance of
     ;; exactly one of these messages: CommandComplete, EmptyQueryResponse (if the portal was created
     ;; from an empty query string), ErrorResponse, or PortalSuspended.
@@ -2345,10 +2358,17 @@ The cancellation request concerns the command requested over connection CON."
                       (setq-local pgcon--busy t)
                       (setq-local pgcon--notification-handlers (list)))
                     connection)))))
+    (setf (pgcon-output-buffer ccon)
+          (generate-new-buffer " *PostgreSQL output buffer*"))
+    (with-current-buffer (pgcon-output-buffer ccon)
+      (set-buffer-multibyte nil)
+      (buffer-disable-undo)
+      (setq-local pgcon--position 1))
     (pg-send-uint ccon 16 4)
     (pg-send-uint ccon 80877102 4)
     (pg-send-uint ccon (pgcon-pid con) 4)
     (pg-send-uint ccon (pgcon-secret con) 4)
+    (pg-flush ccon)
     (pg-disconnect ccon)))
 
 (defun pg-disconnect (con)
@@ -3311,7 +3331,8 @@ Authenticate as USER with PASSWORD."
          (hash (concat "md5" (md5 (concat pwdhash salt)))))
     (pg-send-char con ?p)
     (pg-send-uint con (+ 5 (length hash)) 4)
-    (pg-send-string con hash)))
+    (pg-send-string con hash)
+    (pg-flush con)))
 
 
 ;; TODO: implement stringprep for user names and passwords, as per RFC4013.
@@ -3393,6 +3414,7 @@ Authenticate as USER with PASSWORD."
     (pg-send-string con mechanism)
     (pg-send-uint con len-cf 4)
     (pg-send-octets con client-first)
+    (pg-flush con)
     (let ((c (pg-read-char con)))
       (cl-case c
         (?E
@@ -3437,6 +3459,7 @@ Authenticate as USER with PASSWORD."
              (pg-send-char con ?p)
              (pg-send-uint con (+ 4 (length client-final-msg)) 4)
              (pg-send-octets con client-final-msg)
+             (pg-flush con)
              (let ((c (pg-read-char con)))
                (cl-case c
                  (?E
@@ -4197,49 +4220,60 @@ that will be read."
              (apply #'concat extra)
              (if noninteractive "\033[0m" ""))))
 
+(defun pg-flush/immediate (con)
+  (accept-process-output (pgcon-process con) 0.1))
+
+(defun pg--buffered-send/immediate (con octets)
+  (process-send-string (pgcon-process con) octets))
+
+(defun pg-flush (con)
+  (accept-process-output (pgcon-process con) 0.1)
+  (with-current-buffer (pgcon-output-buffer con)
+    (process-send-string (pgcon-process con)
+                         (buffer-substring pgcon--position (point-max)))
+    (setq pgcon--position (point-max))))
+
+(defun pg--buffered-send (con octets)
+  (with-current-buffer (pgcon-output-buffer con)
+    (insert octets)))
+
 ;; higher order bits first / little endian
 (defun pg-send-uint (con num bytes)
   (declare (speed 3))
-  (let ((process (pgcon-process con))
-        (str (make-string bytes 0))
+  (let ((str (make-string bytes 0))
         (i (- bytes 1)))
     (while (>= i 0)
       (aset str i (% num 256))
       (setq num (floor num 256))
       (cl-decf i))
-    (process-send-string process str)))
+    (pg--buffered-send con str)))
 
 ;; big endian
 (defun pg-send-net-uint (con num bytes)
   (declare (speed 3))
-  (let ((process (pgcon-process con))
-        (str (make-string bytes 0)))
+  (let ((str (make-string bytes 0)))
     (dotimes (i bytes)
       (aset str i (% num 256))
       (setq num (floor num 256)))
-    (process-send-string process str)))
+    (pg--buffered-send con str)))
 
 (defun pg-send-char (con char)
-  (let ((process (pgcon-process con)))
-    (process-send-string process (char-to-string char))))
+  (pg--buffered-send con (char-to-string char)))
 
 (defun pg-send-string (con string)
-  (let ((process (pgcon-process con)))
-    (process-send-string process string)
-    ;; the null-terminator octet
-    (process-send-string process (unibyte-string 0))))
+  (pg--buffered-send con string)
+  ;; the null-terminator octet
+  (pg--buffered-send con (unibyte-string 0)))
 
 (defun pg-send-octets (con octets)
-  (let ((process (pgcon-process con)))
-    (process-send-string process octets)))
+  (pg--buffered-send con octets))
 
 (defun pg-send (con str &optional bytes)
   (declare (speed 3))
-  (let ((process (pgcon-process con))
-        (padding (if (and (numberp bytes) (> bytes (length str)))
+  (let ((padding (if (and (numberp bytes) (> bytes (length str)))
                      (make-string (- bytes (length str)) 0)
                    (make-string 0 0 nil))))
-    (process-send-string process (concat str padding))))
+    (pg--buffered-send con (concat str padding))))
 
 
 ;; Mostly for debugging use. Doesn't kill lo buffers.
