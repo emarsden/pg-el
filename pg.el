@@ -4237,6 +4237,11 @@ that will be read."
              (apply #'concat extra)
              (if noninteractive "\033[0m" ""))))
 
+;; The next two functions are replacements for pg-flush and pg--buffered-send if we wish to use an
+;; "immediate transmission" mode for our communication with the backend, rather than accumulating
+;; output in the output buffer and sending it batched on a call to pg-flush. Immediate mode (which
+;; was used prior to version 0.58 of this library) leads to greater packet fragmentation at the
+;; network level, and is less efficient.
 (defun pg-flush/immediate (con)
   (accept-process-output (pgcon-process con) 0.1))
 
