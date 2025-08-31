@@ -1009,6 +1009,12 @@ are passed to GnuTLS."
       (setq-local pgcon--position 1
                   pgcon--busy t
                   pgcon--notification-handlers (list)))
+    (setf (pgcon-output-buffer con)
+          (generate-new-buffer " *PostgreSQL output buffer*"))
+    (with-current-buffer (pgcon-output-buffer con)
+      (set-buffer-multibyte nil)
+      (buffer-disable-undo)
+      (setq-local pgcon--position 1))
     (condition-case err
         (apply #'gnutls-negotiate opts)
       (gnutls-error
@@ -1046,22 +1052,29 @@ opaque type). PASSWORD defaults to an empty string."
                                         :family 'local
                                         :service path
                                         :coding nil))
-         (connection (make-pgcon :dbname dbname :process process)))
+         (con (make-pgcon :dbname dbname :process process)))
     ;; Save connection info in the pgcon object, for possible later use by pg-cancel
-    (setf (pgcon-connect-info connection) (list :local path nil dbname user password))
+    (setf (pgcon-connect-info con) (list :local path nil dbname user password))
     (with-current-buffer buf
       (set-process-coding-system process 'binary 'binary)
       (set-buffer-multibyte nil)
       (setq-local pgcon--position 1
                   pgcon--busy t
                   pgcon--notification-handlers (list)))
-    (pg-do-startup connection dbname user password)
+    (setf (pgcon-output-buffer con)
+          (generate-new-buffer " *PostgreSQL output buffer*"))
+    (with-current-buffer (pgcon-output-buffer con)
+      (set-buffer-multibyte nil)
+      (buffer-disable-undo)
+      (setq-local pgcon--position 1))
+    (pg-do-startup con dbname user password)
     ;; We can't handle PGOPTIONS in pg-do-startup, because that contains code shared with
     ;; pg-connect/string and pg-connect/uri, and for these other functions any value for the options
     ;; paramspec specified in the connection string or URI overrides the value of the environment
     ;; variable.
     (when-let* ((options (getenv "PGOPTIONS")))
-      (pg-handle-connection-options connection options))))
+      (pg-handle-connection-options con options))
+    con))
 
 
 ;; see https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-PARAMKEYWORDS
