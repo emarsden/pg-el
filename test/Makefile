@@ -391,6 +391,23 @@ test-certificates: test-pg.el install-deps
 	${DOCKER} volume rm pgcerts
 
 
+test-stagex: test-pg.el
+	${DOCKER} run --rm --name pgsql \
+           --pull=newer \
+           --publish 5317:5317 \
+           -e TZ=UTC-7:00 \
+           -e LANG=en_US.UTF8 \
+           -e LC_CTYPE=en_US.UTF8 \
+           -e POSTGRES_DB=pgeltestdb \
+           -e POSTGRES_USER=pgeltestuser \
+           -e POSTGRES_PASSWORD=pgeltest \
+           -e PGPORT=5317 \
+           -d quay.io/stagex/user-postgresql
+	sleep 5
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5317/pgeltestdb $(MAKE) test
+	${DOCKER} stop pgsql
+
+
 # Supabase (https://supabase.com) provide hosted PostgreSQL instances with convenient web
 # dashboards, management APIs and integrations with authentication libraries. They have a free tier.
 # As of 2023-08, they are running PostgreSQL 15.1 on Aarch64. As of 2024-09, their TLS setup is not
@@ -594,7 +611,7 @@ test-cedardb: test-pg.el
            -e CEDAR_DB=pgeltestdb \
            -d docker.io/cedardb/cedardb:latest
 	sleep 10
-	PGURI="postgresql://pgeltestuser:pgeltest@127.0.0.1:6778/pgeltestdb" $(MAKE) test
+	PGURI="postgresql://pgeltestuser:pgeltest@127.0.0.1:6778/pgeltestdb?sslmode=disable" $(MAKE) test
 	${DOCKER} stop cedardb
 
 
@@ -658,6 +675,8 @@ test-babelfish: test-pg.el
 # such as LISTEN works).
 #
 # https://github.com/edoburu/docker-pgbouncer
+#
+# TODO: need to move away from the unmaintained bitnami Docker images
 test-pgbouncer: test-pg.el
 	${DOCKER} run --rm --name pgbouncer \
 	  --net host \
@@ -678,6 +697,14 @@ test-pgbouncer: test-pg.el
 # https://github.com/postgresml/pgcat
 # https://github.com/postgresml/pgcat/blob/main/Dockerfile
 test-pgcat: test-pg.el
+	${DOCKER} run --rm --name pgsql \
+           --publish 5437:5437 \
+           -e POSTGRES_DB=pgeltestdb \
+           -e POSTGRES_USER=pgeltestuser \
+           -e POSTGRES_PASSWORD=pgeltest \
+           -e PGPORT=5437 \
+           -d docker.io/library/postgres:17-alpine
+	sleep 5
 	${DOCKER} run --rm --name pgcat \
            --pull=newer \
 	   -v $(shell pwd)/pgcat-config.toml:/etc/pgcat/pgcat.toml \
@@ -686,6 +713,7 @@ test-pgcat: test-pg.el
 	sleep 5
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:6432/pgeltestdb?read_timeout=1000 $(MAKE) test
 	${DOCKER} stop pgcat
+	${DOCKER} stop pgsql
 
 
 # pgdog bouncer/sharding middleware (same developer as pgcat)
@@ -1293,6 +1321,7 @@ test-risinglight: test-pg.el
 # protocol).
 test-chrondb: test-pg.el
 	PGURI=postgresql://chrondb@127.0.0.1:5432/chrondb $(MAKE) test
+
 
 
 # Create and populate a new database with information concerning works by Shakespeare.
