@@ -4249,7 +4249,6 @@ that will be read."
   (process-send-string (pgcon-process con) octets))
 
 (defun pg-flush (con)
-  (accept-process-output (pgcon-process con) 0.1)
   (with-current-buffer (pgcon-output-buffer con)
     (process-send-string (pgcon-process con)
                          (buffer-substring pgcon--position (point-max)))
