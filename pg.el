@@ -2083,7 +2083,8 @@ can be decoded using `pg-result'."
             ;; a CopyData message with the encoded data
             (pg-send-char con ?d)
             (pg-send-uint con (+ 4 (length encoded)) 4)
-            (pg-send-octets con encoded)))))
+            (pg-send-octets con encoded)
+            (pg-flush con)))))
     ;; send a CopyDone message
     (pg-send-char con ?c)
     (pg-send-uint con 4 4)
