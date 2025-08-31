@@ -20,8 +20,7 @@ browsing/editing interface to PostgreSQL in Emacs, you may be interested in
 This library has support for:
 
 - **SCRAM-SHA-256 authentication** (the default authentication method since PostgreSQL version 14),
-  as well as MD5 and password authentication. There is currently no support for authentication
-  using client-side certificates.
+  as well as MD5 and password authentication. There is currently no support for GSSAPI authentication.
 
 - Encrypted (**TLS**) connections with the PostgreSQL database, if your Emacs has been built with
   GnuTLS support. This includes support for authentication using client certificates.
@@ -43,7 +42,7 @@ This library has support for:
 - Connections over TCP or (on Unix machines) a local Unix socket.
 
 
-Tested **PostgreSQL versions**: The code has been tested with versions 18beta3, 17.5, 16.4, 15.4,
+Tested **PostgreSQL versions**: The code has been tested with versions 18beta3, 17.6, 16.5, 15.4,
 13.8, 11.17, and 10.22 on Linux. It is also tested via GitHub actions on MacOS and Windows. This
 library also works, more or less, against other “PostgreSQL-compatible” databases. There are four
 main points where this compatibility may be problematic:
@@ -116,7 +115,7 @@ The following PostgreSQL-compatible databases or extensions have been tested:
 
 - [PolarDB for PostgreSQL](https://github.com/ApsaraDB/PolarDB-for-PostgreSQL) is free software
   (Apache 2 licence) developed by Alibaba Cloud, also available as a commercial hosted service with
-  a proprietary distributed storage architecture. It works perfectly with pg-el (last tested 2025-07
+  a proprietary distributed storage architecture. It works perfectly with pg-el (last tested 2025-08
   with version 15.13).
 
 - [Xata](https://xata.io/) “serverless PostgreSQL” has many limitations including lack of support
@@ -156,11 +155,11 @@ The following PostgreSQL-compatible databases or extensions have been tested:
 - The [Materialize](https://materialize.com/) operational database (a proprietary differential
   dataflow database) has many limitations in its PostgreSQL compatibility: no support for primary
   keys, unique constraints, check constraints, for the `bit` type for example. It works with these
-  limitations with pg-el (last tested 2025-08 with Materialize v0.154).
+  limitations with pg-el (last tested 2025-08 with Materialize v0.155).
 
 - The [CedarDB](https://cedardb.com/) database spun off from the Umbra research database developed
   at the University of Munich is fairly PostgreSQL compatible and works well with pg-el. Last tested
-  2025-08 with CedarDB version v2025-08-07.
+  2025-08 with CedarDB version v2025-08-27.
 
 - The [QuestDB](https://questdb.io/) time series database (Apache licensed) has very limited
   PostgreSQL support, and does not support the `integer` type for example. Last tested 2025-08 with
