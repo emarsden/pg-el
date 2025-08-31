@@ -2392,11 +2392,14 @@ It will release memory used to buffer the data transfered between
 PostgreSQL and Emacs. CON should no longer be used."
   ;; send a Terminate message
   (pg-connection-set-busy con t)
-  (pg-send-char con ?X)
-  (pg-send-uint con 4 4)
-  (pg-flush con)
-  (delete-process (pgcon-process con))
-  (kill-buffer (process-buffer (pgcon-process con)))
+  (ignore-errors
+    (pg-send-char con ?X)
+    (pg-send-uint con 4 4)
+    (pg-flush con))
+  (let ((process (pgcon-process con)))
+    (delete-process process)
+    (kill-buffer (process-buffer process))
+    (kill-buffer (pgcon-output-buffer con)))
   (when (pgcon-query-log con)
     (kill-buffer (pgcon-query-log con)))
   (clrhash (pgcon-parser-by-oid con))
