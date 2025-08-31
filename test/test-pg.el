@@ -457,10 +457,10 @@
 ;; Run tests over local Unix socket connection to backend
 (defun pg-test-local ()
   (let ((pg-parameter-change-functions (cons #'pg-test-note-param-change pg-parameter-change-functions)))
-    (with-pgtest-connection-local conn
+    (with-pgtest-connection-local con
        (message "Running pg.el tests in %s against backend %s"
-                (version) (pg-backend-version conn))
-       (pg-run-tests conn))))
+                (version) (pg-backend-version con))
+       (pg-run-tests con))))
 
 ;; Simple connect and list tables test on a public RNAcentral PostgreSQL server hosted at ebi.ac.uk, see
 ;;  https://rnacentral.org/help/public-database.
@@ -559,7 +559,8 @@
     (should (eql 1.0e+INF (scalar "SELECT $1::float8" '((1.0e+INF . "numeric")))))
     (should (eql 0.0e+NaN (scalar "SELECT $1::float4" '((0.0e+NaN . "float4")))))
     (should (eql 0.0e+NaN (scalar "SELECT $1::float8" '((0.0e+NaN . "float8")))))
-    (should (eql 0.0e+NaN (scalar "SELECT $1::numeric" '((0.0e+NaN . "numeric")))))
+    (unless (member (pgcon-server-variant con) '(cedardb))
+      (should (eql 0.0e+NaN (scalar "SELECT $1::numeric" '((0.0e+NaN . "numeric"))))))
     ;; CrateDB does not support the BYTEA type.
     (unless (member (pgcon-server-variant con) '(cratedb))
       (should (equal (byte-to-string 0)
@@ -1967,6 +1968,8 @@ bar$$"))))
 (defun pg-test-vector (con)
   (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0))))
     (pg-vector-setup con)
+    ;; We test for the presence of vector functionality because some variants like CedarDB implement
+    ;; the vector type, but trigger an error when executing "CREATE EXTENSION vector".
     (unless (zerop (scalar "SELECT COUNT(*) FROM pg_type WHERE typname='vector'"))
       (message "Testing pgvector support")
       (let ((v (scalar "SELECT '[4,5,6]'::vector")))
