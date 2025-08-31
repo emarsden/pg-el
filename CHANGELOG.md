@@ -1,7 +1,7 @@
 # Changelog
 
 
-## [0.59] - Unreleased
+## [0.59] - 2025-08-31
 
 - Add detection code and workarounds for the Yellowbrick PostgreSQL variant.
 
