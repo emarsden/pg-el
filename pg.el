@@ -2997,11 +2997,33 @@ Uses text encoding ENCODING."
 (pg-register-parser "timestamptz" #'pg-isodate-with-timezone-parser)
 (pg-register-parser "datetime" #'pg-isodate-with-timezone-parser)
 
+;; FIXME TODO _timestamp _timestamptz _datetime
+
 (pg-register-parser "time" #'pg-text-parser)     ; preparsed "15:32:45"
 (pg-register-parser "timetz" #'pg-text-parser)
 (pg-register-parser "reltime" #'pg-text-parser)     ; don't know how to parse these
 (pg-register-parser "timespan" #'pg-text-parser)
 (pg-register-parser "tinterval" #'pg-text-parser)
+
+;; This is usable for time, timespan etc. types that we currently parse as strings.
+(defun pg-timearr-parser (str _encoding)
+  "Parse PostgreSQL value STR as an array of time or date values."
+  (let ((len (length str)))
+    (unless (and (eql (aref str 0) ?{)
+                 (eql (aref str (1- len)) ?}))
+      (signal 'pg-protocol-error (list "Unexpected format for array")))
+    (let ((maybe-items (cl-subseq str 1 (- len 1))))
+      (if (zerop (length maybe-items))
+          (vector)
+        (let ((items (split-string maybe-items ",")))
+          (apply #'vector (mapcar (lambda (x) (pg-text-parser x nil)) items)))))))
+
+(pg-register-parser "_time" #'pg-timearr-parser)
+(pg-register-parser "_timetz" 'pg-timearr-parser)
+(pg-register-parser "_reltime" 'pg-timearr-parser)
+(pg-register-parser "_timespan" 'pg-timearr-parser)
+(pg-register-parser "_tinterval" 'pg-timearr-parser)
+
 
 ;; A tsvector is a type used by PostgreSQL to support full-text search in documents.
 ;;
