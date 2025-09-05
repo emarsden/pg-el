@@ -1262,7 +1262,12 @@ bar$$"))))
       (should (equal (scalar "select '05:00'::time") "05:00:00"))
       (should (equal (scalar "SELECT '04:15:31.445+05'::timetz") "04:15:31.445+05"))
       (should (equal (scalar "SELECT '2001-02-03 04:05:06'::timestamp")
-                     (encode-time (list 6 5 4 3 2 2001 nil -1 nil)))))))
+                     (encode-time (list 6 5 4 3 2 2001 nil -1 nil))))
+      (should (equal (scalar "SELECT '{2022-10-01,2020-05-06,1975-02-15}'::date[]")
+                     (vector (encode-time (list 0 0 0 1 10 2022))
+                             (encode-time (list 0 0 0 6 5 2020))
+                             (encode-time (list 0 0 0 15 2 1975))))))))
+
 
 (defun pg-test-numeric (con)
   (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0))))
@@ -2545,6 +2550,7 @@ bar$$"))))
          (res (pg-exec con (format "SELECT data from pgeltestr WHERE id=%s" id))))
     (should (string= (car (pg-result res :tuple 0)) "Foobles")))
   (pg-exec con "DROP TABLE pgeltestr"))
+
 
 ;; Test our support for handling ParameterStatus messages, via the pg-parameter-change-functions
 ;; variable. When we change the session timezone, the backend should send us a ParameterStatus
