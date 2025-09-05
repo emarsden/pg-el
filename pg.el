@@ -2938,6 +2938,21 @@ Uses text encoding ENCODING."
 
 (pg-register-parser "date" #'pg-date-parser)
 
+(defun pg-datearr-parser (str _encoding)
+  "Parse PostgreSQL value STR as an array of date values."
+  (let ((len (length str)))
+    (unless (and (eql (aref str 0) ?{)
+                 (eql (aref str (1- len)) ?}))
+      (signal 'pg-protocol-error (list "Unexpected format for array")))
+    (let ((maybe-items (cl-subseq str 1 (- len 1))))
+      (if (zerop (length maybe-items))
+          (vector)
+        (let ((items (split-string maybe-items ",")))
+          (apply #'vector (mapcar (lambda (x) (pg-date-parser x nil)) items)))))))
+
+(pg-register-parser "_date" #'pg-datearr-parser)
+
+
 (defconst pg--ISODATE_REGEX
   (concat "^\\([0-9]+\\)-\\([0-9][0-9]\\)-\\([0-9][0-9]\\)" ; Y-M-D
           "\\([ T]\\)" ; delim
