@@ -3091,9 +3091,10 @@ Return nil if the extension could not be set up."
   (let* ((res (pg-exec con "SELECT oid FROM pg_catalog.pg_type WHERE typname='vector'"))
          (oid (car (pg-result res :tuple 0)))
          (parser (pg-lookup-parser "vector")))
-    (and parser
-         oid
-         (puthash oid parser (pgcon-parser-by-oid con)))))
+    (when (and parser oid)
+      (puthash "vector" oid (pgcon-oid-by-typname con))
+      (puthash oid "vector" (pgcon-typname-by-oid con))
+      (puthash oid parser (pgcon-parser-by-oid con)))))
 
 ;; pgvector embeddings are sent by the database as strings, in the form "[1,2,3]" or ["0.015220831,
 ;; 0.039211094, 0.02235647]"
