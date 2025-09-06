@@ -1208,7 +1208,7 @@ the host component of the URL."
           (setq save-pos (point))
           (if (string= "data" scheme)
 	      ;; For the "data" URI scheme, all the rest is the FILE.
-	      (setq file (buffer-substring save-pos (point-max)))
+	      (setq file (buffer-substring-no-properties save-pos (point-max)))
 	    ;; For hysterical raisins, our data structure returns the
 	    ;; path and query components together in one slot.
 	    ;; 3.3. Path
@@ -1216,12 +1216,12 @@ the host component of the URL."
 	    ;; 3.4. Query
 	    (when (looking-at "\\?")
 	      (skip-chars-forward "^#"))
-	    (setq file (buffer-substring save-pos (point)))
+	    (setq file (buffer-substring-no-properties save-pos (point)))
 	    ;; 3.5 Fragment
 	    (when (looking-at "#")
 	      (let ((opoint (point)))
 		(forward-char 1)
-                (setq fragment (buffer-substring (point) (point-max)))
+                (setq fragment (buffer-substring-no-properties (point) (point-max)))
 		(delete-region opoint (point-max)))))
 
           (if (and host (string-match "%[0-9][0-9]" host))
@@ -4180,7 +4180,7 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
         (when (> end (point-max))
           (let ((msg (format "Timeout in pg-read-chars reading from %s" con)))
             (signal 'pg-timeout (list msg))))
-        (prog1 (buffer-substring start end)
+        (prog1 (buffer-substring-no-properties start end)
           (setq-local pgcon--position end))))))
 
 (cl-defun pg-read-string (con &optional (max-bytes 1048576))
@@ -4292,8 +4292,9 @@ that will be read."
 (defun pg-flush (con)
   (with-current-buffer (pgcon-output-buffer con)
     (process-send-string (pgcon-process con)
-                         (buffer-substring pgcon--position (point-max)))
-    (setq pgcon--position (point-max))))
+                         (buffer-substring-no-properties pgcon--position (point-max)))
+    (setq pgcon--position (point-max)))
+  (accept-process-output))
 
 (defun pg--buffered-send (con octets)
   (with-current-buffer (pgcon-output-buffer con)
