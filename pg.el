@@ -2413,6 +2413,9 @@ It will release memory used to buffer the data transfered between
 PostgreSQL and Emacs. CON should no longer be used."
   ;; send a Terminate message
   (pg-connection-set-busy con t)
+  ;; If we use the immediate-output mode of sending data to PostgreSQL (instead of the buffer-output
+  ;; mode), PostgreSQL can close the network connection before we have finished flushing the output.
+  ;; This triggers an Emacs error, which we don't want to propagate to the caller here.
   (ignore-errors
     (pg-send-char con ?X)
     (pg-send-uint con 4 4)
