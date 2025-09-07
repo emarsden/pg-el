@@ -1,6 +1,14 @@
 # Changelog
 
 
+## [0.60] - Unreleased
+
+- Add support for version 3.2 of the wire protocol, introduced in PostgreSQL v18. The only change
+  with respect to the previously supported version 3.0 (which will still be used for older
+  PostgreSQL version, or variants that support the older protocol) is the length of the key used to
+  authenticate requests to cancel an ongoing query.
+
+
 ## [0.59] - 2025-08-31
 
 - Add detection code and workarounds for the Yellowbrick PostgreSQL variant.

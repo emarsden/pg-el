@@ -225,11 +225,18 @@ SQL queries. To avoid this overhead on establishing a connection, remove
     :accessor pgcon-pid)
    (server-version-major
     :accessor pgcon-server-version-major)
+   (minor-protocol-version
+    :type integer
+    :initform 2
+    :accessor pgcon-minor-protocol-version)
    ;; Holds something like 'postgresql, 'ydb, 'cratedb
    (server-variant
     :type symbol
     :initform 'postgresql
     :accessor pgcon-server-variant)
+   ;; The query cancellation keys that are sent to us by the backend when we establish a connection.
+   ;; They are 32 bits in length when using protocol version 3.0, and a variable length up to 256
+   ;; bits when using protocol version 3.2 (supported by PostgreSQL v18 onwards).
    (secret
     :accessor pgcon-secret)
    (client-encoding
@@ -689,23 +696,33 @@ Uses database DBNAME, user USER and password PASSWORD."
      (?E
       (pg-handle-error-response con "after StartupMessage"))
 
-     ;; NegotiateProtocolVersion
+     ;; NegotiateProtocolVersion. Note that this message will not be sent by PostgreSQL if the
+     ;; backend implements exactly the requested protocol version.
      (?v
-      (let ((_msglen (pg-read-net-int con 4))
-            (protocol-supported (pg-read-net-int con 4))
-            (unrec-options (pg-read-net-int con 4))
-            (unrec (list)))
+      (let* ((_msglen (pg-read-net-int con 4))
+             (protocol-supported (pg-read-net-int con 4))
+             (unrec-option-count (pg-read-net-int con 4))
+             (protocol-major-supported (ash protocol-supported -16))
+             (protocol-minor-supported (mod protocol-supported (ash 1 16))))
+        (unless (eql protocol-major-supported 3)
+          (let ((msg (format "PostgreSQL backend supports protocol major version %d, we only support version 3"
+                             protocol-major-supported)))
+            (signal 'pg-protocol-error (list msg))))
+        ;; We support a minor version <= 2. If the backend only supports protocol version 3.0 (minor
+        ;; version = 0), then we set this to 0 to make sure we talk a version that the backend
+        ;; supports. The only message format that changes between version 3.0 and 3.2 is the
+        ;; BackendKeyData, which we can handle in the same manner in both protocol versions, but we
+        ;; retain this information on the connection object nonetheless.
+        (setf (pgcon-minor-protocol-version con) (min protocol-minor-supported 2))
         ;; read the list of protocol options not supported by the server
-        (dotimes (_i unrec-options)
-          (push (pg-read-string con 4096) unrec))
-        (let ((msg (format "Server only supports protocol minor version <= %s" protocol-supported)))
-          (signal 'pg-protocol-error (list msg)))))
+        (dotimes (_ unrec-option-count)
+          (warn "PostgreSQL backend does not support the option %s" (pg-read-string con 4096)))))
 
      ;; BackendKeyData
      (?K
-      (let ((_msglen (pg-read-net-int con 4)))
+      (let ((msglen (pg-read-net-int con 4)))
         (setf (pgcon-pid con) (pg-read-net-int con 4))
-        (setf (pgcon-secret con) (pg-read-net-int con 4))))
+        (setf (pgcon-secret con) (pg-read-chars con (- msglen 8)))))
 
      ;; NoticeResponse
      (?N
@@ -2339,6 +2356,8 @@ The cancellation request concerns the command requested over connection CON."
   ;; send the CancelRequest message, rather than the StartupMessage message that
   ;; would ordinarily be sent across a new connection. The server will process
   ;; this request and then close the connection.
+  ;;
+  ;; We could instead call the function pg_cancel_backend(pid).
   (let* ((ci (pgcon-connect-info con))
          (ccon (cl-case (car ci)
                  ;; :tcp host port dbname user password
@@ -2381,7 +2400,9 @@ The cancellation request concerns the command requested over connection CON."
     (pg-send-uint ccon 16 4)
     (pg-send-uint ccon 80877102 4)
     (pg-send-uint ccon (pgcon-pid con) 4)
-    (pg-send-uint ccon (pgcon-secret con) 4)
+    ;; From PostgreSQL v18 and version 3.2 of the wire protocol, the "cancel request keys" can
+    ;; be variable in length, up to 256 bits. Previously, they were only 32 bits in length.
+    (pg-send-octets ccon (pgcon-secret con))
     (pg-flush ccon)
     (pg-disconnect ccon)))
 
