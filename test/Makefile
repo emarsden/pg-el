@@ -1100,6 +1100,25 @@ test-polardb: test-pg.el
 	${DOCKER} stop polardb
 
 
+# Huawai openGauss fork of PostgreSQL
+#
+# https://hub.docker.com/r/opengauss/opengauss
+test-opengauss: test-pg.el
+	${DOCKER} run --rm --name opengauss \
+           --pull=newer \
+           --publish 127.0.0.1:5488:5488 \
+           -e TZ=UTC-7:00 \
+           -e LANG=en_US.UTF8 \
+           -e LC_CTYPE=en_US.UTF8 \
+           -e GS_PASSWORD="PGelt44^" \
+           -e GS_USERNAME=pgeltestuser \
+           -e GS_PORT=5488 \
+           -d docker.io/opengauss/opengauss:7.0.0-RC2.B015
+	sleep 20
+	PGURI=postgresql://pgeltestuser:PGelt44^@127.0.0.1:5488/postgres $(MAKE) test
+	${DOCKER} stop opengauss
+
+
 # Very limited PostgreSQL support: there is no pg_type table so we can't retrieve information
 # regarding the OID of builtin types. We have to be careful during the initialization sequence not
 # to send the query "SET datestyle = 'ISO'", which would fail and cause the network connection to be
@@ -1322,6 +1341,11 @@ test-risinglight: test-pg.el
 test-chrondb: test-pg.el
 	PGURI=postgresql://chrondb@127.0.0.1:5432/chrondb $(MAKE) test
 
+
+# https://github.com/erans/pgsqlite?tab=readme-ov-file
+test-pgsqlite: test-pg.el
+	pgsqlite --port 7778 --in-memory &
+	PGURI=postgresql://pgeltestuser@127.0.0.1:7778/pgeltestdb $(MAKE) test
 
 
 # Create and populate a new database with information concerning works by Shakespeare.

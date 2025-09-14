@@ -518,6 +518,10 @@ Uses connection CON. The variant can be accessed by `pgcon-server-variant'."
               (setf (pgcon-server-variant con) 'cedardb))
              ((cl-search "Yellowbrick Database" version)
               (setf (pgcon-server-variant con) 'yellowbrick))
+             ((cl-search "pgsqlite " version)
+              (setf (pgcon-server-variant con) 'pgsqlite))
+             ((cl-search "openGauss" version)
+              (setf (pgcon-server-variant con) 'opengauss))
              ;; TODO: find a better detection method for ArcadeDB
              ((string-suffix-p "/main)" version)
               (setf (pgcon-server-variant con) 'arcadedb))
@@ -532,17 +536,19 @@ Uses connection CON. The variant can be accessed by `pgcon-server-variant'."
              ;; pg_settings table.
              ;;
              ;;   "SELECT current_setting('omni_disk_cache_enabled', true)"
-             ((let* ((res (pg-exec-prepared con "SELECT setting FROM pg_catalog.pg_settings WHERE name=$1"
-                                            `(("omni_disk_cache_enabled" . "text"))))
-                     (rows (pg-result res :tuples)))
+             ((let* ((res (ignore-errors
+                            (pg-exec-prepared con "SELECT setting FROM pg_catalog.pg_settings WHERE name=$1"
+                                              `(("omni_disk_cache_enabled" . "text")))))
+                     (rows (and res (pg-result res :tuples))))
                 (unless (null rows)
                   (setf (pgcon-server-variant con) 'alloydb))))
              ;; TODO: we could also detect CitusDB in the same way by checking for citus.cluster_name
              ;; setting for example, but in practice it is very PostgreSQL compatible so identifying
              ;; it as a variant doesn't seem mandatory.
              ((let* ((sql "SELECT 1 FROM information_schema.schemata WHERE schema_name=$1")
-                     (res (pg-exec-prepared con sql '(("_timescaledb_catalog" . "text")))))
-                (pg-result res :tuples))
+                     (res (ignore-errors
+                            (pg-exec-prepared con sql '(("_timescaledb_catalog" . "text"))))))
+                (and res (pg-result res :tuples)))
               (setf (pgcon-server-variant con) 'timescaledb)))))
     ('ydb
      (pg-exec con "SET search_path = 'public'")))
@@ -3799,7 +3805,7 @@ Uses database connection CON."
     ;; QuestDB doesn't really support schemas.
     ('questdb (list "sys" "public"))
     ('arcadedb nil)
-    ((or 'risingwave 'octodb)
+    ((or 'risingwave 'octodb 'pgsqlite)
      (let ((res (pg-exec con "SELECT DISTINCT table_schema FROM information_schema.tables")))
        (apply #'append (pg-result res :tuples))))
     ('vertica

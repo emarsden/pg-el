@@ -8,6 +8,8 @@
   PostgreSQL version, or variants that support the older protocol) is the length of the key used to
   authenticate requests to cancel an ongoing query.
 
+- Add detection code and workarounds for the PostgreSQL variants OpenGauss (by Huawei) and pgsqlite.
+
 
 ## [0.59] - 2025-08-31
 
