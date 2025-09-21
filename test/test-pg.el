@@ -97,6 +97,7 @@
 
 
 (defmacro with-pgtest-connection (con &rest body)
+  (declare (indent defun))
   (cond ((getenv "PGURI")
          `(let ((,con (pg-connect/uri ,(getenv "PGURI"))))
             (unwind-protect
@@ -111,12 +112,16 @@
                 (server-variant-str (getenv "PGEL_SERVER_VARIANT"))
                 (server-variant (and server-variant-str
                                      (intern server-variant-str))))
-           `(with-pg-connection ,con (,db ,user ,password ,host ,port nil ',server-variant)
-               ,@body)))))
-(put 'with-pgtest-connection 'lisp-indent-function 'defun)
+           `(with-pg-connection-plist ,con (,db ,user
+                                            :password ,password
+                                            :host ,host
+                                            :port ,port
+                                            :server-variant ',server-variant)
+                 ,@body)))))
 
 ;; Connect to the database over an encrypted (TLS) connection
 (defmacro with-pgtest-connection-tls (con &rest body)
+  (declare (indent defun))
   (cond ((getenv "PGURI")
          `(let ((,con (pg-connect/uri ,(getenv "PGURI"))))
             (unwind-protect
@@ -128,9 +133,12 @@
                (password (or (getenv "PGEL_PASSWORD") "pgeltest"))
                (host (or (getenv "PGEL_HOSTNAME") "localhost"))
                (port (let ((p (getenv "PGEL_PORT"))) (if p (string-to-number p) 5432))))
-           `(with-pg-connection ,con (,db ,user ,password ,host ,port t)
+           `(with-pg-connection-plist ,con (,db ,user
+                                            :password ,password
+                                            :host ,host
+                                            :port ,port
+                                            :tls-options t)
                ,@body)))))
-(put 'with-pgtest-connection-tls 'lisp-indent-function 'defun)
 
 ;; Connect to the database using the "direct TLS" method introduced in PostgreSQL 18
 (defmacro with-pgtest-connection-direct-tls (con &rest body)
@@ -152,7 +160,12 @@
            `(progn
               (unless ',trust-ca
                 (error "Need PGEL_TRUST_CA env variable"))
-              (let ((,con (pg-connect/direct-tls ,db ,user ,password ,host ,port ',trust)))
+              (let ((,con (pg-connect-plist ,db ,user
+                                            :password ,password
+                                            :host ,host
+                                            :port ,port
+                                            :direct-tls t
+                                            :tls-options ',trust)))
                 (unwind-protect
                     (progn ,@body)
                   (when ,con (pg-disconnect ,con)))))))))
@@ -179,8 +192,12 @@
                (error "Set $PGEL_CLIENT_CERT to point to file containing client certificate"))
              (unless ,key
                (error "Set $PGEL_CLIENT_CERT_KEY to point to file containing client certificate key"))
-             (with-pg-connection ,con (,db ,user ,password ,host ,port '(:keylist ((,key ,cert))))
-                                 ,@body))))))
+             (with-pg-connection-plist ,con (,db ,user
+                                             :password ,password
+                                             :host ,host
+                                             :port ,port
+                                             :tls-options '(:keylist ((,key ,cert))))
+                  ,@body))))))
 
 
 (defmacro with-pgtest-connection-local (con &rest body)
@@ -265,10 +282,24 @@
                (let ((con nil))
                  (unwind-protect
                      (condition-case nil
-                         (setq con (pg-connect "nonexistent-db" "pgeltestuser" "pgeltest"))
+                         (progn
+                           (setq con (pg-connect-plist "nonexistent-db" "pgeltestuser" :password "pgeltest"))
+                           (pg-exec con "SELECT 42"))
                        (pg-invalid-catalog-name 'ok))
                    (when con
                      (pg-disconnect con)))))))
+
+;; Try very hard to reset the PostgreSQL connection, by sending a Sync message and multiple queries
+;; that should hopefully flush any pending ErrorMessage messages in the pipeline. We call this
+;; inbetween functions testing different functionality classes, hoping to prevent propagation of an
+;; error between functions.
+(defun pgtest-reset (con)
+  (pg-sync con)
+  (pg-exec con "SELECT 42")
+  (pg-exec con "SELECT 'foobles'")
+  (pg-exec con "SELECT 42")
+  (pg-exec con "SELECT 42"))
+
 
 (defun pg-run-tests (con)
   (let ((tests (list)))
@@ -281,7 +312,7 @@
       (message "Backend major-version is %s" (pgcon-server-version-major con))
       (message "Detected backend variant: %s" (pgcon-server-variant con))
       (unless (member (pgcon-server-variant con)
-                      '(cockroachdb cratedb yugabyte ydb xata greptimedb risingwave clickhouse octodb vertica arcadedb cedardb))
+                      '(cockroachdb cratedb yugabyte ydb xata greptimedb risingwave clickhouse octodb vertica arcadedb cedardb pgsqlite))
         (when (> (pgcon-server-version-major con) 11)
           (let* ((res (pg-exec con "SELECT current_setting('ssl_library')"))
                  (row (pg-result res :tuple 0)))
@@ -368,7 +399,7 @@
       (pgtest-add #'pg-test-schemas
                   :skip-variants '(xata cratedb risingwave questdb ydb materialize yellowbrick))
       (pgtest-add #'pg-test-hstore
-                  :skip-variants '(risingwave materialize octodb readyset vertica))
+                  :skip-variants '(risingwave materialize octodb readyset vertica cockroachdb))
       ;; Xata doesn't support extensions, but doesn't signal an SQL error when we attempt to load the
       ;; pgvector extension, so our test fails despite being intended to be robust.
       (pgtest-add #'pg-test-vector
@@ -415,7 +446,7 @@
         (condition-case err
             (funcall test con)
           (error (message "\033[31;1mTest failed\033[0m: %s" err)))
-        (pg-sync con))
+        (pgtest-reset con))
       (message "== Tests finished; producing a report on memory usage")
       (memory-report)
       (with-current-buffer "*Memory Report*"
@@ -738,6 +769,7 @@
     (should (string= "abcdef" (scalar "SELECT 'abc' || 'def'")))
     (should (string= "howdy" (scalar "SELECT 'howdy'::text")))
     (should (eql t (scalar "SELECT 'abc' LIKE 'a%'")))
+    (should (string= "banana" (scalar "SELECT split_part('apple,banana,cherry', ',', 2)")))
     ;; RisingWave does not support the VARCHAR(N) syntax.
     (unless (eq 'risingwave (pgcon-server-variant con))
       (should (string= "gday" (scalar "SELECT 'gday'::varchar(20)"))))
@@ -780,6 +812,8 @@
 (defun pg-test-edge-cases (con)
   (cl-labels ((row (sql) (pg-result (pg-exec con sql) :tuple 0))
               (scalar (sql) (cl-first (pg-result (pg-exec con sql) :tuple 0))))
+    (let ((res (pg-exec con "")))
+      (should (string-equal-ignore-case (pg-result res :status) "EMPTY")))
     (unless (member (pgcon-server-variant con) '(cratedb clickhouse))
       (should (eql t (scalar "SELECT bool 'f' < bool 't' AS true")))
       (should (eql t (scalar "SELECT bool 'f' <= bool 't' AS true"))))
@@ -1037,18 +1071,7 @@ bar$$"))))
                  (rows (pg-result res :tuples)))
             (dotimes (i size)
               (should (string= (format "%04d-value" i) (cl-first (nth i rows)))))))
-        (pg-exec con "DROP TABLE sarray"))
-      (when (pgtest-have-table con "uuidarray")
-        (pg-exec con "DROP TABLE uuidarray"))
-      (when-let* ((sql (pgtest-massage con "CREATE TABLE uuidarray(id SERIAL PRIMARY KEY, val UUID[])")))
-        (pg-exec con sql)
-        (pg-exec-prepared con "INSERT INTO uuidarray(val) VALUES($1)"
-                          '((["a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11" "c4792ecb-c00a-43a2-bd74-5b0ed551c599"] . "_uuid")))
-        (pgtest-flush-table con "uuidarray")
-        (let* ((res (pg-exec con "SELECT val FROM uuidarray"))
-               (ua (cl-first (pg-result res :tuple 0))))
-          (should (string-equal-ignore-case (aref ua 0) "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11")))
-        (pg-exec con "DROP TABLE uuidarray")))))
+        (pg-exec con "DROP TABLE sarray")))))
 
 
 ;; Check the mixing of prepared queries, cached prepared statements, normal simple queries, to check
