@@ -33,7 +33,7 @@ hang: install-deps
 test-tls: test-pg.el install-deps
 	${EMACS} -Q --batch -L .. -L . -l load-deps.el -l ../pg.el -l test-pg.el -f pg-test-tls
 
-# This needs Emacs support for ALPN (currently unimplemented).
+# This needs Emacs support for ALPN (currently under development).
 test-tls-direct: test-pg.el install-deps
 	${EMACS} -Q --batch -L .. -L . -l load-deps.el -l ../pg.el -l test-pg.el -f pg-test-tls-direct
 
@@ -49,8 +49,11 @@ test-ebiacuk: test-pg.el install-deps
 test-connections: test-pg.el install-deps
 	${EMACS} -Q --batch -L .. -L . -l load-deps.el -l ../pg.el -l test-pg.el -f pg-connection-tests
 
-test-multithreaded: test-pg.el install-deps
+test-multithreaded: test-multithreaded.el install-deps
 	${EMACS} -Q --batch -L .. -L . -l load-deps.el -l ../pg.el -l test-multithreaded.el -f pgtest-multithreaded
+
+test-async: test-async.el install-deps
+	${EMACS} -Q --batch -L .. -L . -l load-deps.el -l ../pg.el -l test-async.el -f pgtest-async
 
 test-pgvector: test-pgvector.el install-deps
 	${EMACS} -Q --batch -L .. -L . -l load-deps.el -l ../pg.el -l test-pgvector.el -f pg-test
@@ -131,6 +134,7 @@ test-shortnames: test-pg.el
 	PGEL_PORT=5926 PGEL_DATABASE=d PGEL_USER=u PGEL_PASSWORD="~" $(MAKE) test
 	${DOCKER} stop pgsql
 
+
 # Note that we need to tell Emacs GnuTLS to trust the root.crt file in order for it to accept the
 # PostgreSQL server TLS certificate (it's not signed by the system CA).
 #
@@ -181,20 +185,6 @@ test-postgresql18betatls: test-pg.el
 	${DOCKER} volume rm pgcerts
 
 
-test-postgresql18beta: test-pg.el
-	${DOCKER} run --rm --name pgsql \
-           --pull=newer \
-	   --publish 5418:5418 \
-	   -e POSTGRES_DB=pgeltestdb \
-	   -e POSTGRES_USER=pgeltestuser \
-	   -e POSTGRES_PASSWORD=pgeltest \
-	   -e PGPORT=5418 \
-	   -e TZ=Asia/Tokyo \
-	   -d docker.io/library/postgres:18beta3-alpine
-	sleep 5
-	PGEL_PORT=5418 $(MAKE) test
-	${DOCKER} stop pgsql
-
 test-postgresql18: test-pg.el
 	${DOCKER} run --rm --name pgsql \
            --pull=newer \
@@ -204,7 +194,7 @@ test-postgresql18: test-pg.el
 	   -e POSTGRES_PASSWORD=pgeltest \
 	   -e PGPORT=5418 \
 	   -e TZ=Asia/Tokyo \
-	   -d docker.io/library/postgres:18-alpine
+	   -d docker.io/library/postgres:18rc1-alpine
 	sleep 5
 	PGEL_PORT=5418 $(MAKE) test
 	${DOCKER} stop pgsql
@@ -582,7 +572,8 @@ test-age: test-pg.el
 	${DOCKER} stop age
 
 
-# An open source graph database based on PostgreSQL
+# An open source graph database based on PostgreSQL. We detect this as PostgreSQL because its
+# behaviour does not seem to deviate from standard PostgreSQL.
 #
 # https://github.com/skaiworldwide-oss/agensgraph
 test-agensgraph: test-pg.el
@@ -710,9 +701,9 @@ test-pgcat: test-pg.el
 	sleep 5
 	${DOCKER} run --rm --name pgcat \
            --pull=newer \
-	   -v $(shell pwd)/pgcat-config.toml:/etc/pgcat/pgcat.toml \
-	   --net host \
-	   -d ghcr.io/postgresml/pgcat:latest
+           -v ./pgcat-config.toml:/etc/pgcat/pgcat.toml \
+           --net host \
+           -d ghcr.io/postgresml/pgcat:latest
 	sleep 5
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:6432/pgeltestdb?read_timeout=1000 $(MAKE) test
 	${DOCKER} stop pgcat
@@ -1275,6 +1266,10 @@ test-octodb: test-pg.el
 
 
 # https://hub.docker.com/r/opentext/vertica-ce
+#
+# As of 2025-09 it seems that OpenText have deleted all references to their community edition from
+# Dockerhub and from their website...
+#
 # https://github.com/vertica/vertica-containers/blob/main/one-node-ce/Dockerfile_Ubuntu
 test-vertica: test-pg.el
 	${DOCKER} run --rm --name vertica \
