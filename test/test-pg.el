@@ -339,7 +339,7 @@
       ;; RisingWave is not able to parse a TZ value of "UTC-01:00" (POSIX format). QuestDB does not
       ;; support the timestamptz type. CedarDB des not support the timetz data type.
       (pgtest-add #'pg-test-date
-                  :skip-variants '(cratedb risingwave materialize ydb questdb cedardb)
+                  :skip-variants '(cratedb risingwave materialize ydb questdb cedardb clickhouse)
                   :need-emacs "29.1")
       ;; QuestDB does not support the timestamptz column type.
       (pgtest-add #'pg-run-tz-tests
