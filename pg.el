@@ -861,12 +861,12 @@ Uses database DBNAME, user USER and password PASSWORD."
         ((main (* [space]) optionlist (* [space]) (eol))
          (optionlist (* option) (* (and (+ [space]) option)))
          (option (or longform shortform))
-         (longform "--" (substring identifier) (char ?=) (substring value)
+         (longform "--" (substring identifier) "=" (substring value)
                    `(ident val -- (cons ident val)))
-         (shortform "-c" (+ [space]) (substring identifier) (char ?=) (substring value)
+         (shortform "-c" (+ [space]) (substring identifier) "=" (substring value)
                     `(ident val -- (cons ident val)))
-         (identifier (+ (or [a-z] [A-Z] [0-9] (char ?.) (char ?_))))
-         (value (+ (or [a-z] [A-Z] [0-9] (char ?,) (char ?.) (char ?#) (char ?/) (char ?\") (char ?$)))))
+         (identifier (+ (or [a-z] [A-Z] [0-9] (set "._"))))
+         (value (+ (or [a-z] [A-Z] [0-9] (set ",.#/$\"")))))
       (peg-run (peg main)))))
 
 ;; OPTIONS is a string containing commandline-like options of the form "-c geqo=off" and
