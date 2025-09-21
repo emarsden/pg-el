@@ -61,7 +61,8 @@
                 (count (cl-first (pg-result res :tuple 0))))
            (unless (eql count 0)
              (message "Row count failure on table %s" table)))
-         (pg-exec con (format "DROP TABLE %s" table)))))
+         (pg-exec con (format "DROP TABLE %s" table)))
+       (thread-yield)))
   (message "pg worker thread %s finished" table))
 
 
@@ -74,4 +75,5 @@
     (message "Worker threads created; sleeping")
     (sit-for 10)
     (cl-loop while (cl-some #'thread-live-p workers)
-             do (accept-process-output) (sit-for 1))))
+             do (thread-yield) (accept-process-output nil 1))))
+
