@@ -337,7 +337,7 @@
       (pgtest-add #'pg-test-collation
                   :skip-variants '(xata cratedb questdb clickhouse greptimedb octodb vertica yellowbrick))
       (pgtest-add #'pg-test-xml
-                  :skip-variants '(xata ydb cockroachdb yugabyte clickhouse alloydb vertica))
+                  :skip-variants '(xata ydb cockroachdb yugabyte clickhouse alloydb vertica opengauss))
       (pgtest-add #'pg-test-uuid
                   :skip-variants '(cratedb risingwave ydb clickhouse greptimedb spanner octodb vertica yellowbrick))
       ;; Risingwave doesn't support VARCHAR(N) type. YDB and Vertica don't support SELECT generate_series().
@@ -351,7 +351,7 @@
       ;; Spanner does not support the INCREMENT clause in CREATE SEQUENCE. Vertica does not
       ;; implement the pg_sequences system table.
       (pgtest-add #'pg-test-sequence
-                  :skip-variants '(cratedb risingwave questdb materialize greptimedb ydb spanner clickhouse thenile vertica yellowbrick))
+                  :skip-variants '(cratedb risingwave questdb materialize greptimedb ydb spanner clickhouse thenile vertica yellowbrick opengauss))
       (pgtest-add #'pg-test-array
                   :skip-variants '(cratedb risingwave questdb materialize clickhouse octodb))
       (pgtest-add #'pg-test-enums
@@ -407,7 +407,7 @@
       (pgtest-add #'pg-test-notice
                   :skip-variants '(cedardb))
       (pgtest-add #'pg-test-notify
-                  :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb ydb questdb spanner vertica cedardb yellowbrick))
+                  :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb ydb questdb spanner vertica cedardb yellowbrick opengauss))
       (pgtest-add #'pg-test-lo
                   :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb ydb questdb spanner vertica greenplum cedardb yellowbrick))
       (dolist (test (reverse tests))
