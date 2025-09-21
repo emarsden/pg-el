@@ -225,9 +225,14 @@ SQL queries. To avoid this overhead on establishing a connection, remove
     :accessor pgcon-pid)
    (server-version-major
     :accessor pgcon-server-version-major)
+   ;; We use a minor-protocol version of 0 currently (but this can be changed using
+   ;; the :protocol-version argument to `pg-connect-plist'), instead of version 2 introduced in
+   ;; PostgreSQL v18, because several PostgreSQL variants refuse to accept a value different from
+   ;; zero (despite the wire protocol having been designed to allow the service to request a
+   ;; fallback to the latest minor protocol version that it knows how to handle).
    (minor-protocol-version
     :type integer
-    :initform 2
+    :initform 0
     :accessor pgcon-minor-protocol-version)
    ;; Holds something like 'postgresql, 'ydb, 'cratedb
    (server-variant
