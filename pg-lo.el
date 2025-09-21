@@ -157,6 +157,7 @@
                       (status (pg-read-char con)))
                   (when (eql ?E status)
                     (message "PostgreSQL ReadyForQuery message with error status"))
+                  (pg--trim-connection-buffers con)
                   (pg-connection-set-busy con nil)
                   (cl-return-from pg-fn result)))
 
@@ -240,6 +241,7 @@ Uses PostgreSQL connection CON."
       (signal 'pg-user-error (list msg))))
   (let* ((encoded (pg-fn con "loread" nil fd bytes))
          (hexdigits (substring encoded 2)))
+    (pg--trim-connection-buffers con)
     (unless (and (eql 92 (aref encoded 0))   ; \ character
                  (eql ?x (aref encoded 1)))
       (signal 'pg-protocol-error
@@ -255,6 +257,7 @@ Uses PostgreSQL connection CON."
   (unless (stringp buf)
     (signal 'pg-user-error (list "pg-lo-write: invalid BUF argument")))
   (let ((ret (pg-fn con "lowrite" t fd buf)))
+    (pg--trim-connection-buffers con)
     (if (eql -1 ret)
         (signal 'pg-operational-error (list "lo_write function call failed"))
       ret)))

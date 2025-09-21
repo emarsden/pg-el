@@ -135,6 +135,9 @@ semi-compatible PostgreSQL variants, which sometimes requires additional
 SQL queries. To avoid this overhead on establishing a connection, remove
 `pg-detect-server-variant' from this list.")
 
+(defvar pg-connection-buffer-octets (* 10 1024 1024)
+  "Maximum length in octets of buffers used for PostgreSQL connections.")
+
 ;; See https://www.postgresql.org/docs/17/errcodes-appendix.html
 (define-error 'pg-error "PostgreSQL error" 'error)
 (define-error 'pg-user-error "pg-el user error" 'pg-error)
@@ -295,7 +298,7 @@ SQL queries. To avoid this overhead on establishing a connection, remove
                    (or pid "<unknown>"))
            stream)))
 
-;; Used to save the connection-specific position in our input buffer.
+;; Used to save the connection-specific position in the input and output buffers.
 (defvar-local pgcon--position 1)
 
 ;; Used to check whether the connection is currently "busy", so that we can determine whether a
@@ -1421,6 +1424,30 @@ correspond to SQL-level NOTIFY channel, \\='payload\\='."
   (with-current-buffer (process-buffer (pgcon-process con))
     (push handler pgcon--notification-handlers)))
 
+(defun pg--trim-connection-buffers (con)
+  "Trim the input and output buffers for CON if needed.
+For long-running PostgreSQL connections, the input buffer and output
+buffer may become very large over time. Ensure that we only retain
+pg-connection-buffer-octets octets for each of these buffers."
+  (with-current-buffer (process-buffer (pgcon-process con))
+    ;; Our buffer is unibyte, so the number of characters returned by buffer-size is also a number
+    ;; of octets.
+    (when (> (buffer-size) pg-connection-buffer-octets)
+      (let* ((start-deletion (point-min))
+             (end-deletion (- (point-max) pg-connection-buffer-octets))
+             (removed (- end-deletion start-deletion)))
+      (delete-region start-deletion end-deletion)
+      ;; pgcon--position is a buffer-local variable
+      (cl-decf pgcon--position removed))))
+  (when (pgcon-output-buffer con)
+    (with-current-buffer (pgcon-output-buffer con)
+      (when (> (buffer-size) pg-connection-buffer-octets)
+        (let* ((start-deletion (point-min))
+               (end-deletion (- (point-max) pg-connection-buffer-octets))
+               (removed (- end-deletion start-deletion)))
+        (delete-region start-deletion end-deletion)
+        (cl-decf pgcon--position removed))))))
+
 (cl-defun pg-exec (con &rest args)
   "Execute the SQL command given by concatenating ARGS on database CON.
 Return a result structure which can be decoded using `pg-result'."
@@ -1451,6 +1478,7 @@ Return a result structure which can be decoded using `pg-result'."
         (insert sql "\n"))
       (when noninteractive
         (message "SQL:> %s" sql)))
+    (pg--trim-connection-buffers con)
     (let ((len (length encoded)))
       (when (> len (- (expt 2 32) 5))
         (signal 'pg-user-error (list "Query is too large")))
@@ -2004,6 +2032,7 @@ are available, they can later be retrieved with `pg-fetch'."
       (insert (format "   %s\n" typed-arguments)))
     (when noninteractive
       (message "SQL:> %s %s" query typed-arguments)))
+  (pg--trim-connection-buffers con)
   (let* ((argument-types (mapcar #'cdr typed-arguments))
          (ps-name (pg-prepare con query argument-types))
          (portal-name (pg-bind con ps-name typed-arguments :portal portal))
@@ -2224,6 +2253,7 @@ can be decoded using `pg-result'."
               (status (pg-read-char con)))
           (when (eql ?E status)
             (message "PostgreSQL ReadyForQuery message with error status"))
+          (pg--trim-connection-buffers con)
           (pg-connection-set-busy con nil)
           (cl-return-from pg-copy-from-buffer result)))
 
@@ -2349,6 +2379,7 @@ can be decoded using `pg-result', but with data in BUF."
                 (status (pg-read-char con)))
             (when (eql ?E status)
               (message "PostgreSQL ReadyForQuery message with error status"))
+            (pg--trim-connection-buffers con)
             (pg-connection-set-busy con nil)
             (cl-return-from pg-copy-to-buffer result)))
 

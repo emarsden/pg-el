@@ -15,7 +15,8 @@
 
 - New function to establish PostgreSQL connections `pg-connect-plist`. This function is similar to
   `pg-connect`, but takes keyword arguments instead of optional arguments. Function `pg-connect` is
-  deprecated.
+  deprecated. Similarly, the new macro `with-pg-connection-plist` should be used instead of
+  `with-pg-connection` in new code.
 
 - Recently introduced function `pg-connect/direct-tls` has been deprecated; use the `:direct-tls`
   option to `pg-connect-plist` instead.
@@ -23,6 +24,10 @@
 - Add detection code and workarounds for the PostgreSQL variants OpenGauss (by Huawei) and pgsqlite.
 
 - Add parsing support for arrays of time- and date-related objects.
+
+- The input and output buffers used for communication with PostgreSQL are now trimmed when they
+  become too large, with only the most recent data retained. The number of octets to retain for each
+  buffer can be customized using the variable `pg-connection-buffer-octets`.
 
 
 ## [0.59] - 2025-08-31
