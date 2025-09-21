@@ -1159,16 +1159,37 @@ keywords are `host', `hostaddr', `port', `dbname', `user', `password',
          (client-encoding (and client-encoding-str
                                (pg-normalize-encoding-name client-encoding-str)))
          (options (or (cdr (assoc "options" params))
-                      (getenv "PGOPTIONS"))))
+                      (getenv "PGOPTIONS")))
+         (protocol-version-string (or (cdr (assoc "protocol_version" params))
+                                      (getenv "PG_PROTOCOL_VERSION")))
+         (protocol-version-major nil)
+         (protocol-version-minor nil))
     ;; TODO: should handle sslcert, sslkey variables
     ;;
     ;; Some of the parameters are taken from our local variable bindings, but for other parameters we
     ;; need to set them explicitly in the pgcon object.
-    (let ((con (pg-connect dbname user password host port tls)))
+    (let ((con (pg-connect-plist dbname user
+                                 :password password
+                                 :host host
+                                 :port port
+                                 :tls-options tls)))
       (when client-encoding
         (setf (pgcon-client-encoding con) client-encoding))
       (when options
         (pg-handle-connection-options con options))
+      (when protocol-version-string
+        (cond ((string-match (rx string-start (group (1+ digit) "." (group (1+ digit)) string-end))
+                             protocol-version-string)
+               (setq protocol-version-major (cl-parse-integer (match-string 1))
+                     protocol-version-minor (cl-parse-integer (match-string 2))))
+              (t
+               (let ((msg (format "Invalid protocol-version string %s" protocol-version-string)))
+                 (error 'pg-user-error (list msg))))))
+      (when protocol-version-major
+        (unless (eql 3 (car protocol-version-major))
+          (error 'pg-user-error "This library only supports a major protocol version of 3")))
+      (when protocol-version-minor
+        (setf (pgcon-minor-protocol-version con) protocol-version-minor))
       con)))
 
 (defun pg-parse-url (url)
