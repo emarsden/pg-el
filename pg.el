@@ -706,10 +706,9 @@ Uses database DBNAME, user USER and password PASSWORD."
      ;; backend implements exactly the requested protocol version.
      (?v
       (let* ((_msglen (pg-read-net-int con 4))
-             (protocol-supported (pg-read-net-int con 4))
-             (unrec-option-count (pg-read-net-int con 4))
-             (protocol-major-supported (ash protocol-supported -16))
-             (protocol-minor-supported (mod protocol-supported (ash 1 16))))
+             (protocol-major-supported (pg-read-net-int con 2))
+             (protocol-minor-supported (pg-read-net-int con 2))
+             (unrec-option-count (pg-read-net-int con 4)))
         (unless (eql protocol-major-supported 3)
           (let ((msg (format "PostgreSQL backend supports protocol major version %d, we only support version 3"
                              protocol-major-supported)))
