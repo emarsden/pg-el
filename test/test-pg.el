@@ -1441,7 +1441,27 @@ bar$$"))))
       ;; PostgreSQL returns the UUID in canonical (lowercase) format, but some variants such as
       ;; QuestDB do not canonicalize.
       "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
-      (scalar/p "SELECT $1" `(("A0EEBC99-9C0B-4EF8-BB6D-6BB9BD380A11" . "uuid")))))))
+      (scalar/p "SELECT $1" `(("A0EEBC99-9C0B-4EF8-BB6D-6BB9BD380A11" . "uuid")))))
+    (when (pgtest-have-table con "uuidarray")
+      (pg-exec con "DROP TABLE uuidarray"))
+    (when-let* ((sql (pgtest-massage con "CREATE TABLE uuidarray(id SERIAL PRIMARY KEY, val UUID[])")))
+      (pg-exec con sql)
+      (pg-exec-prepared con "INSERT INTO uuidarray(val) VALUES($1)"
+                        '((["a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11" "c4792ecb-c00a-43a2-bd74-5b0ed551c599"] . "_uuid")))
+      (pgtest-flush-table con "uuidarray")
+      (let* ((res (pg-exec con "SELECT val FROM uuidarray"))
+             (ua (cl-first (pg-result res :tuple 0))))
+        (should (string-equal-ignore-case (aref ua 0) "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11")))
+      (pg-exec con "DROP TABLE uuidarray"))
+    ;; New UUIDv7 functionality introduced in PostgreSQL v18
+    (when (pg-function-p con "uuidv7")
+      (let* ((res (pg-exec con "SELECT uuidv7()"))
+             (row (pg-result res :tuple 0))
+             (uuid (cl-first row))
+             (uuid-rx (rx (= 8 xdigit) (= 3 (seq ?- (= 4 xdigit))) ?- (= 12 xdigit))))
+        ;; eg 01987fb8-b258-70fd-a574-1c3f9b89ee21
+        (should (string-match uuid-rx uuid))))))
+
 
 
 ;; https://www.postgresql.org/docs/current/collation.html
