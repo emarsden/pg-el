@@ -95,7 +95,7 @@ The following PostgreSQL-compatible databases or extensions have been tested:
   graph processing (Apache 2 license) works perfectly. Last tested 2025-07 with version 2.15.
 
 - The [PgBouncer](https://www.pgbouncer.org/) connection pooler for PostgreSQL (open source, ISC
-  licensed). Works fine (last tested 2025-08 with version 1.24 in the default session pooling mode).
+  licensed). Works fine (last tested 2025-09 with version 1.24 in the default session pooling mode).
 
 - The [Odyssey](https://github.com/yandex/odyssey) connection pooler from Yandex (BSD license) works
   perfectly with pg-el (last tested 2025-08 with version 1.4.0 in session pooling mode).
@@ -129,11 +129,11 @@ The following PostgreSQL-compatible databases or extensions have been tested:
   though the `pg_sequences` table is not implemented so certain tests fail. YugabyteDB does not have
   full compatibility with PostgreSQL SQL, and for example `GENERATED ALWAYS AS` columns are not
   supported, and `LISTEN` and `NOTIFY` are not supported. It does support certain extensions such as
-  pgvector, however. Last tested on 2025-08 against version 2.25.
+  pgvector, however. Last tested on 2025-09 against version 2.25.
 
 - The [RisingWave](https://github.com/risingwavelabs/risingwave) event streaming database (Apache
   license) is mostly working. It does not support `GENERATED ALWAYS AS IDENTITY` or `SERIAL`
-  columns, nor `VACUUM ANALYZE`. Last tested 2025-08 with v2.5.1.
+  columns, nor `VACUUM ANALYZE`. Last tested 2025-09 with v2.5.1.
 
 - The [CrateDB](https://crate.io/) distributed database (Apache licence). CrateDB does not support
   rows (e.g. `SELECT (1,2)`), does not support the `time`, `varbit`, `bytea`, `jsonb` and `hstore`
@@ -141,7 +141,7 @@ The following PostgreSQL-compatible databases or extensions have been tested:
   PostgreSQL functions such as `factorial`, does not return a correct type OID for text columns in
   rows returned from a prepared statement, doesn't support Unicode identifiers, doesn't support the
   `COPY` protocol, doesn't support `TRUNCATE TABLE`. It works with these limitations with pg-el
-  (last tested 2025-08 with version 5.10.11).
+  (last tested 2025-09 with version 5.10.11).
 
 - The [CockroachDB](https://github.com/cockroachdb/cockroach) distributed database (source-available
   but non-free software licence). Note that this database does not implement the large object
@@ -158,15 +158,15 @@ The following PostgreSQL-compatible databases or extensions have been tested:
 - The [Materialize](https://materialize.com/) operational database (a proprietary differential
   dataflow database) has many limitations in its PostgreSQL compatibility: no support for primary
   keys, unique constraints, check constraints, for the `bit` type for example. It works with these
-  limitations with pg-el (last tested 2025-08 with Materialize v0.155).
+  limitations with pg-el (last tested 2025-09 with Materialize v0.158).
 
 - The [CedarDB](https://cedardb.com/) database spun off from the Umbra research database developed
   at the University of Munich is fairly PostgreSQL compatible and works well with pg-el. Last tested
-  2025-08 with CedarDB version v2025-08-27.
+  2025-09 with CedarDB version v2025-09-17.
 
 - The [QuestDB](https://questdb.io/) time series database (Apache licensed) has very limited
-  PostgreSQL support, and does not support the `integer` type for example. Last tested 2025-08 with
-  version 9.0.1.
+  PostgreSQL support, and does not support the `integer` type for example. Last tested 2025-09 with
+  version 9.0.3.
 
 - The proprietary [Yellowbrick](https://yellowbrick.com/) distributed database does not implement
   `SERIAL` columns, nor datatypes such as `text`, `bit` and `timetz`, nor collation, nor enums, nor
@@ -216,7 +216,7 @@ The following PostgreSQL-compatible databases or extensions have been tested:
 
 PostgreSQL variants that **don't work** with pg-el:
 
-- The ClickHouse database, whose PostgreSQL support is too limited. As of version 25.6 in 2025-09,
+- The ClickHouse database, whose PostgreSQL support is too limited. As of version 25.8 in 2025-09,
   there is no implementation of the `pg_types` system table, no support for basic PostgreSQL-flavoured
   SQL commands such as `SET`, no support for the extended query mechanism.
   
