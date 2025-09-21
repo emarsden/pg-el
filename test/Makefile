@@ -1235,6 +1235,25 @@ test-alloydb: test-pg.el
 	${DOCKER} stop alloydb
 
 
+# https://docs.mindsdb.com/setup/self-hosted/docker
+#
+# As of 2025-09 the PostgreSQL wire protocol support does not seem fully working. We can connect to
+# the database, but any query triggers an error "AttributeError: 'list' object has no attribute
+# 'columns'".
+test-mindsdb: test-pg.el
+	${DOCKER} run --rm --name mindsdb \
+          --net host \
+          -e MINDSDB_USERNAME=pgeltestuser \
+          -e MINDSDB_PASSWORD=pgeltest \
+          -e MINDSDB_APIS=postgres \
+          -e MINDSDB_NO_STUDIO=true \
+          docker.io/mindsdb/mindsdb:latest
+	sleep 10
+	echo 'CREATE DATABASE pgeltestdb WITH ENGINE = "postgres", PARAMETERS = { "user": "pgeltestuser", "password": "pgeltest", "host": "localhost", "port": "5432", "database": "pgeltestdb" };' | psql postgresql://pgeltestuser:pgeltest@127.0.0.1:55432/pgeltestdb
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:55432/pgeltestdb $(MAKE) test
+	${DOCKER} stop mindsdb
+
+
 # YottaDB Octo
 #
 # https://gitlab.com/YottaDB/DBMS/YDBOcto/-/blob/master/README.md#using-the-docker-images
