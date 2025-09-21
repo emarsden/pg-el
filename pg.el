@@ -80,6 +80,8 @@
 (require 'peg)
 (require 'rx)
 (require 'parse-time)
+(require 'gnutls)
+(require 'network-stream)
 
 
 ;; https://www.postgresql.org/docs/current/libpq-envars.html
@@ -336,18 +338,30 @@ Queries are logged to a buffer identified by `pgcon-query-log'."
 (cl-defstruct pgresult
   connection status attributes tuples portal (incomplete nil))
 
-;; this is ugly because lambda lists don't do destructuring
+(defmacro with-pg-connection-plist (con connect-plist &rest body)
+  "Execute BODY forms in a scope with connection CON created by CONNECT-PLIST.
+The database connection is bound to the variable CON. If the
+connection is unsuccessful, the forms are not evaluated.
+Otherwise, the BODY forms are executed, and upon termination,
+normal or otherwise, the database connection is closed."
+  (declare (indent defun))
+  `(let ((,con (pg-connect-plist ,@connect-plist)))
+     (unwind-protect
+         (progn ,@body)
+       (when ,con (pg-disconnect ,con)))))
+
 (defmacro with-pg-connection (con connect-args &rest body)
   "Execute BODY forms in a scope with connection CON created by CONNECT-ARGS.
 The database connection is bound to the variable CON. If the
 connection is unsuccessful, the forms are not evaluated.
 Otherwise, the BODY forms are executed, and upon termination,
 normal or otherwise, the database connection is closed."
+  (declare (indent defun)
+           (obsolete with-pg-connection-plist "2025"))
   `(let ((,con (pg-connect ,@connect-args)))
      (unwind-protect
          (progn ,@body)
        (when ,con (pg-disconnect ,con)))))
-(put 'with-pg-connection 'lisp-indent-function 'defun)
 
 (defmacro with-pg-connection-local (con connect-args &rest body)
   "Execute BODY forms in a scope with local Unix connection CON
@@ -356,11 +370,11 @@ The database connection is bound to the variable CON. If the
 connection is unsuccessful, the forms are not evaluated.
 Otherwise, the BODY forms are executed, and upon termination,
 normal or otherwise, the database connection is closed."
+  (declare (indent defun))
   `(let ((,con (pg-connect-local ,@connect-args)))
      (unwind-protect
          (progn ,@body)
        (when ,con (pg-disconnect ,con)))))
-(put 'with-pg-connection 'lisp-indent-function 'defun)
 
 
 (defmacro with-pg-transaction (con &rest body)
@@ -370,6 +384,7 @@ a ROLLBACK command.
 Large-object manipulations _must_ occur within a transaction, since
 the large object descriptors are only valid within the context of a
 transaction."
+  (declare (indent defun))
   (let ((exc-sym (gensym)))
     `(progn
        (pg-exec ,con "BEGIN")
@@ -894,38 +909,62 @@ Uses database DBNAME, user USER and password PASSWORD."
 (declare-function gnutls-negotiate "gnutls.el")
 (declare-function network-stream-certificate "network-stream.el")
 
-(cl-defun pg-connect (dbname user
-                             &optional
-                             (password "")
-                             (host "localhost")
-                             (port 5432)
-                             (tls-options nil)
-                             (server-variant nil))
+(cl-defun pg-connect-plist (dbname
+                            user
+                            &key
+                            (password "")
+                            (host "localhost")
+                            (port 5432)
+                            (tls-options nil)
+                            (direct-tls nil)
+                            (server-variant nil)
+                            (protocol-version (cons 3 0)))
   "Initiate a connection with the PostgreSQL backend over TCP.
 Connect to the database DBNAME with the username USER, on PORT of
 HOST, providing PASSWORD if necessary. Return a connection to the
 database (as an opaque type). PORT defaults to 5432, HOST to
-\"localhost\", and PASSWORD to an empty string. If TLS-OPTIONS is
-non-NIL, attempt to establish an encrypted connection to PostgreSQL
-passing TLS-OPTIONS to `gnutls-negotiate'.
+\"localhost\", and PASSWORD to an empty string.
 
-To use client certificates to authenticate the TLS connection,
-use a value of TLS-OPTIONS of the form `(:keylist ((,key
-,cert)))', where `key' is the filename of the client certificate
-private key and `cert' is the filename of the client certificate.
-These are passed to GnuTLS.
+If TLS-OPTIONS is non-NIL, attempt to establish an encrypted connection
+to PostgreSQL passing TLS-OPTIONS to `gnutls-negotiate'. To use a
+standard TLS connection without any specific options, use a value of
+`t'. To use client certificates to authenticate the TLS connection, use
+a value of TLS-OPTIONS of the form `(:keylist ((,key ,cert)))', where
+`key' is the filename of the client certificate private key and `cert'
+is the filename of the client certificate.
 
-Variable SERVER-VARIANT can be used to specify that we are
+If DIRECT-TLS is non-nil, attempt to establish a \"direct\" TLS
+connection to PostgreSQL using ALPN, rather than the STARTTLS-like
+connection upgrade handshake. This connection establishment method,
+introduced with PostgreSQL 18, avoids some round trips during connection
+establishment and may be required by some PostgreSQL installations. This
+requires ALPN support in your Emacs (available from version 31).
+
+Parameter SERVER-VARIANT can be used to specify that we are
 connecting to a specific semi-compatible PostgreSQL variant. This
 may be useful if the variant cannot be autodetected by pg-el but
 you would like to run specific code in
-`pg-do-variant-specific-setup'"
+`pg-do-variant-specific-setup'.
+
+Parameter PROTOCOL-VERSION allows you to specify as a (MAJOR . MINOR)
+cons pair the version of the wire protocol to be used on connection
+startup. MAJOR should be 3. MINOR will default to 0 but can be set to 2
+to use the updated protocol features introduced with PostgreSQL version
+18."
   (let* ((buf (generate-new-buffer " *PostgreSQL*"))
-         (process (open-network-stream "postgres" buf host port
-                                       :coding nil
-                                       ;; :nowait t
-                                       :nogreeting t))
-         (con (make-pgcon :dbname dbname :process process)))
+         (process (make-network-process :name "postgres"
+                                        :buffer buf
+                                        :host host
+                                        :service port
+                                        :coding nil))
+         (con (make-pgcon :dbname dbname :process process))
+         (cert (network-stream-certificate host port nil))
+         (opts (append (list :process process)
+                       (list :hostname host)
+                       ;; see https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
+                       (list :alpn-protocols (list "postgresql"))
+                       (when cert (list :keylist cert))
+                       (when (listp tls-options) tls-options))))
     (when server-variant
       (setf (pgcon-server-variant con) server-variant))
     ;; Emacs supports disabling the Nagle algorithm, i.e. enabling TCP_NODELAY on this connection as
@@ -955,40 +994,53 @@ you would like to run specific code in
       (set-buffer-multibyte nil)
       (buffer-disable-undo)
       (setq-local pgcon--position 1))
+    (unless (eql 3 (car protocol-version))
+      (error 'pg-user-error "This library only supports a major protocol version of 3"))
+    (setf (pgcon-minor-protocol-version con) (cdr protocol-version))
     ;; Save connection info in the pgcon object, for possible later use by pg-cancel
     (setf (pgcon-connect-info con) (list :tcp host port dbname user password))
-    ;; TLS connections to PostgreSQL are based on a custom STARTTLS-like connection upgrade
-    ;; handshake. The frontend establishes an unencrypted network connection to the backend over the
-    ;; standard port (normally 5432). It then sends an SSLRequest message, indicating the desire to
-    ;; establish an encrypted connection. The backend responds with ?S to indicate that it is able
-    ;; to support an encrypted connection. The frontend then runs TLS negociation to upgrade the
-    ;; connection to an encrypted one.
-    (when tls-options
-      (require 'gnutls)
-      (require 'network-stream)
-      (unless (gnutls-available-p)
-        (signal 'pg-error '("Connecting over TLS requires GnuTLS support in Emacs")))
-      ;; send the SSLRequest message
-      (pg-send-uint con 8 4)
-      (pg-send-uint con 80877103 4)
-      (pg-flush con)
-      (let ((ch (pg-read-char con)))
-        (unless (eql ?S ch)
-          (let ((msg (format "Couldn't establish TLS connection to PostgreSQL: read char %s" ch)))
-            (signal 'pg-protocol-error (list msg)))))
-      ;; FIXME could use tls-options as third arg to network-stream-certificate
-      (let* ((cert (network-stream-certificate host port nil))
-             (opts (append (list :process process)
-                           (list :hostname host)
-                           (when cert (list :keylist cert))
-                           (when (listp tls-options) tls-options))))
-        (condition-case err
-            ;; now do STARTTLS-like connection upgrade
-            (apply #'gnutls-negotiate opts)
-          (gnutls-error
-           (let ((msg (format "TLS error connecting to PostgreSQL: %s" (error-message-string err))))
-             (signal 'pg-protocol-error (list msg)))))))
-    ;; the remainder of the startup sequence is common to TCP and Unix socket connections
+    (cond (direct-tls
+           ;; Here we make a "direct" TLS connection to PostgreSQL, rather than the STARTTLS-like
+           ;; connection upgrade handshake. This requires ALPN support in Emacs. This connection
+           ;; mode is only support from PostgreSQL 18.
+           (unless (gnutls-available-p)
+             (signal 'pg-error '("Connecting over TLS requires GnuTLS support in Emacs")))
+           (condition-case err
+               (apply #'gnutls-negotiate opts)
+             (gnutls-error
+              (let ((msg (format "TLS error connecting to PostgreSQL: %s"
+                                 (error-message-string err))))
+                (signal 'pg-protocol-error (list msg))))))
+          (tls-options 
+           ;; Classical TLS connections to PostgreSQL are based on a custom STARTTLS-like connection
+           ;; upgrade handshake. The frontend establishes an unencrypted network connection to the
+           ;; backend over the standard port (normally 5432). It then sends an SSLRequest message,
+           ;; indicating the desire to establish an encrypted connection. The backend responds
+           ;; with ?S to indicate that it is able to support an encrypted connection. The frontend
+           ;; then runs TLS negociation to upgrade the connection to an encrypted one.
+           (unless (gnutls-available-p)
+             (signal 'pg-error '("Connecting over TLS requires GnuTLS support in Emacs")))
+           ;; send the SSLRequest message
+           (pg-send-uint con 8 4)
+           (pg-send-uint con 80877103 4)
+           (pg-flush con)
+           (let ((ch (pg-read-char con)))
+             (unless (eql ?S ch)
+               (let ((msg (format "Couldn't establish TLS connection to PostgreSQL: read char %s" ch)))
+                 (signal 'pg-protocol-error (list msg)))))
+           ;; FIXME could use tls-options as third arg to network-stream-certificate
+           (let* ((cert (network-stream-certificate host port nil))
+                  (opts (append (list :process process)
+                                (list :hostname host)
+                                (when cert (list :keylist cert))
+                                (when (listp tls-options) tls-options))))
+             (condition-case err
+                 ;; now do STARTTLS-like connection upgrade
+                 (apply #'gnutls-negotiate opts)
+               (gnutls-error
+                (let ((msg (format "TLS error connecting to PostgreSQL: %s" (error-message-string err))))
+                  (signal 'pg-protocol-error (list msg))))))))
+    ;; The remainder of the startup sequence is common to TCP and Unix socket connections.
     (pg-do-startup con dbname user password)
     ;; We can't handle PGOPTIONS in pg-do-startup, because that contains code shared with
     ;; pg-connect/string and pg-connect/uri, and for these other functions any value for the options
@@ -998,6 +1050,41 @@ you would like to run specific code in
       (pg-handle-connection-options con options))
     con))
 
+(cl-defun pg-connect (dbname user
+                             &optional
+                             (password "")
+                             (host "localhost")
+                             (port 5432)
+                             (tls-options nil)
+                             (server-variant nil))
+  "Initiate a connection with the PostgreSQL backend over TCP.
+Connect to the database DBNAME with the username USER, on PORT of
+HOST, providing PASSWORD if necessary. Return a connection to the
+database (as an opaque type). PORT defaults to 5432, HOST to
+\"localhost\", and PASSWORD to an empty string. If TLS-OPTIONS is
+non-NIL, attempt to establish an encrypted connection to PostgreSQL
+passing TLS-OPTIONS to `gnutls-negotiate'.
+
+To use client certificates to authenticate the TLS connection,
+use a value of TLS-OPTIONS of the form `(:keylist ((,key
+,cert)))', where `key' is the filename of the client certificate
+private key and `cert' is the filename of the client certificate.
+These are passed to GnuTLS.
+
+Variable SERVER-VARIANT can be used to specify that we are
+connecting to a specific semi-compatible PostgreSQL variant. This
+may be useful if the variant cannot be autodetected by pg-el but
+you would like to run specific code in
+`pg-do-variant-specific-setup'."
+  (declare (obsolete pg-connect-plist "2025"))
+  (pg-connect-plist dbname user
+                    :password password
+                    :host host
+                    :port port
+                    :tls-options tls-options
+                    :server-variant server-variant))
+
+;; This function is deprecated; use the :direct-tls parameter on pg-connect instead.
 (cl-defun pg-connect/direct-tls (dbname user
                                         &optional
                                         (password "")
@@ -1010,63 +1097,13 @@ HOST, providing PASSWORD if necessary. Return a connection to the
 database (as an opaque type). PORT defaults to 5432, HOST to
 \"localhost\", and PASSWORD to an empty string. The TLS-OPTIONS
 are passed to GnuTLS."
-  (require 'gnutls)
-  (require 'network-stream)
-  (unless (gnutls-available-p)
-    (signal 'pg-error '("Connecting over TLS requires GnuTLS support in Emacs")))
-  ;; Here we make a "direct" TLS connection to PostgreSQL, rather than the STARTTLS-like
-  ;; connection upgrade handshake.
-  (let* ((buf (generate-new-buffer " *PostgreSQL*"))
-         (process (make-network-process :name "postgres"
-                                        :buffer buf
-                                        :host host
-                                        :service port
-                                        :coding nil))
-         (con (make-pgcon :dbname dbname :process process))
-         (cert (network-stream-certificate host port nil))
-         (opts (append (list :process process)
-                       (list :hostname host)
-                       ;; see https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml#alpn-protocol-ids
-                       (list :alpn-protocols (list "postgresql"))
-                       (when cert (list :keylist cert))
-                       (when (listp tls-options) tls-options))))
-    (with-current-buffer buf
-      (set-process-coding-system process 'binary 'binary)
-      (set-buffer-multibyte nil)
-      (setq-local pgcon--position 1
-                  pgcon--busy t
-                  pgcon--notification-handlers (list)))
-    (setf (pgcon-output-buffer con)
-          (generate-new-buffer " *PostgreSQL output buffer*"))
-    (with-current-buffer (pgcon-output-buffer con)
-      (set-buffer-multibyte nil)
-      (buffer-disable-undo)
-      (setq-local pgcon--position 1))
-    (condition-case err
-        (apply #'gnutls-negotiate opts)
-      (gnutls-error
-       (let ((msg (format "TLS error connecting to PostgreSQL: %s"
-                          (error-message-string err))))
-         (signal 'pg-protocol-error (list msg)))))
-    (unless (zerop pg-connect-timeout)
-      (run-at-time pg-connect-timeout nil
-                   (lambda ()
-                     (unless (memq (process-status process) '(open listen))
-                       (delete-process process)
-                       (kill-buffer buf)
-                       (signal 'pg-connect-timeout (list "PostgreSQL connection timed out"))))))
-    ;; Save connection info in the pgcon object, for possible later use by pg-cancel
-    (setf (pgcon-connect-info con) (list :tcp host port dbname user password))
-    ;; the remainder of the startup sequence is common to TCP and Unix socket connections
-    (pg-do-startup con dbname user password)
-    ;; We can't handle PGOPTIONS in pg-do-startup, because that contains code shared with
-    ;; pg-connect/string and pg-connect/uri, and for these other functions any value for the options
-    ;; paramspec specified in the connection string or URI overrides the value of the environment
-    ;; variable.
-    (when-let* ((options (getenv "PGOPTIONS")))
-      (pg-handle-connection-options con options))
-    con))
-
+  (declare (obsolete pg-connect-plist "2025"))
+  (pg-connect-plist dbname user
+                    :password password
+                    :host host
+                    :port port
+                    :tls-options tls-options
+                    :direct-tls t))
 
 (cl-defun pg-connect-local (path dbname user &optional (password ""))
   "Initiate a connection with the PostgreSQL backend over local Unix socket PATH.
@@ -1227,7 +1264,7 @@ the host component of the URL."
             (forward-char 2)
             (setq save-pos (point))
             (skip-chars-forward "^/?#")
-            (setq host (buffer-substring save-pos (point)))
+            (setq host (buffer-substring-no-properties save-pos (point)))
 	    ;; 3.2.1 User Information
             (if (string-match "^\\([^@]+\\)@" host)
                 (setq user (match-string 1 host)
@@ -1354,7 +1391,11 @@ paramspec keywords are `sslmode' (partial support), `connect_timeout',
       (let ((con (if (or (zerop (length host))
                          (eq ?/ (aref host 0)))
                      (pg-connect-local host dbname user password)
-                   (pg-connect dbname user password host port tls))))
+                   (pg-connect-plist dbname user
+                                     :password password
+                                     :host host
+                                     :port port
+                                     :tls-options tls))))
         (when client-encoding
           (setf (pgcon-client-encoding con) client-encoding))
         (when options
@@ -1547,6 +1588,7 @@ Return a result structure which can be decoded using `pg-result'."
             (t
              (let ((msg (format "Unknown response type from backend in pg-exec: %s" c)))
                (signal 'pg-protocol-error (list msg))))))))
+
 
 (defun pg-result (result what &rest arg)
   "Extract WHAT component of RESULT.

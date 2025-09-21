@@ -4,11 +4,25 @@
 ## [0.60] - Unreleased
 
 - Add support for version 3.2 of the wire protocol, introduced in PostgreSQL v18. The only change
-  with respect to the previously supported version 3.0 (which will still be used for older
-  PostgreSQL version, or variants that support the older protocol) is the length of the key used to
-  authenticate requests to cancel an ongoing query.
+  with respect to the previously supported version 3.0 is the length of the key used to authenticate
+  requests to cancel an ongoing query. As for libpq, we default to using version 3.0, because
+  several PostgreSQL variants do not support version 3.2 and have not yet implemented the protocol
+  version downgrade functionality that is designed into the protocol.
+
+  Version 3.2 of the protocol can be selected by passing `(3 . 2)` as the value for the
+  `:protocol-version` argument to `pg-connect-plist` and `pg-connect/direct-tls`, or by using
+  a `protocol_version` URL parameter to `pg-connect/uri`.
+
+- New function to establish PostgreSQL connections `pg-connect-plist`. This function is similar to
+  `pg-connect`, but takes keyword arguments instead of optional arguments. Function `pg-connect` is
+  deprecated.
+
+- Recently introduced function `pg-connect/direct-tls` has been deprecated; use the `:direct-tls`
+  option to `pg-connect-plist` instead.
 
 - Add detection code and workarounds for the PostgreSQL variants OpenGauss (by Huawei) and pgsqlite.
+
+- Add parsing support for arrays of time- and date-related objects.
 
 
 ## [0.59] - 2025-08-31
