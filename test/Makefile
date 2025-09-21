@@ -617,15 +617,18 @@ test-cedardb: test-pg.el
 
 # https://hub.docker.com/r/pgedge/pgedge
 # https://github.com/pgEdge/pgedge-docker
-#
-# As of 2025-08, failing on "create extension vector" with a SIGILL
-#   --> https://github.com/pgEdge/pgedge-docker/issues/20
 test-pgedge: test-pg.el
 	${DOCKER} run --rm --name pgedge \
            --pull=newer \
            --publish 127.0.0.1:5481:5432 \
            -v "./pgedge-config.json:/home/pgedge/db.json" \
-           -d docker.io/pgedge/pgedge:pg17-latest
+           -e PGPORT=5432 \
+           -e POSTGRES_USER=pgeltestuser \
+           -e POSTGRES_PASSWORD=pgeltest \
+           -e POSTGRES_DB=pgeltestdb \
+           -e LANG=en_US.UTF8 \
+           -e LC_CTYPE=en_US.UTF8 \
+           -d ghcr.io/pgedge/pgedge-postgres:17-spock5-minimal -c listen_addresses="*"
 	sleep 10
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5481/pgeltestdb $(MAKE) test
 	${DOCKER} stop pgedge
