@@ -1,7 +1,7 @@
 # Changelog
 
 
-## [0.60] - Unreleased
+## [0.60] - 2025-09-21
 
 - Add support for version 3.2 of the wire protocol, introduced in PostgreSQL v18. The only change
   with respect to the previously supported version 3.0 is the length of the key used to authenticate
