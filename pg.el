@@ -1462,9 +1462,9 @@ Return a result structure which can be decoded using `pg-result'."
 
             ;; BackendKeyData
             (?K
-             (let ((_msglen (pg-read-net-int con 4)))
+             (let ((msglen (pg-read-net-int con 4)))
                (setf (pgcon-pid con) (pg-read-net-int con 4))
-               (setf (pgcon-secret con) (pg-read-net-int con 4))))
+               (setf (pgcon-secret con) (pg-read-chars con (- msglen 8)))))
 
             ;; NoticeResponse
             (?N
