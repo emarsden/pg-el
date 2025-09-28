@@ -418,7 +418,7 @@ test-xata: test-pg.el
 	PGURI="postgresql://user:password@eu-central-1.sql.xata.sh/pgeltestdb:main?sslmode=force" $(MAKE) test-tls
 
 
-# https://docs.timescale.com/self-hosted/latest/install/installation-docker/
+# https://docs.tigerdata.com/self-hosted/latest/install/installation-docker/
 #
 # Note that Timescaledb has a bunch of internal tables (owned by the currently connected user) in
 # schemas named _timescaledb_cache, _timescaledb_catalog, timescaledb_internal and so on. We have
@@ -431,10 +431,12 @@ test-timescale: test-pg.el
            -e POSTGRES_USER=pgeltestuser \
            -e POSTGRES_PASSWORD=pgeltest \
            -e PGPORT=5981 \
-           -d docker.io/timescale/timescaledb:latest-pg17
+           -d docker.io/timescale/timescaledb-ha:pg17.6-ts2.21.4
 	sleep 5
 	PGEL_PORT=5981 $(MAKE) test
 	${DOCKER} stop timescale
+
+#   -d docker.io/timescale/timescaledb:latest-pg17
 
 
 # https://hub.docker.com/r/citusdata/citus
@@ -639,11 +641,11 @@ test-pgedge: test-pg.el
 # default database name.
 test-documentdb: test-pg.el
 	${DOCKER} run --rm --name documentdb \
-          --pull=newer \
-	  --publish 5488:5488 \
-	   -e POSTGRES_PASSWORD=pgeltest \
-	   -e PGPORT=5488 \
-	   -d ghcr.io/ferretdb/postgres-documentdb:latest
+           --pull=newer \
+           --publish 5488:5488 \
+           -e POSTGRES_PASSWORD=pgeltest \
+           -e PGPORT=5488 \
+           -d ghcr.io/ferretdb/postgres-documentdb:latest
 	sleep 5
 	PGURI=postgresql://postgres:pgeltest@127.0.0.1:5488/postgres $(MAKE) test
 	${DOCKER} stop documentdb
@@ -1238,7 +1240,7 @@ test-mindsdb: test-pg.el
           -e MINDSDB_PASSWORD=pgeltest \
           -e MINDSDB_APIS=postgres \
           -e MINDSDB_NO_STUDIO=true \
-          docker.io/mindsdb/mindsdb:latest
+          -d docker.io/mindsdb/mindsdb:latest
 	sleep 10
 	echo 'CREATE DATABASE pgeltestdb WITH ENGINE = "postgres", PARAMETERS = { "user": "pgeltestuser", "password": "pgeltest", "host": "localhost", "port": "5432", "database": "pgeltestdb" };' | psql postgresql://pgeltestuser:pgeltest@127.0.0.1:55432/pgeltestdb
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:55432/pgeltestdb $(MAKE) test
