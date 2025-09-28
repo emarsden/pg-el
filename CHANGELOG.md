@@ -1,6 +1,13 @@
 # Changelog
 
 
+## [0.61] - Unreleased
+
+- Add support for providing a password for authentication as a function, rather than as a string.
+  This allows for integration with the auth-source functionality in Emacs, and helps to reduce the
+  length of time where passwords remain present in RAM. Patch from @Kaylebor.
+
+
 ## [0.60] - 2025-09-21
 
 - Add support for version 3.2 of the wire protocol, introduced in PostgreSQL v18. The only change
