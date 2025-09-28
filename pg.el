@@ -797,9 +797,12 @@ Uses database DBNAME, user USER and password PASSWORD."
           ;; AUTH_REQ_CLEARTEXT_PASSWORD
           (3
           ;; send a PasswordMessage
-          (pg-send-char con ?p)
-          (pg-send-uint con (+ 5 (length password)) 4)
-          (pg-send-string con password)
+          (let ((actual-password (if (functionp password)
+                                    (funcall password)
+                                  password)))
+            (pg-send-char con ?p)
+            (pg-send-uint con (+ 5 (length actual-password)) 4)
+            (pg-send-string con actual-password))
           (pg-flush con))
 
          ;; AUTH_REQ_CRYPT
@@ -3512,8 +3515,11 @@ Respects floating-point infinities and NaN."
 (defun pg-do-md5-authentication (con user password)
   "Attempt MD5 authentication with PostgreSQL database over connection CON.
 Authenticate as USER with PASSWORD."
-  (let* ((salt (pg-read-chars con 4))
-         (pwdhash (md5 (concat password user)))
+  (let* ((actual-password (if (functionp password)
+                             (funcall password)
+                           password))
+         (salt (pg-read-chars con 4))
+         (pwdhash (md5 (concat actual-password user)))
          (hash (concat "md5" (md5 (concat pwdhash salt)))))
     (pg-send-char con ?p)
     (pg-send-uint con (+ 5 (length hash)) 4)
@@ -3681,13 +3687,16 @@ Authenticate as USER with PASSWORD."
 (defun pg-do-sasl-authentication (con user password)
   "Attempt SASL authentication with PostgreSQL over connection CON.
 Authenticate as USER with PASSWORD."
-  (let ((mechanisms (list)))
+  (let ((actual-password (if (functionp password)
+                            (funcall password)
+                          password))
+        (mechanisms (list)))
     ;; read server's list of preferered authentication mechanisms
     (cl-loop for mech = (pg-read-string con 4096)
              while (not (zerop (length mech)))
              do (push mech mechanisms))
     (if (member "SCRAM-SHA-256" mechanisms)
-        (pg-do-scram-sha256-authentication con user password)
+        (pg-do-scram-sha256-authentication con user actual-password)
       (let ((msg (format "Can't handle any of SASL mechanisms %s" mechanisms)))
         (signal 'pg-protocol-error (list msg))))))
 
