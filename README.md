@@ -42,7 +42,7 @@ This library has support for:
 - Connections over TCP or (on Unix machines) a local Unix socket.
 
 
-Tested **PostgreSQL versions**: The code has been tested with versions 18rc1, 17.6, 16.5, 15.4,
+Tested **PostgreSQL versions**: The code has been tested with versions 18.0, 17.6, 16.5, 15.4,
 13.8, 11.17, and 10.22 on Linux. It is also tested via GitHub actions on MacOS and Windows. This
 library also works, more or less, against other “PostgreSQL-compatible” databases. There are four
 main points where this compatibility may be problematic:
@@ -75,7 +75,7 @@ The following PostgreSQL-compatible databases or extensions have been tested:
   adds some features for compatibility with Oracle). Last tested 2025-08 with version 4.5.
 
 - The [Timescale DB](https://www.timescale.com/) extension for time series data, source available
-  but non open source. This works perfectly (last tested 2025-08 with version 2.19.3).
+  but non open source. This works perfectly (last tested 2025-09 with version 2.21).
 
 - The [CitusDB](https://github.com/citusdata/citus) extension for sharding PostgreSQL over multiple
   hosts (AGPLv3 licence). Works perfectly (last tested 2025-07 with Citus version 13.0).
@@ -86,7 +86,7 @@ The following PostgreSQL-compatible databases or extensions have been tested:
 
 - The [Microsoft DocumentDB](https://github.com/microsoft/documentdb) extension for MongoDB-like
   queries (MIT licensed). Works perfectly. Note that this is not the same product as Amazon
-  DocumentDB. Last tested 2025-07 with the FerretDB distribution 2.3.1.
+  DocumentDB. Last tested 2025-09 with the FerretDB distribution 2.3.1.
 
 - The [Hydra Columnar](https://github.com/hydradatabase/columnar) extension for column-oriented
   storage and parallel queries (Apache license). Works perfectly (last tested 2025-05 with v1.1.2).
@@ -115,8 +115,8 @@ The following PostgreSQL-compatible databases or extensions have been tested:
 
 - [PolarDB for PostgreSQL](https://github.com/ApsaraDB/PolarDB-for-PostgreSQL) is free software
   (Apache 2 licence) developed by Alibaba Cloud, also available as a commercial hosted service with
-  a proprietary distributed storage architecture. It works perfectly with pg-el (last tested 2025-08
-  with version 15.13).
+  a proprietary distributed storage architecture. It works perfectly with pg-el (last tested 2025-09
+  with version 15.14).
 
 - [openGauss](https://opengauss.org/en/) is an open source (Mulan PSL v2) fork of PostgreSQL
   maintained by Huawei. It works fine with pg-el (last tested 2025-09 with version 7.0.0-RC2).
@@ -133,7 +133,7 @@ The following PostgreSQL-compatible databases or extensions have been tested:
 
 - The [RisingWave](https://github.com/risingwavelabs/risingwave) event streaming database (Apache
   license) is mostly working. It does not support `GENERATED ALWAYS AS IDENTITY` or `SERIAL`
-  columns, nor `VACUUM ANALYZE`. Last tested 2025-09 with v2.5.1.
+  columns, nor `VACUUM ANALYZE`. Last tested 2025-09 with v2.6.0.
 
 - The [CrateDB](https://crate.io/) distributed database (Apache licence). CrateDB does not support
   rows (e.g. `SELECT (1,2)`), does not support the `time`, `varbit`, `bytea`, `jsonb` and `hstore`
@@ -141,7 +141,7 @@ The following PostgreSQL-compatible databases or extensions have been tested:
   PostgreSQL functions such as `factorial`, does not return a correct type OID for text columns in
   rows returned from a prepared statement, doesn't support Unicode identifiers, doesn't support the
   `COPY` protocol, doesn't support `TRUNCATE TABLE`. It works with these limitations with pg-el
-  (last tested 2025-09 with version 5.10.11).
+  (last tested 2025-09 with version 5.10.12).
 
 - The [CockroachDB](https://github.com/cockroachdb/cockroach) distributed database (source-available
   but non-free software licence). Note that this database does not implement the large object
@@ -162,7 +162,7 @@ The following PostgreSQL-compatible databases or extensions have been tested:
 
 - The [CedarDB](https://cedardb.com/) database spun off from the Umbra research database developed
   at the University of Munich is fairly PostgreSQL compatible and works well with pg-el. Last tested
-  2025-09 with CedarDB version v2025-09-17.
+  2025-09 with CedarDB version v2025-09-24.
 
 - The [QuestDB](https://questdb.io/) time series database (Apache licensed) has very limited
   PostgreSQL support, and does not support the `integer` type for example. Last tested 2025-09 with
