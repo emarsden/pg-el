@@ -4,10 +4,10 @@
 The entry points in the pg-el library are documented below.
 
 
-    (with-pg-connection con (dbname user [password host port]) &body body)
+    (with-pg-connection-plist con (dbname user &key args) &body body)
 
 A macro which opens a TCP network connection to database `DBNAME`, executes the `BODY` forms then
-disconnects. See function `pg-connect` for details of the connection arguments.
+disconnects. See function `pg-connect-plist` for details of the connection arguments `ARGS`.
 
 
     (with-pg-connection-local con (path dbname user [password]) &body body)
@@ -23,13 +23,16 @@ A macro which executes the `BODY` forms wrapped in an SQL transaction. `CON` is 
 database. If an error occurs during the execution of the forms, a ROLLBACK instruction is executed.
 
 
-    (pg-connect dbname user [password host port tls-options]) -> con
+    (pg-connect-plist dbname user &key password host port tls-options direct-tls server-variant protocol-version) -> con
     
 Connect to the database `DBNAME` on `HOST` (defaults to localhost) at `PORT` (defaults to 5432) via
-TCP/IP and authenticate as `USER` with `PASSWORD`. This library currently supports SCRAM-SHA-256
-authentication (the default method from PostgreSQL version 14 onwards), MD5 authentication and
-cleartext password authentication. This function also sets the output date type to `ISO` and
-initializes our type parser tables.
+TCP/IP and authenticate as `USER` with `PASSWORD`. `PASSWORD` may be a string, or a zero-argument
+lambda function which returns the password as a string (this makes it possible to use the
+auth-source functionality in Emacs). This library currently supports SCRAM-SHA-256 authentication
+(the default method from PostgreSQL version 14 onwards), MD5 authentication and cleartext password
+authentication.
+
+This function also sets the output date type to `ISO` and initializes our type parser tables.
 
 If `tls-options` is non-NIL, attempt to establish an encrypted connection to PostgreSQL by
 passing `tls-options` to Emacs function `gnutls-negotiate`. `tls-options` is a Common-Lisp style
@@ -48,6 +51,20 @@ form
 
 where `key` is the filename of the client certificate private key and `cert` is the filename of the
 client certificate. These are passed to GnuTLS.
+
+If argument `direct-tls` is non-NIL, attempt to establish a “direct” TLS connection to PostgreSQL,
+as supported since PostgreSQL version 18. This saves a few network packets during the establishment
+of a network connection. This connection mode uses ALPN and requires ALPN support in your Emacs (in
+testing as of Emacs 30).
+
+If argument `server-variant` is non-NIL, force the detected value of `pgcon-server-variant` to the
+specified value. This may be needed for some PostgreSQL variants that we are not able to identify
+via their version string and startup options, but for which we need to implement workarounds (the
+primary culprit is currently Clickhouse).
+
+If `protocol-version` is non-NIL, it should be a `(major-version . minor-version)` cons representing
+the version of the PostgreSQL wire protocol to use. Currently `major-version` should be 3 and
+`minor-version` should be 0 or 2.
 
 
 

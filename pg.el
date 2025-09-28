@@ -796,14 +796,14 @@ Uses database DBNAME, user USER and password PASSWORD."
 
           ;; AUTH_REQ_CLEARTEXT_PASSWORD
           (3
-          ;; send a PasswordMessage
-          (let ((actual-password (if (functionp password)
-                                    (funcall password)
-                                  password)))
-            (pg-send-char con ?p)
-            (pg-send-uint con (+ 5 (length actual-password)) 4)
-            (pg-send-string con actual-password))
-          (pg-flush con))
+           ;; send a PasswordMessage
+           (let ((password-string (if (functionp password)
+                                      (funcall password)
+                                    password)))
+             (pg-send-char con ?p)
+             (pg-send-uint con (+ 5 (length password-string)) 4)
+             (pg-send-string con password-string))
+           (pg-flush con))
 
          ;; AUTH_REQ_CRYPT
          (4
@@ -926,9 +926,10 @@ Uses database DBNAME, user USER and password PASSWORD."
                             (server-variant nil)
                             (protocol-version (cons 3 0)))
   "Initiate a connection with the PostgreSQL backend over TCP.
-Connect to the database DBNAME with the username USER, on PORT of
-HOST, providing PASSWORD if necessary. Return a connection to the
-database (as an opaque type). PORT defaults to 5432, HOST to
+Connect to the database DBNAME with the username USER, on PORT of HOST,
+providing PASSWORD if necessary. PASSWORD may be either a string or a
+zero-argument function which returns a string. Return a connection to
+the database (as an opaque type). PORT defaults to 5432, HOST to
 \"localhost\", and PASSWORD to an empty string.
 
 If TLS-OPTIONS is non-NIL, attempt to establish an encrypted connection
@@ -1064,8 +1065,9 @@ to use the updated protocol features introduced with PostgreSQL version
                              (tls-options nil)
                              (server-variant nil))
   "Initiate a connection with the PostgreSQL backend over TCP.
-Connect to the database DBNAME with the username USER, on PORT of
-HOST, providing PASSWORD if necessary. Return a connection to the
+Connect to the database DBNAME with the username USER, on PORT of HOST,
+providing PASSWORD if necessary. PASSWORD may be a either string, or a
+zero-argument function that returns a string. Return a connection to the
 database (as an opaque type). PORT defaults to 5432, HOST to
 \"localhost\", and PASSWORD to an empty string. If TLS-OPTIONS is
 non-NIL, attempt to establish an encrypted connection to PostgreSQL
@@ -1098,11 +1100,12 @@ you would like to run specific code in
                                         (port 5432)
                                         (tls-options nil))
   "Initiate a direct TLS connection with the PostgreSQL backend over TCP.
-Connect to the database DBNAME with the username USER, on PORT of
-HOST, providing PASSWORD if necessary. Return a connection to the
-database (as an opaque type). PORT defaults to 5432, HOST to
-\"localhost\", and PASSWORD to an empty string. The TLS-OPTIONS
-are passed to GnuTLS."
+Connect to the database DBNAME with the username USER, on PORT of HOST,
+providing PASSWORD if necessary. PASSWORD may be either a string, or a
+zero-argument function that returns a string. Return a connection to
+the database (as an opaque type). PORT defaults to 5432, HOST to
+\"localhost\", and PASSWORD to an empty string. The TLS-OPTIONS are
+passed to GnuTLS."
   (declare (obsolete pg-connect-plist "2025"))
   (pg-connect-plist dbname user
                     :password password
@@ -1114,8 +1117,9 @@ are passed to GnuTLS."
 (cl-defun pg-connect-local (path dbname user &optional (password ""))
   "Initiate a connection with the PostgreSQL backend over local Unix socket PATH.
 Connect to the database DBNAME with the username USER, providing
-PASSWORD if necessary. Return a connection to the database (as an
-opaque type). PASSWORD defaults to an empty string."
+PASSWORD if necessary. PASSWORD may be either a string, or a
+zero-argument function that returns a string. Return a connection to the
+database (as an opaque type). PASSWORD defaults to an empty string."
   (let* ((buf (generate-new-buffer " *PostgreSQL*"))
          (process (make-network-process :name "postgres"
                                         :buffer buf
@@ -3514,12 +3518,13 @@ Respects floating-point infinities and NaN."
 ;; hash = ′md5′ + md5(pwdhash + salt).hexdigest()
 (defun pg-do-md5-authentication (con user password)
   "Attempt MD5 authentication with PostgreSQL database over connection CON.
-Authenticate as USER with PASSWORD."
-  (let* ((actual-password (if (functionp password)
-                             (funcall password)
-                           password))
+Authenticate as USER with PASSWORD, which is either a string or a
+zero-argument function that returns a string."
+  (let* ((password-string (if (functionp password)
+                              (funcall password)
+                            password))
          (salt (pg-read-chars con 4))
-         (pwdhash (md5 (concat actual-password user)))
+         (pwdhash (md5 (concat password-string user)))
          (hash (concat "md5" (md5 (concat pwdhash salt)))))
     (pg-send-char con ?p)
     (pg-send-uint con (+ 5 (length hash)) 4)
@@ -3592,7 +3597,7 @@ Authenticate as USER with PASSWORD."
 ;; https://www.rfc-editor.org/rfc/rfc7677
 (defun pg-do-scram-sha256-authentication (con user password)
   "Attempt SCRAM-SHA-256 authentication with PostgreSQL over connection CON.
-Authenticate as USER with PASSWORD."
+Authenticate as USER with PASSWORD, a string."
   (let* ((mechanism "SCRAM-SHA-256")
          (client-nonce (or pg--*force-client-nonce*
                            (apply #'string (cl-loop for i below 32 collect (+ ?A (random 25))))))
@@ -3686,17 +3691,18 @@ Authenticate as USER with PASSWORD."
 
 (defun pg-do-sasl-authentication (con user password)
   "Attempt SASL authentication with PostgreSQL over connection CON.
-Authenticate as USER with PASSWORD."
-  (let ((actual-password (if (functionp password)
-                            (funcall password)
-                          password))
+Authenticate as USER with PASSWORD, which is either a string or a
+zero-argument function that returns a string."
+  (let ((password-string (if (functionp password)
+                             (funcall password)
+                           password))
         (mechanisms (list)))
     ;; read server's list of preferered authentication mechanisms
     (cl-loop for mech = (pg-read-string con 4096)
              while (not (zerop (length mech)))
              do (push mech mechanisms))
     (if (member "SCRAM-SHA-256" mechanisms)
-        (pg-do-scram-sha256-authentication con user actual-password)
+        (pg-do-scram-sha256-authentication con user password-string)
       (let ((msg (format "Can't handle any of SASL mechanisms %s" mechanisms)))
         (signal 'pg-protocol-error (list msg))))))
 
