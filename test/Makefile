@@ -140,7 +140,7 @@ test-shortnames: test-pg.el
 #
 # Currently failing with Emacs 31.0.50 with
 #   LOG:  received direct SSL connection request without ALPN protocol negotiation extension
-test-postgresql18betatls: test-pg.el
+test-postgresql18tls: test-pg.el
 	openssl req -new -nodes -text -out ${WORKDIR}/root.csr -keyout ${WORKDIR}/root.key \
 	   -subj "/CN=localhost"
 	chmod og-rwx ${WORKDIR}/root.key
@@ -174,7 +174,7 @@ test-postgresql18betatls: test-pg.el
            -e PGPORT=5418 \
            -e TZ=Asia/Tokyo \
            --user postgres \
-           -d docker.io/library/postgres:18beta3-alpine \
+           -d docker.io/library/postgres:18-alpine \
               -c ssl=on \
               -c ssl_cert_file=/certs/server.crt \
               -c ssl_key_file=/certs/server.key
@@ -188,13 +188,13 @@ test-postgresql18betatls: test-pg.el
 test-postgresql18: test-pg.el
 	${DOCKER} run --rm --name pgsql \
            --pull=newer \
-	   --publish 5418:5418 \
-	   -e POSTGRES_DB=pgeltestdb \
-	   -e POSTGRES_USER=pgeltestuser \
-	   -e POSTGRES_PASSWORD=pgeltest \
-	   -e PGPORT=5418 \
-	   -e TZ=Asia/Tokyo \
-	   -d docker.io/library/postgres:18rc1-alpine
+           --publish 5418:5418 \
+           -e POSTGRES_DB=pgeltestdb \
+           -e POSTGRES_USER=pgeltestuser \
+           -e POSTGRES_PASSWORD=pgeltest \
+           -e PGPORT=5418 \
+           -e TZ=Asia/Tokyo \
+           -d docker.io/library/postgres:18-alpine
 	sleep 5
 	PGEL_PORT=5418 $(MAKE) test
 	${DOCKER} stop pgsql
