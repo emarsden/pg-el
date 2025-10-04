@@ -812,8 +812,10 @@
 (defun pg-test-edge-cases (con)
   (cl-labels ((row (sql) (pg-result (pg-exec con sql) :tuple 0))
               (scalar (sql) (cl-first (pg-result (pg-exec con sql) :tuple 0))))
-    (let ((res (pg-exec con "")))
-      (should (string-equal-ignore-case (pg-result res :status) "EMPTY")))
+    ;; YDB hangs on this empty query.
+    (unless (member (pgcon-server-variant con) '(ydb))
+      (let ((res (pg-exec con "")))
+        (should (string-equal-ignore-case (pg-result res :status) "EMPTY"))))
     (unless (member (pgcon-server-variant con) '(cratedb clickhouse))
       (should (eql t (scalar "SELECT bool 'f' < bool 't' AS true")))
       (should (eql t (scalar "SELECT bool 'f' <= bool 't' AS true"))))
@@ -922,28 +924,29 @@ bar$$"))))
       (let ((res (pg-exec con "SELECT * FROM w")))
         (should (eql 3 (length (pg-result res :tuples)))))
       (pg-exec con "DROP TABLE w"))
-    ;; Testing insert via UNNEST
-    (when-let* ((sql (pgtest-massage con "CREATE TABLE measurement(
-       id SERIAL PRIMARY KEY,
-       sensorid TEXT,
-       value FLOAT8,
-       ts TIMESTAMPTZ DEFAULT current_timestamp)")))
-      (pg-exec con "DROP TABLE IF EXISTS measurement")
-      (pg-exec con sql)
-      (let* ((size 39)
-             (sensors (make-vector size nil))
-             (values (make-vector size 0.0))
-             (sql "INSERT INTO measurement(sensorid,value) SELECT * FROM unnest($1::text[], $2::float8[])"))
-        (dotimes (i size)
-          (setf (aref sensors i) (random-word))
-          (setf (aref values i) (cl-random 1000.0)))
-        (pg-exec-prepared con sql
-                          `((,sensors . "_text") (,values . "_float8")))
-        (pgtest-flush-table con "measurement")
-        (let* ((res (pg-exec con "SELECT COUNT(*) FROM measurement"))
-               (row (pg-result res :tuple 0)))
-          (should (eql size (cl-first row))))
-        (pg-exec con "DROP TABLE measurement")))))
+    ;; Testing insert via UNNEST. YDB does not support unnest on _text,_float. 
+    (unless (member (pgcon-server-variant con) '(ydb))
+      (when-let* ((sql (pgtest-massage con "CREATE TABLE measurement(
+         id SERIAL PRIMARY KEY,
+         sensorid TEXT,
+         value FLOAT8,
+         ts TIMESTAMP DEFAULT current_timestamp)")))
+        (pg-exec con "DROP TABLE IF EXISTS measurement")
+        (pg-exec con sql)
+        (let* ((size 39)
+               (sensors (make-vector size nil))
+               (values (make-vector size 0.0))
+               (sql "INSERT INTO measurement(sensorid,value) SELECT * FROM unnest($1::text[], $2::float8[])"))
+          (dotimes (i size)
+            (setf (aref sensors i) (random-word))
+            (setf (aref values i) (cl-random 1000.0)))
+          (pg-exec-prepared con sql
+                            `((,sensors . "_text") (,values . "_float8")))
+          (pgtest-flush-table con "measurement")
+          (let* ((res (pg-exec con "SELECT COUNT(*) FROM measurement"))
+                 (row (pg-result res :tuple 0)))
+            (should (eql size (cl-first row))))
+          (pg-exec con "DROP TABLE measurement"))))))
 
 (defun pg-test-insert/prepared (con)
   (cl-flet ((scalar (sql) (cl-first (pg-result (pg-exec con sql) :tuple 0))))
