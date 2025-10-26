@@ -381,6 +381,9 @@ test-certificates: test-pg.el install-deps
 	${DOCKER} volume rm pgcerts
 
 
+# https://hub.docker.com/r/stagex/user-postgresql
+#
+# This image is buggy: crun: executable file `/bin/sh` not found
 test-stagex: test-pg.el
 	${DOCKER} run --rm --name pgsql \
            --pull=newer \
@@ -392,7 +395,7 @@ test-stagex: test-pg.el
            -e POSTGRES_USER=pgeltestuser \
            -e POSTGRES_PASSWORD=pgeltest \
            -e PGPORT=5317 \
-           -d quay.io/stagex/user-postgresql
+           -d quay.io/stagex/user-postgresql:latest
 	sleep 5
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5317/pgeltestdb $(MAKE) test
 	${DOCKER} stop pgsql
@@ -479,7 +482,7 @@ test-orioledb: test-pg.el
            -e POSTGRES_INITDB_ARGS="--locale-provider=icu --icu-locale=en" \
            -e LANG=en_US.UTF8 \
            -e LC_CTYPE=en_US.UTF8 \
-           docker.io/orioledb/orioledb:latest-pg17
+           -d docker.io/orioledb/orioledb:latest-pg17
 	sleep 5
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5317/pgeltestdb $(MAKE) test
 	${DOCKER} stop orioledb
@@ -1049,7 +1052,7 @@ test-ydb: test-pg.el
 	  -e YDB_FEATURE_FLAGS=enable_temp_tables \
 	  -d ghcr.io/ydb-platform/local-ydb:nightly
 	sleep 5
-	PGURI=postgresql://pgeltestuser:pgeltest@localhost:5119/local $(MAKE) test
+	PGURI="postgresql://pgeltestuser:pgeltest@localhost:5119/local?read_timeout=100" $(MAKE) test
 	${DOCKER} stop ydb
 
 
@@ -1134,7 +1137,7 @@ test-clickhouse: test-pg.el
 	   -e CLICKHOUSE_DB=pgeltestdb \
 	   -e CLICKHOUSE_USER=pgeltestuser \
 	   -e CLICKHOUSE_PASSWORD=pgeltest \
-	   -d docker.io/clickhouse/clickhouse-server
+	   -d docker.io/clickhouse/clickhouse-server:latest
 	sleep 5
 	PGEL_PORT=5491 PGEL_SERVER_VARIANT=clickhouse $(MAKE) test
 	${DOCKER} stop clickhouse
@@ -1226,6 +1229,57 @@ test-alloydb: test-pg.el
 	sleep 10
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:4481/pgeltestdb $(MAKE) test
 	${DOCKER} stop alloydb
+
+
+
+# CMU NoisePage, which seems to have been abandoned in 2023
+# https://github.com/cmu-db/noisepage/blob/master/docs/tech_docker.md
+# https://hub.docker.com/r/wwfalcon/noisepage
+test-noisepage: test-pg.el
+	${DOCKER} run --rm --name noisepage \
+          --net host \
+          docker.io/wwfalcon/noisepage:latest
+	sleep 10
+	PGURI=postgresql://noisepage@127.0.0.1:15721/noisepage $(MAKE) test
+	${DOCKER} stop noisepage
+
+
+
+# https://seafowl.io/docs/guides/querying-postgresql
+# https://hub.docker.com/r/splitgraph/seafowl/
+#
+# Failing with "Error during planning: No inline metastore passed in"
+test-seafowl: test-pg.el
+	${DOCKER} run --rm --name seafowl \
+           --net host \
+           -v "./seafowl.toml:/etc/seafowl.toml" \
+           -d docker.io/splitgraph/seafowl:latest -c /etc/seafowl.toml
+	sleep 10
+	PGURI=postgresql://seafowl@127.0.0.1:6432/pgeltestdb $(MAKE) test
+	${DOCKER} stop seafowl
+
+
+# https://hub.docker.com/r/clockworklabs/spacetime
+# https://spacetimedb.com/docs/sql/pg-wire
+# apparently also hosted on registry.digitalocean.com/clockwork/spacetimedb:latest
+#
+# Missing: user authentication
+# https://spacetimedb.com/docs/http/identity
+test-spacetimedb: test-pg.el
+	${DOCKER} run --rm --name spacetimedb \
+           --publish 127.0.0.1:5981:5981 \
+           --publish 127.0.0.1:3000:3000 \
+           -d docker.io/clockworklabs/spacetime:latest start --listen-addr 127.0.0.1:3000 --pg-port 5981
+	sleep 2
+	podman exec spacetimedb spacetime init --lang rust my_module
+	podman exec spacetimedb spacetime publish --yes --project-path my_module pgeltestdb
+#        @json=$(shell curl -X POST http://localhost:3000/v1/identity);
+	curl http://localhost:3000/v1/ping  # check whether we can connect
+	curl -X POST http://localhost:3000/v1/identity
+	sleep 1
+	PGURI=postgresql://pgeltestuser:foo@127.0.0.1:5981/pgeltestdb $(MAKE) test
+	${DOCKER} stop spacetimedb
+
 
 
 # https://docs.mindsdb.com/setup/self-hosted/docker
