@@ -440,7 +440,7 @@
       (pgtest-add #'pg-test-notify
                   :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb ydb questdb spanner vertica cedardb yellowbrick opengauss))
       (pgtest-add #'pg-test-lo
-                  :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb ydb questdb spanner vertica greenplum cedardb yellowbrick))
+                  :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb ydb questdb spanner vertica greenplum cedardb yellowbrick opengauss))
       (dolist (test (reverse tests))
         (message "== Running test %s" test)
         (condition-case err
