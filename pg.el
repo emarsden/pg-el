@@ -625,7 +625,7 @@ presented to the user."
                        (if context (concat " " context) "")
                        (pgerror-message e)
                        (string-join extra ", ")))
-          ;; https://www.postgresql.org/docs/17/errcodes-appendix.html
+          ;; https://www.postgresql.org/docs/current/errcodes-appendix.html
           (error-type (pcase (pgerror-sqlstate e)
                         ("0A000" 'pg-feature-not-supported)
                         ((pred (lambda (v) (string-prefix-p "08" v))) 'pg-connection-error)
@@ -2929,6 +2929,8 @@ Return nil if the extension could not be loaded."
          -1.0e+INF)
         ((string= str "NaN")
          0.0e+NaN)
+        ((string= str "NULL")
+         pg-null-marker)
         (t
          (string-to-number str))))
 
@@ -3827,17 +3829,18 @@ TABLE can be a string or a schema-qualified name. Uses database connection CON."
      (let* ((classoid (pg--table-classoid con table))
             (sql "SELECT description FROM rw_catalog.rw_description WHERE objoid=$1 AND objsubid IS NULL")
             (res (pg-exec-prepared con sql `((,classoid . "int4"))))
-            (row (pg-result res :tuple 0)))
-       (cl-first row)))
+            (tuple (pg-result res :tuple 0))
+            (maybe-comment (cl-first tuple)))
+       (if (equal maybe-comment pg-null-marker) nil maybe-comment)))
     ;; TODO: possibly some other PostgreSQL variants use the syntax "COMMENT ON TABLE tname" to
     ;; query the comment.
     (_ (let* ((t-id (pg-escape-identifier table))
               ;; TODO: use an SQL query that avoids escaping the table identifier.
               (sql "SELECT obj_description($1::regclass::oid, 'pg_class')")
               (res (pg-exec-prepared con sql `((,t-id . "text"))))
-              (tuples (pg-result res :tuples)))
-         (when tuples
-           (caar tuples))))))
+              (tuple (pg-result res :tuple 0))
+              (maybe-comment (cl-first tuple)))
+         (if (equal maybe-comment pg-null-marker) nil maybe-comment)))))
 
 ;; Support for (setf (pg-table-comment con table) "comment")
 (gv-define-setter pg-table-comment (comment con table)
@@ -3921,10 +3924,12 @@ Uses database connection CON."
             (row (pg-result res :tuple 0)))
        (cl-first row)))
     ('arcadedb nil)
+    ('datafusion nil)
     (_
      (let* ((res (pg-exec con "SELECT current_schema()"))
-            (row (pg-result res :tuple 0)))
-       (cl-first row)))))
+            (tuple (pg-result res :tuple 0))
+            (maybe-schema (cl-first tuple)))
+       (if (equal maybe-schema pg-null-marker) nil maybe-schema)))))
 
 ;; Possible alternative query:
 ;;   SELECT nspname FROM pg_namespace
@@ -3934,6 +3939,7 @@ Uses database connection CON."
     ;; QuestDB doesn't really support schemas.
     ('questdb (list "sys" "public"))
     ('arcadedb nil)
+    ('datafusion nil)
     ((or 'risingwave 'octodb 'pgsqlite)
      (let ((res (pg-exec con "SELECT DISTINCT table_schema FROM information_schema.tables")))
        (apply #'append (pg-result res :tuples))))
@@ -4104,8 +4110,10 @@ Using connection to PostgreSQL CON."
          (argument-types (list "text" "text" "text"))
          (params `((,schema . "text") (,tname . "text") (,column . "text")))
          (ps-name (pg-ensure-prepared-statement con "QRY-column-default" sql argument-types))
-         (res (pg-fetch-prepared con ps-name params)))
-    (caar (pg-result res :tuples))))
+         (res (pg-fetch-prepared con ps-name params))
+         (tuple (pg-result res :tuple 0))
+         (maybe-comment (cl-first tuple)))
+    (if (equal maybe-comment pg-null-marker) nil maybe-comment)))
 
 (defun pg-column-default (con table column)
   "Return the default value for COLUMN in PostgreSQL TABLE.
@@ -4115,7 +4123,7 @@ Using connection to PostgreSQL CON."
     ('questdb nil)
     ('ydb nil)
     ;; TODO: Materialize is incorrectly returning "DEFAULT NULL" for the query used in
-    ;; pg-column-default/full; we would try to add a workaround.
+    ;; pg-column-default/full; we could try to add a workaround.
     (_ (pg-column-default/full con table column))))
 
 (defun pg-column-comment (con table column)
@@ -4150,9 +4158,9 @@ TABLE can be a string or a schema-qualified name. Uses database connection CON."
                                                                       column table)))))
               (sql "SELECT pg_catalog.col_description($1::regclass::oid, $2)")
               (res (pg-exec-prepared con sql `((,t-id . "text") (,(1+ column-number) . "int4"))))
-              (tuples (pg-result res :tuples)))
-         (when tuples
-           (caar tuples))))))
+              (tuple (pg-result res :tuple 0))
+              (maybe-comment (cl-first tuple)))
+         (if (equal maybe-comment pg-null-marker) nil maybe-comment)))))
 
 (gv-define-setter pg-column-comment (comment con table column)
   `(pcase (pgcon-server-variant ,con)
@@ -4273,7 +4281,7 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
           (4294967295
            ;; this is "-1" (pg-read-net-int doesn't handle integer overflow), which indicates a
            ;; NULL column
-           (push nil tuples))
+           (push pg-null-marker tuples))
           (0
            (push "" tuples))
           (t
