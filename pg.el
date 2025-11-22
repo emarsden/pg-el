@@ -506,7 +506,7 @@ Uses PostgreSQL connection CON.")
 
 (cl-defmethod pg-do-variant-specific-setup ((con pgcon) (variant t))
   ;; This statement fails on ClickHouse (and the database immediately closes the connection!).
-  (unless (eq variant 'clickhouse)
+  (unless (member variant '(clickhouse datafusion))
     (pg-exec con "SET datestyle = 'ISO'")))
 
 (defun pg-detect-server-variant (con)
@@ -547,6 +547,8 @@ Uses connection CON. The variant can be accessed by `pgcon-server-variant'."
               (setf (pgcon-server-variant con) 'pgsqlite))
              ((cl-search "openGauss" version)
               (setf (pgcon-server-variant con) 'opengauss))
+             ((cl-search "Apache DataFusion" version)
+              (setf (pgcon-server-variant con) 'datafusion))
              ;; TODO: find a better detection method for ArcadeDB
              ((string-suffix-p "/main)" version)
               (setf (pgcon-server-variant con) 'arcadedb))
