@@ -90,6 +90,9 @@
 This information appears in queries to the `pg_stat_activity' table
 and (depending on server configuration) in the connection log.")
 
+;; https://en.wikipedia.org/wiki/Null_(SQL)
+(defvar pg-null-marker nil
+  "The value used to represent the SQL NULL value")
 
 (defvar pg-connect-timeout
   (cl-case system-type
