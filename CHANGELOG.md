@@ -7,6 +7,14 @@
   This allows for integration with the auth-source functionality in Emacs, and helps to reduce the
   length of time where passwords remain present in RAM. Patch from @Kaylebor.
 
+- New error class `pg-invalid-sql-statement-name` which is signalled when an invalid name is given
+  to a prepared query.
+
+- New error class `pg-invalid-cursor-name` which is signalled when an invalid name is used for a
+  cursor.
+
+- Integer arrays and floating point arrays containing NULL values will now be parsed correctly.
+
 
 ## [0.60] - 2025-09-21
 
