@@ -429,12 +429,12 @@ test-xata: test-pg.el
 test-timescale: test-pg.el
 	${DOCKER} run --rm --name timescale \
            --pull=newer \
-	   --publish 5981:5981 \
+           --publish 5981:5981 \
            -e POSTGRES_DB=pgeltestdb \
            -e POSTGRES_USER=pgeltestuser \
            -e POSTGRES_PASSWORD=pgeltest \
            -e PGPORT=5981 \
-           -d docker.io/timescale/timescaledb-ha:pg17.6-ts2.21.4
+           -d docker.io/timescale/timescaledb-ha:pg17.7-ts2.23.0
 	sleep 5
 	PGEL_PORT=5981 $(MAKE) test
 	${DOCKER} stop timescale
@@ -595,9 +595,6 @@ test-agensgraph: test-pg.el
 
 
 # https://cedardb.com/docs/
-#
-# We are sometimes seeing strange "unrecognized startup messages" on connection establishment with
-# CedarDB (running in Docker), which disappear if we pause before sending data to the database.
 test-cedardb: test-pg.el
 	${DOCKER} run --rm --name cedardb \
            --pull=newer \
@@ -612,6 +609,7 @@ test-cedardb: test-pg.el
 
 
 # https://hub.docker.com/r/pgedge/pgedge
+# https://github.com/pgEdge/postgres-images/pkgs/container/pgedge-postgres
 # https://github.com/pgEdge/pgedge-docker
 test-pgedge: test-pg.el
 	${DOCKER} run --rm --name pgedge \
@@ -624,7 +622,7 @@ test-pgedge: test-pg.el
            -e POSTGRES_DB=pgeltestdb \
            -e LANG=en_US.UTF8 \
            -e LC_CTYPE=en_US.UTF8 \
-           -d ghcr.io/pgedge/pgedge-postgres:17-spock5-minimal -c listen_addresses="*"
+           -d ghcr.io/pgedge/pgedge-postgres:18-spock5-minimal -c listen_addresses="*"
 	sleep 10
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5481/pgeltestdb $(MAKE) test
 	${DOCKER} stop pgedge
@@ -675,8 +673,8 @@ test-babelfish: test-pg.el
 #
 # https://github.com/edoburu/docker-pgbouncer
 #
-# TODO: need to move away from the unmaintained bitnami Docker images
-test-pgbouncer: test-pg.el
+# TODO: need to move away from the unmaintained bitnami Docker images, perhaps to ghcr.io/icoretech/pgbouncer-docker
+test-pgbouncer-old: test-pg.el
 	${DOCKER} run --rm --name pgbouncer \
 	  --net host \
 	  -e PGBOUNCER_PORT=6432 \
@@ -689,6 +687,19 @@ test-pgbouncer: test-pg.el
 	sleep 5
 	PGEL_PORT=6432 $(MAKE) test
 	${DOCKER} stop pgbouncer
+
+
+# https://github.com/icoretech/pgbouncer-docker/pkgs/container/pgbouncer-docker
+test-pgbouncer: test-pg.el
+	${DOCKER} run --rm --name pgbouncer \
+          -v ./pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini \
+          -v ./pgbouncer-auth-file.txt:/etc/pgbouncer/pgbouncer-auth-file.txt \
+          --net host \
+          -d ghcr.io/icoretech/pgbouncer-docker:1.25.0
+	sleep 5
+	PGEL_PORT=6432 $(MAKE) test
+	${DOCKER} stop pgbouncer
+
 
 
 # pgcat bouncer/sharding middleware
@@ -1014,6 +1025,16 @@ test-cloudberry: test-pg.el
 	${DOCKER} stop cloudberry
 
 
+test-cloudberry2: test-pg.el
+	${DOCKER} run --rm --name cloudberry \
+          --publish 127.0.0.1:5661:5661 \
+          -h cdw -e PGPORT=5661 \
+          docker.io/scottdolecki/cloudberry:latest
+	sleep 5
+	PGEL_DATABASE=postgres PGEL_USER=gpadmin PGEL_PASSWORD="greenplum" PGEL_PORT=5661 $(MAKE) test
+	${DOCKER} stop cloudberry
+
+
 # Google Spanner emulator
 # See https://github.com/GoogleCloudPlatform/pgadapter/blob/postgresql-dialect/docs/emulator.md
 # https://cloud.google.com/spanner/docs/pgadapter-start#docker
@@ -1049,11 +1070,14 @@ test-ydb: test-pg.el
           -e POSTGRES_PASSWORD=pgeltest \
           -e YDB_PG_DATABASE=pgeltestdb \
           -e YDB_USE_IN_MEMORY_PDISKS=true \
-	  -e YDB_FEATURE_FLAGS=enable_temp_tables \
-	  -d ghcr.io/ydb-platform/local-ydb:nightly
+          -e YDB_FEATURE_FLAGS=enable_temp_tables \
+          -d docker.io/ydbplatform/local-ydb:25.2
 	sleep 5
 	PGURI="postgresql://pgeltestuser:pgeltest@localhost:5119/local?read_timeout=100" $(MAKE) test
 	${DOCKER} stop ydb
+
+# ghcr.io/ydb-platform/local-ydb:nightly
+
 
 
 # Yugabyte 2.25 is based on PostgreSQL 15.2. This works very well, including the HSTORE and pgvector
@@ -1231,6 +1255,9 @@ test-alloydb: test-pg.el
 	${DOCKER} stop alloydb
 
 
+# TODO: test Doltgres (Database version control in Postgres-flavored SQL), which doesn't seem to
+# have a maintaine Docker image currently (and is in beta) https://github.com/dolthub/doltgresql
+
 
 # CMU NoisePage, which seems to have been abandoned in 2023
 # https://github.com/cmu-db/noisepage/blob/master/docs/tech_docker.md
@@ -1247,13 +1274,11 @@ test-noisepage: test-pg.el
 
 # https://seafowl.io/docs/guides/querying-postgresql
 # https://hub.docker.com/r/splitgraph/seafowl/
-#
-# Failing with "Error during planning: No inline metastore passed in"
 test-seafowl: test-pg.el
 	${DOCKER} run --rm --name seafowl \
            --net host \
            -v "./seafowl.toml:/etc/seafowl.toml" \
-           -d docker.io/splitgraph/seafowl:latest -c /etc/seafowl.toml
+           -d docker.io/splitgraph/seafowl:nightly -c /etc/seafowl.toml
 	sleep 10
 	PGURI=postgresql://seafowl@127.0.0.1:6432/pgeltestdb $(MAKE) test
 	${DOCKER} stop seafowl
@@ -1280,6 +1305,23 @@ test-spacetimedb: test-pg.el
 	PGURI=postgresql://pgeltestuser:foo@127.0.0.1:5981/pgeltestdb $(MAKE) test
 	${DOCKER} stop spacetimedb
 
+
+# https://hub.docker.com/r/ravendb/ravendb/
+# https://docs.ravendb.net/7.1/integrations/postgresql-protocol/overview/#enabling-postgresql-support
+#
+# It seems that the PostgreSQL protocol support requires a licence, so this doesn't work.
+test-ravendb: test-pg.el
+	${DOCKER} run --rm --name ravendb \
+          -e RAVEN_Setup_Mode=None \
+          -e RAVEN_ARGS="--log-to-console" \
+          -e Features_Availability=Experimental \
+          -e Integrations_PostgreSQL_Enabled=true \
+          -e Integrations_PostgreSQL_Port=5433 \
+          --publish 127.0.0.1:5433:5433 \
+          docker.io/ravendb/ravendb-nightly:ubuntu-latest
+	sleep 5
+	PGURI=postgresql://ravendb@127.0.0.1:5433/ravendb $(MAKE) test
+	${DOCKER} stop ravendb
 
 
 # https://docs.mindsdb.com/setup/self-hosted/docker
