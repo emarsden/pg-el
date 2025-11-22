@@ -2406,6 +2406,8 @@ can be decoded using `pg-result', but with data in BUF."
   ;; discard any content in our process buffer
   (with-current-buffer (process-buffer (pgcon-process con))
     (setq-local pgcon--position (point-max)))
+  (when (member (pgcon-server-variant con) '(datafusion))
+    (cl-return-from pg-sync nil))
   (pg-send-char con ?S)
   (pg-send-uint con 4 4)
   (pg-flush con)
