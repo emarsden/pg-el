@@ -35,7 +35,7 @@ and authenticate with the database from Emacs:
 ```lisp
 ELISP> (require 'pg)
 pg
-ELISP> (defvar *pg* (pg-connect "pgeltestdb" "pgeltestuser" "pgeltest" "localhost" 5432))
+ELISP> (defvar *pg* (pg-connect-plist "pgeltestdb" "pgeltestuser" :password "pgeltest" :host "localhost"))
 *pg*
 ```
 ~~~
@@ -63,7 +63,7 @@ podman run -d --name pgsql \
 
 then connect from Emacs with
 
-    ELISP> (pg-connect "pgeltestdb" "pgeltestuser" "pgeltest" "localhost" 5432)
+    ELISP> (pg-connect-plist "pgeltestdb" "pgeltestuser" :password "pgeltest" :host "localhost")
 
 or connect over a local Unix socket
 
@@ -74,7 +74,7 @@ Now some simple interactions with the database:
 
 ```lisp
 ELISP> (pg-backend-version *pg*)
-"PostgreSQL 16.1 (Debian 16.1-1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 13.2.0-6) 13.2.0, 64-bit"
+"PostgreSQL 18.1 (Debian 18.1-1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 15.2.0-8) 15.2.0, 64-bit"
 ELISP> (let ((res (pg-exec *pg* "SELECT 42, 1.23")))
            (pg-result res :tuple 0))
 (42 1.23)
