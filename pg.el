@@ -3232,9 +3232,11 @@ Uses text encoding ENCODING."
 
 ;; This function must be called before using the pgvector extension. It loads the extension if
 ;; necessary, and sets up the parsing support for vector datatypes.
-(defun pg-vector-setup (con)
+(cl-defun pg-vector-setup (con)
   "Prepare for use of VECTOR datatypes on PostgreSQL connection CON.
 Return nil if the extension could not be set up."
+  (when (member (pgcon-server-variant con) '(datafusion))
+    (cl-return-from pg-vector-setup nil))
   ;; Failure of this CREATE EXTENSION statement does not necessarily mean that the database variant
   ;; does not support the vector datatype (cf. for example CedarDB).
   (condition-case nil
