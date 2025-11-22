@@ -2944,15 +2944,19 @@ Return nil if the extension could not be loaded."
 
 (defun pg-intarray-parser (str _encoding)
   "Parse PostgreSQL value STR as an array of integers."
-  (let ((len (length str)))
-    (unless (and (eql (aref str 0) ?{)
-                 (eql (aref str (1- len)) ?}))
-      (signal 'pg-protocol-error (list "Unexpected format for int array")))
-    (let ((maybe-items (cl-subseq str 1 (- len 1))))
-      (if (zerop (length maybe-items))
-          (vector)
-        (let ((items (split-string maybe-items ",")))
-          (apply #'vector (mapcar #'cl-parse-integer items)))))))
+  (cl-flet ((parse-int (str)
+              (if (string= "NULL" str)
+                  pg-null-marker
+                (cl-parse-integer str))))
+    (let ((len (length str)))
+      (unless (and (eql (aref str 0) ?{)
+                   (eql (aref str (1- len)) ?}))
+        (signal 'pg-protocol-error (list "Unexpected format for int array")))
+      (let ((maybe-items (cl-subseq str 1 (- len 1))))
+        (if (zerop (length maybe-items))
+            (vector)
+          (let ((items (split-string maybe-items ",")))
+            (apply #'vector (mapcar #'parse-int items))))))))
 
 (pg-register-parser "_int2" #'pg-intarray-parser)
 (pg-register-parser "_int2vector" #'pg-intarray-parser)
