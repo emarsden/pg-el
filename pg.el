@@ -3081,10 +3081,12 @@ Uses text encoding ENCODING."
 ;; format for ISO dates is "1999-10-24"
 (defun pg-date-parser (str _encoding)
   "Parse PostgreSQL value STR as a date."
-  (let ((year  (string-to-number (substring str 0 4)))
-        (month (string-to-number (substring str 5 7)))
-        (day   (string-to-number (substring str 8 10))))
-    (encode-time 0 0 0 day month year)))
+  (if (string= "infinity" str)
+      (encode-time (list 0 0 0 1 1 999999))
+    (let ((year  (string-to-number (substring str 0 4)))
+          (month (string-to-number (substring str 5 7)))
+          (day   (string-to-number (substring str 8 10))))
+      (encode-time (list 0 0 0 day month year)))))
 
 (pg-register-parser "date" #'pg-date-parser)
 
