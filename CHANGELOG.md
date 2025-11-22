@@ -1,7 +1,7 @@
 # Changelog
 
 
-## [0.61] - Unreleased
+## [0.61] - 2025-11-22
 
 - Add support for providing a password for authentication as a function, rather than as a string.
   This allows for integration with the auth-source functionality in Emacs, and helps to reduce the
