@@ -312,13 +312,13 @@
       (message "Backend major-version is %s" (pgcon-server-version-major con))
       (message "Detected backend variant: %s" (pgcon-server-variant con))
       (unless (member (pgcon-server-variant con)
-                      '(cockroachdb cratedb yugabyte ydb xata greptimedb risingwave clickhouse octodb vertica arcadedb cedardb pgsqlite))
+                      '(cockroachdb cratedb yugabyte ydb xata greptimedb risingwave clickhouse octodb vertica arcadedb cedardb pgsqlite datafusion))
         (when (> (pgcon-server-version-major con) 11)
           (let* ((res (pg-exec con "SELECT current_setting('ssl_library')"))
                  (row (pg-result res :tuple 0)))
             (message "Backend compiled with SSL library %s" (cl-first row)))))
       (unless (member (pgcon-server-variant con)
-                      '(questdb cratedb ydb xata greptimedb risingwave clickhouse materialize vertica arcadedb))
+                      '(questdb cratedb ydb xata greptimedb risingwave clickhouse materialize vertica arcadedb datafusion))
         (let* ((res (pg-exec con "SHOW ssl"))
                (row (pg-result res :tuple 0)))
           (message "PostgreSQL connection TLS: %s" (cl-first row))))
@@ -335,7 +335,7 @@
       (pgtest-add #'pg-test-insert)
       (pgtest-add #'pg-test-edge-cases)
       (pgtest-add #'pg-test-procedures
-                  :skip-variants '(cratedb spanner risingwave materialize ydb xata questdb thenile vertica greptimedb))
+                  :skip-variants '(cratedb spanner risingwave materialize ydb xata questdb thenile vertica greptimedb datafusion))
       ;; RisingWave is not able to parse a TZ value of "UTC-01:00" (POSIX format). QuestDB does not
       ;; support the timestamptz type. CedarDB des not support the timetz data type.
       (pgtest-add #'pg-test-date
@@ -348,7 +348,7 @@
       (pgtest-add #'pg-test-numeric
                   :skip-variants '(vertica))
       (pgtest-add #'pg-test-numeric-range
-                  :skip-variants '(xata cratedb cockroachdb ydb risingwave questdb clickhouse greptimedb spanner octodb vertica cedardb))
+                  :skip-variants '(xata cratedb cockroachdb ydb risingwave questdb clickhouse greptimedb spanner octodb vertica cedardb datafusion))
       (pgtest-add #'pg-test-prepared
                   :skip-variants '(ydb cratedb)
                   :need-emacs "28")
@@ -366,11 +366,11 @@
                   :skip-variants '(risingwave ydb)
                   :need-emacs "28")
       (pgtest-add #'pg-test-collation
-                  :skip-variants '(xata cratedb questdb clickhouse greptimedb octodb vertica yellowbrick))
+                  :skip-variants '(xata cratedb questdb clickhouse greptimedb octodb vertica yellowbrick datafusion))
       (pgtest-add #'pg-test-xml
                   :skip-variants '(xata ydb cockroachdb yugabyte clickhouse alloydb vertica opengauss))
       (pgtest-add #'pg-test-uuid
-                  :skip-variants '(cratedb risingwave ydb clickhouse greptimedb spanner octodb vertica yellowbrick))
+                  :skip-variants '(cratedb risingwave ydb clickhouse greptimedb spanner octodb vertica yellowbrick datafusion))
       ;; Risingwave doesn't support VARCHAR(N) type. YDB and Vertica don't support SELECT generate_series().
       (pgtest-add #'pg-test-result
                   :skip-variants  '(risingwave ydb spanner clickhouse vertica))
@@ -388,9 +388,9 @@
       (pgtest-add #'pg-test-enums
                   :skip-variants '(cratedb risingwave questdb greptimedb ydb materialize spanner octodb clickhouse vertica cedardb yellowbrick))
       (pgtest-add #'pg-test-server-prepare
-                  :skip-variants '(cratedb risingwave questdb greptimedb ydb octodb))
+                  :skip-variants '(cratedb risingwave questdb greptimedb ydb octodb datafusion))
       (pgtest-add #'pg-test-comments
-                   :skip-variants '(ydb cratedb cockroachdb spanner questdb thenile cedardb))
+                   :skip-variants '(ydb cratedb cockroachdb spanner questdb thenile cedardb datafusion))
       (pgtest-add #'pg-test-metadata
                   :skip-variants '(cratedb cockroachdb risingwave materialize questdb greptimedb ydb spanner vertica))
       ;; CrateDB doesn't support the JSONB type. CockroachDB doesn't support casting to JSON.
@@ -509,7 +509,7 @@
               (scalar (query args) (car (row query args))))
     (should (equal 42 (scalar "SELECT 42" (list))))
     (should (pgtest-approx= 42.0 (scalar "SELECT 42.00" (list))))
-    (should (equal nil (scalar "SELECT NULL" (list))))
+    (should (equal pg-null-marker (scalar "SELECT NULL" (list))))
     (unless (member (pgcon-server-variant con) '(immudb))
       (should (equal (list t nil) (row "SELECT $1, $2" `((t . "bool") (nil . "bool")))))
       (should (equal (list -33 "ZZz" 9999) (row "SELECT $1,$2,$3" `((-33 . "int4") ("ZZz" . "text") (9999 . "int8"))))))
@@ -667,7 +667,19 @@
     (should-error (scalar "SELECT * FROM" '(("a" . "text"))))
     (pg-sync con)
     (should-error (scalar "SELECT $1::int4" '(("2147483649" . "int4"))))
-    (pg-sync con)))
+    (pg-sync con)
+    ;; Test error handling
+    (should (eql 'ok (condition-case nil
+                         (pg-exec-prepared con "SELECT $1 + 1" '(("XXXX" . "int4")))
+                       (pg-type-error 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (pg-exec-prepared con "SELECT $1" '(("XXXX" . "date")))
+                       (pg-type-error 'ok))))
+    (should (eql 'ok (condition-case nil
+                         (pg-exec-prepared con "SELECT $1 * $2" '(("2" . "int4") ("4" . "int8") ("foobles" . "text")))
+                       (pg-type-error 'ok))))))
+    
+
 
 ;; Materialize is returning incorrect values here, failing the test.
 (cl-defun pg-test-prepared/multifetch (con &optional (rows 1000))
@@ -745,14 +757,14 @@
     (should (eql t (scalar "SELECT 'A'::char(1000) = 'A'::char(10)")))
     (should (eql t (scalar "SELECT true or false")))
     (should (equal (list "hey" "Jude") (row "SELECT 'hey', 'Jude'")))
-    (should (eql nil (scalar "SELECT NULL")))
+    (should (eql pg-null-marker (scalar "SELECT NULL")))
     (unless (member (pgcon-server-variant con) '(cratedb risingwave yugabyte xata))
       (when (> (pgcon-server-version-major con) 15)
         (should (eql #x1eeeffff (scalar "SELECT int8 '0x1EEE_FFFF'")))))
     (should (eql t (scalar "SELECT 42 = 42")))
     (should (eql nil (scalar "SELECT 53 = 33")))
     (should (eql 42 (scalar "SELECT /* FREE PALESTINE */ 42 ")))
-    (should (equal (list 1 nil "all") (row "SELECT 1,NULL,'all'")))
+    (should (equal (list 1 pg-null-marker "all") (row "SELECT 1,NULL,'all'")))
     (unless (member (pgcon-server-variant con) '(questdb spanner))
       (should (string= "Z" (scalar "SELECT chr(90)"))))
     (should (eql 12 (scalar "SELECT length('(╯°□°)╯︵ ┻━┻')")))
@@ -767,13 +779,14 @@
       (should (eql nil (row " SELECT 3 WHERE 1=0"))))
     (should (eql 4 (scalar "SELECT ((2 * 2))")))
     (should (string= "abcdef" (scalar "SELECT 'abc' || 'def'")))
+    (should (string= "abc" (scalar "SELECT concat('abc', NULL)")))
     (should (string= "howdy" (scalar "SELECT 'howdy'::text")))
     (should (eql t (scalar "SELECT 'abc' LIKE 'a%'")))
     (should (string= "banana" (scalar "SELECT split_part('apple,banana,cherry', ',', 2)")))
     ;; RisingWave does not support the VARCHAR(N) syntax.
     (unless (eq 'risingwave (pgcon-server-variant con))
       (should (string= "gday" (scalar "SELECT 'gday'::varchar(20)"))))
-    (should (eql nil (scalar "SELECT SUM(null::numeric) FROM generate_series(1,3)")))
+    (should (equal pg-null-marker (scalar "SELECT SUM(null::numeric) FROM generate_series(1,3)")))
     ;; CrateDB: Cannot cast `'NaN'` of type `text` to type `numeric`
     (unless (member (pgcon-server-variant con) '(cratedb))
       (should (eql 0.0e+NaN (scalar "SELECT SUM('NaN'::numeric) FROM generate_series(1,3)"))))
@@ -784,7 +797,11 @@
     (unless (member (pgcon-server-variant con) '(cratedb cockroachdb))
       (should (eql 32 (length (scalar "SELECT sha256('foobles')"))))
       (should (eql 64 (length (scalar "SELECT sha512('foobles')")))))
-    (unless (member (pgcon-server-variant con) '(spanner))
+    ;; The MD5 function is not implemented by the Spanner variant. Note that it is also disabled in
+    ;; some PostgreSQL builds which compile OpenSSL in a FIPS-compatible mode, but in that case the
+    ;; function triggers a runtime error (and it doesn't seem to be possible to check at runtime
+    ;; whether the function is correctly implemented or not).
+    (when (pg-function-p con "md5")
       (should (string= (md5 "foobles") (scalar "SELECT md5('foobles')"))))
     (let* ((res (pg-exec con "SELECT 11 as bizzle, 15 as bazzle"))
            (attr (pg-result res :attributes))
@@ -821,17 +838,25 @@
       (should (eql t (scalar "SELECT bool 'f' <= bool 't' AS true"))))
     ;; Empty strings are equal
     (should (eql t (scalar "SELECT '' = ''")))
-    ;; Returns NULL because NULL is wierd in SQL
-    (should (eql nil (scalar "SELECT NULL = NULL")))
+    (should (eql 0 (scalar "SELECT length('')")))
+    (should (eql 0 (scalar "SELECT length(lower(''))")))
+    (should (eql 0 (scalar "SELECT length('' || '')")))
+    (should (string= "" (scalar "SELECT substring('foobles' from 2 for 0)")))
+    (should (eql 0 (scalar "SELECT length(concat('', NULL, ''))")))
+    (should (string= "" (scalar "SELECT ''::VARCHAR")))
+    ;; Returns NULL because NULL is weird in SQL
+    (should (equal pg-null-marker (scalar "SELECT NULL = NULL")))
     ;; IS checks for NULL identity
     (should (eql t (scalar "SELECT NULL IS NULL")))
+    (should (eql nil (scalar "SELECT NULL IS DISTINCT FROM NULL")))
+    (should (equal pg-null-marker (scalar "SELECT NULL::integer")))
     ;; NULL is propagated in mathematical operations.
-    (should (eql nil (scalar "SELECT NULL + 42")))
-    (should (eql nil (scalar "SELECT 42 < NULL")))
-    (should (eql nil (scalar "SELECT ABS(NULL)")))
+    (should (equal pg-null-marker (scalar "SELECT NULL + 42")))
+    (should (equal pg-null-marker (scalar "SELECT 42 < NULL")))
+    (should (equal pg-null-marker (scalar "SELECT ABS(NULL)")))
     ;; NULL is propagated in logical operations.
-    (should (eql nil (scalar "SELECT true AND NULL")))
-    (should (eql nil (scalar "SELECT NOT NULL")))
+    (should (equal pg-null-marker (scalar "SELECT true AND NULL")))
+    (should (equal pg-null-marker (scalar "SELECT NOT NULL")))
     (should (eql t (scalar "SELECT TRUE OR NULL")))
     ;; This leads to a timeout with YDB
     (unless (member (pgcon-server-variant con) '(ydb))
@@ -872,7 +897,13 @@ bar$$"))))
     (should (string= "foo\tbar" (scalar "SELECT 'foo\tbar'")))
     (should (string= "foo\rbar\nbiz" (scalar "SELECT 'foo\rbar\nbiz'")))
     (should (eql -55 (scalar "SELECT \n\n-\n\n55  \t\n")))
-    (should (equal (list 4 2 0) (row "SELECT 4,\n2,\n0")))))
+    (should (equal (list 4 2 0) (row "SELECT 4,\n2,\n0")))
+    (let* ((big (concat "SELECT length('foobles" (make-string (* 10 1024) ?0) "baz')"))
+           (res (scalar big)))
+      (should (numberp res)))
+    (let ((long (scalar "SELECT repeat('z', 1000000)")))
+      (should (eql 1000000 (length long))))))
+            
 
 
 (defun pg-test-insert (con)
@@ -1231,6 +1262,9 @@ bar$$"))))
         (should (equal (scalar "SELECT 'allballs'::time") "00:00:00")))
       (should (equal (scalar "SELECT '2022-10-01'::date")
                      (encode-time (list 0 0 0 1 10 2022))))
+      ;; A leap year
+      (should (equal (scalar "SELECT '2000-02-29'::date")
+                     (encode-time (list 0 0 0 29 2 2000))))
       ;; When casting to DATE, the time portion is truncated
       (should (equal (scalar "SELECT '2063-03-31T22:13:02'::date")
                      (encode-time (list 0 0 0 31 3 2063))))
@@ -1305,6 +1339,9 @@ bar$$"))))
     (should (eql 66 (scalar "SELECT 66::int8")))
     (should (eql -1 (scalar "SELECT -1::int8")))
     (should (eql 42 (scalar "SELECT '42'::smallint")))
+    (should (eql (scalar "SELECT '-0'::int2") 0))
+    (should (eql (scalar "SELECT '-0'::int4") 0))
+    (should (eql (scalar "SELECT '-0'::int8") 0))
     ;; (should (string= "-32768" (scalar "SELECT (-1::int2<<15)::text")))
     (should (eql 0 (scalar "SELECT (-32768)::int2 % (-1)::int2")))
     ;; RisingWave doesn't support numeric(x, y) or decimal(x, y).
@@ -1346,6 +1383,8 @@ bar$$"))))
           (should (eql (scalar "SELECT factorial(25)") 15511210043330985984000000)))))
     (unless (member (pgcon-server-variant con) '(materialize))
       (should (pgtest-approx= (scalar "SELECT pi()") 3.1415626)))
+    (should (pgtest-approx= (scalar "SELECT '-0'::float4") 0.0))
+    (should (pgtest-approx= (scalar "SELECT '-0'::float8") 0.0))
     (should (pgtest-approx= (scalar "SELECT -5.0") -5.0))
     (should (pgtest-approx= (scalar "SELECT 5e-14") 5e-14))
     (should (pgtest-approx= (scalar "SELECT 55.678::float4") 55.678))
@@ -1359,6 +1398,7 @@ bar$$"))))
     (should (eql -1.0e+INF (scalar "SELECT '-Infinity'::float8")))
     (should (isnan (scalar "SELECT 'NaN'::float4")))
     (should (isnan (scalar "SELECT 'NaN'::float8")))
+    (should (eql 1.0e+INF (scalar "SELECT 'Infinity'::numeric")))
     (should (pgtest-approx= (scalar "SELECT 100.0::numeric(30,20) + 500.0::numeric(30,20)") 600.0))
     (should (pgtest-approx= (scalar "SELECT 0.000005::numeric(30,20) + 0.000005::numeric(30,20)") 0.00001))
     ;; The cube root operator
@@ -1421,6 +1461,9 @@ bar$$"))))
       (should (string= (scalar "SELECT xmlforest('abc' AS foo, 123 AS bar)")
                        "<foo>abc</foo><bar>123</bar>"))
       (should (string= "" (scalar "SELECT xmlparse(CONTENT '<?xml version=\"1.0\"?>')")))
+      (let* ((res (pg-exec-prepared con "SELECT $1" '(("<foo><bar>45</bar></foo>" . "xml"))))
+             (row (pg-result res :tuple 0)))
+        (should (eql 5 (cl-search "<bar>" (cl-first row)))))
       (should (cl-search "Foobles" (scalar "SELECT xmlcomment('Foobles')")))
       (should (eql 'ok (condition-case nil
                            (scalar "SELECT xmlparse(CONTENT '<')")
@@ -1516,6 +1559,8 @@ bar$$"))))
   (pg-exec con "INSERT INTO byteatest VALUES(1, 'warning\\000'::bytea)")
   (pg-exec con "INSERT INTO byteatest VALUES(2, '\\001\\002\\003'::bytea)")
   (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0))))
+    (should (eql 0 (length (scalar "SELECT decode('', 'hex')"))))
+    (should (eql 0 (scalar "SELECT length(''::bytea)")))
     (should (equal (byte-to-string 0) (scalar "SELECT '\\000'::bytea")))
     (should (equal (byte-to-string ?') (scalar "SELECT ''''::bytea")))
     (should (equal (decode-hex-string "DEADBEEF") (scalar "SELECT '\\xDEADBEEF'::bytea")))
@@ -1618,6 +1663,13 @@ bar$$"))))
       ;; this is returning _bpchar.
       (should (equal (vector ?a ?b ?c) (scalar "SELECT CAST('{a,b,c}' AS CHAR[])"))))
     (should (equal (vector "foo" "bar") (scalar "SELECT '{foo, bar}'::text[]")))
+    (should (equal (vector 1 pg-null-marker 3) (scalar "SELECT ARRAY[1, NULL, 3]")))
+    (let ((res (scalar "SELECT ARRAY[4.5, NULL, 6.0, 7.99999]")))
+      (should (vectorp res))
+      (should (eql 4 (length res)))
+      (should (equal pg-null-marker (aref res 1))))
+    (let ((res (scalar "SELECT array_remove(ARRAY[1,2,-3], 10)")))
+      (should (equal (vector 1 2 -3) res)))
     (let* ((res (pg-exec-prepared con "SELECT $1" '(([1 2 3] . "_int4"))))
            (row (pg-result res :tuple 0)))
       (should (equal (vector 1 2 3) (cl-first row))))
@@ -1852,7 +1904,7 @@ bar$$"))))
   (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0))))
     (should (eql 42 (scalar "SELECT to_json(42)")))
     (should (eql -56 (scalar "SELECT CAST ('-56' as json)")))
-    (should (eql nil (scalar "SELECT JSON(NULL)")))
+    (should (equal pg-null-marker (scalar "SELECT JSON(NULL)")))
     (let ((dct (scalar "SELECT JSON('{ \"a\" : 1 }')")))
       (should (hash-table-p dct))
       (should (eql 1 (gethash "a" dct))))
@@ -1861,6 +1913,8 @@ bar$$"))))
         (should (pgtest-approx= 155.6 (scalar "SELECT json_scalar(155.6)")))
         (should (string= "155.6" (scalar "SELECT json_scalar('155.6')")))
         (should (string= "144" (scalar "SELECT json_serialize('144')")))))
+    (let ((json (scalar "SELECT '{}'::json")))
+      (should (eql 0 (hash-table-count json))))
     (let ((json (scalar "SELECT '[5,7]'::json")))
       (should (eql 5 (aref json 0))))
     (let ((json (scalar "SELECT '[5,7]'::jsonb")))
@@ -1871,6 +1925,10 @@ bar$$"))))
     (let ((json (scalar "SELECT '[66.7,-42.0,8]'::jsonb")))
       (should (pgtest-approx= 66.7 (aref json 0)))
       (should (pgtest-approx= -42.0 (aref json 1))))
+    (let ((json (scalar "SELECT '{\"a\":null,\"b\":[1,null,3]}'::jsonb")))
+      (should (eql 2 (hash-table-count json)))
+      (should (equal :null (gethash "a" json)))
+      (should (equal :null (aref (gethash "b" json) 1))))
     (should (string= "number" (scalar "SELECT json_typeof('123')")))
     (should (string= "array" (scalar "SELECT json_typeof('[]')")))
     (should (string= "boolean" (scalar "SELECT json_typeof('true')")))
@@ -1911,6 +1969,9 @@ bar$$"))))
         (should (string= "bar" (gethash "b" (aref json 1)))))
       (let ((json (scalar "SELECT '{\"a\": [0,1,2,null]}'::json")))
         (should (eql 2 (aref (gethash "a" json) 2)))))
+    (let ((json (scalar "SELECT '{\"unicode\":\"😀\"}'::jsonb")))
+      (should (eql 1 (hash-table-count json)))
+      (should (string= "😀" (gethash "unicode" json))))
     (when (> (pgcon-server-version-major con) 11)
       (unless (member (pgcon-server-variant con) '(cockroachdb))
         (should (string= "true" (scalar "SELECT 'true'::jsonpath")))
@@ -2478,8 +2539,8 @@ bar$$"))))
       (should (string-prefix-p "DROP" (pg-result r7 :status))))
     (should (eql (length (pg-result r8 :tuples)) 10))
     (message "=============================================="))
-   (let ((res (pg-exec con "SELECT 1 UNION SELECT 2")))
-     (should (equal '((1) (2)) (pg-result res :tuples))))
+   (let ((res (pg-exec con "SELECT 7 UNION SELECT 8 ORDER BY 1")))
+     (should (equal '((7) (8)) (pg-result res :tuples))))
    (let ((res (pg-exec con "SELECT 1,2,3,'soleil'")))
      (should (equal '(1 2 3 "soleil") (pg-result res :tuple 0))))
    (let ((res (pg-exec con "SELECT 42 as z")))
@@ -2525,6 +2586,8 @@ bar$$"))))
   (let ((res (pg-exec con "FETCH 1000 FROM crsr42")))
     (should (string= "FETCH 1" (pg-result res :status)))
     (should (eql 1 (length (pg-result res :tuples)))))
+  (let ((res (pg-exec con "FETCH 10 FROM crsr42")))
+    (should (eql 0 (length (pg-result res :tuples)))))
   (let ((res (pg-exec con "CLOSE crsr42")))
     (should (string= "CLOSE CURSOR" (pg-result res :status))))
   (let ((res (pg-exec con "COMMIT")))
@@ -2641,393 +2704,440 @@ bar$$"))))
 ;; Here we test that the SQLSTATE component of errors signaled by the backend is valid.
 ;;
 ;; Some examples from https://github.com/technicaldeft/rgsql
-(defun pg-test-error-sqlstate (con)
-  (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "SELECT 42/0")
-                       (pg-division-by-zero 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "SELECT 1/0::float8")
-                       (pg-division-by-zero 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (pg-exec-prepared con "SELECT 1/0::int2" nil)
-                       (pg-division-by-zero 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (pg-exec-prepared con "SELECT 1/0::numeric" nil)
-                       (pg-division-by-zero 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (pg-exec-prepared con "SELECT 1::numeric/0" nil)
-                       (pg-division-by-zero 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (pg-exec-prepared con "SELECT 1::int8/0" nil)
-                       (pg-division-by-zero 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "SELECT sqrt(-5.0)")
-                       (pg-floating-point-exception 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "SELECT log(-2.1)")
-                       (pg-floating-point-exception 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "SELECT abs(true)")
-                       (pg-undefined-function 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "SELECT 1 + true")
-                       (pg-undefined-function 'ok)
-                       ;; CockroachDB reports this as a pg-data-error.
-                       (pg-data-error 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "SELECT 'foo' + 'a'::character")
-                       (pg-undefined-function 'ok)
-                       ;; CockroachDB reports this as a pg-data-error.
-                       (pg-data-error 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "SELECT ''::char(0)")
-                       (pg-data-error 'ok)
-                       ;; CockroachDB reports this as a syntax error
-                       (pg-syntax-error 'ok))))
-    (should (eql 'ok (condition-case nil
-                         ;; numerical overflow
-                         (scalar "SELECT 2147483649::int4")
-                       (pg-numeric-value-out-of-range 'ok))))
+(defun pg-test-error-sqlstate-helper (con scalar-fn)
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT 42/0")
+                     (pg-division-by-zero 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT 1/0::float8")
+                     (pg-division-by-zero 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT 1/0::int2")
+                     (pg-division-by-zero 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT 1/0::numeric")
+                     (pg-division-by-zero 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT 1::numeric/0")
+                     (pg-division-by-zero 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT 1::int8/0")
+                     (pg-division-by-zero 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT sqrt(-5.0)")
+                     (pg-floating-point-exception 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT log(-2.1)")
+                     (pg-floating-point-exception 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT abs(true)")
+                     (pg-undefined-function 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT 1 + true")
+                     (pg-undefined-function 'ok)
+                     ;; CockroachDB reports this as a pg-data-error.
+                     (pg-data-error 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT 'foo' + 'a'::character")
+                     (pg-undefined-function 'ok)
+                     ;; CockroachDB reports this as a pg-data-error.
+                     (pg-data-error 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT '25:61:61'::time")
+                     (pg-data-error 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT ''::char(0)")
+                     (pg-data-error 'ok)
+                     ;; CockroachDB reports this as a syntax error
+                     (pg-syntax-error 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT E'\\777'::bytea")
+                     (pg-data-error 'ok)
+                     ;; CockroachDB reports this as a syntax error
+                     (pg-syntax-error 'ok))))
+  (should (eql 'ok (condition-case nil
+                       ;; numerical overflow
+                       (funcall scalar-fn "SELECT 2147483649::int4")
+                     (pg-numeric-value-out-of-range 'ok))))
+  (should (eql 'ok (condition-case nil
+                       ;; numerical overflow on smallint
+                       (funcall scalar-fn "SELECT (-32768)::int2 * (-1)::int2")
+                     (pg-numeric-value-out-of-range 'ok))))
+  (should (eql 'ok (condition-case nil
+                       ;; numerical overflow on smallint
+                       (funcall scalar-fn "SELECT (-32768)::int2 / (-1)::int2")
+                     (pg-numeric-value-out-of-range 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT -12345::numeric(3)")
+                     (pg-numeric-value-out-of-range 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT 2345.678::numeric(5,2)")
+                     (pg-numeric-value-out-of-range 'ok))))
+  ;; Yugabyte doesn't accept this input syntax for smallint, nor PostgreSQL versions < 16
+  (unless (or (member (pgcon-server-variant con) '(yugabyte greenplum))
+              (< (pgcon-server-version-major con) 16))
     (should (eql 'ok (condition-case nil
                          ;; numerical overflow on smallint
-                         (scalar "SELECT (-32768)::int2 * (-1)::int2")
-                       (pg-numeric-value-out-of-range 'ok))))
-    (should (eql 'ok (condition-case nil
-                         ;; numerical overflow on smallint
-                         (scalar "SELECT (-32768)::int2 / (-1)::int2")
-                       (pg-numeric-value-out-of-range 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "SELECT -12345::numeric(3)")
-                       (pg-numeric-value-out-of-range 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "SELECT 2345.678::numeric(5,2)")
-                       (pg-numeric-value-out-of-range 'ok))))
-    ;; Yugabyte doesn't accept this input syntax for smallint, nor PostgreSQL versions < 16
-    (unless (or (member (pgcon-server-variant con) '(yugabyte greenplum))
-                (< (pgcon-server-version-major con) 16))
-      (should (eql 'ok (condition-case nil
-                           ;; numerical overflow on smallint
-                           (scalar "SELECT int2 '-0b1000000000000001'")
-                         (pg-numeric-value-out-of-range 'ok)))))
-    (should (eql 'ok (condition-case nil
-                         ;; numerical overflow
-                         (scalar "SELECT lcm((-9223372036854775808)::int8, 1::int8)")
-                       (pg-numeric-value-out-of-range 'ok))))
-    (should (eql 'ok (condition-case nil
-                         ;; numerical overflow
-                         (scalar "SELECT '10e-400'::float8")
-                       (pg-numeric-value-out-of-range 'ok))))
-    ;; xata.io fails on this test; returns a generic pg-error.
-    (should (eql 'ok (condition-case nil
-                         (scalar "SELECT happiness(42)")
-                       (pg-undefined-function 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "SELECTING 42")
-                       (pg-syntax-error 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "SELECT 1 * / 2")
-                       (pg-syntax-error 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "SELECT abs 1)")
-                       (pg-syntax-error 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "SELECT mod 1, 2")
-                       (pg-syntax-error 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "SELECT 42 as 42a")
-                       (pg-syntax-error 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "SELECT @, $, %, &")
-                       (pg-syntax-error 'ok))))
-    ;; Reserved keyword used as table name.
-    (should (eql 'ok (condition-case nil
-                         (scalar "CREATE TABLE from(a INTEGER)")
-                       (pg-syntax-error 'ok))))
-    ;; Reserved keyword used as column name.
-    (should (eql 'ok (condition-case nil
-                         (scalar "CREATE TABLE x(as INTEGER)")
-                       (pg-syntax-error 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "SELECT '[1,2,3]'::json ->> {}")
-                       (pg-syntax-error 'ok))))
-    (when (> (pgcon-server-version-major con) 11)
-      (unless (member (pgcon-server-variant con) '(cockroachdb))
-        (should (eql 'ok (condition-case nil
-                             (scalar "SELECT jsonb_path_query('{\"a\":42}'::jsonb, '$$.foo')")
-                           (pg-syntax-error 'ok))))))
-    ;; The json_serialize() function is new in PostgreSQL 17
-    (unless (or (member (pgcon-server-variant con) '(cockroachdb yugabyte alloydb))
-                (< (pgcon-server-version-major con) 17))
-      (should (eql 'ok (condition-case nil
-                           (scalar "SELECT json_serialize('{\"a\": \"foo\", 42: 43 }')")
-                         (pg-invalid-text-representation 'ok))))
-      (should (eql 'ok (condition-case nil
-                           ;; cannot use non-string types with implicit FORMAT JSON clause
-                           (scalar "SELECT JSON_SERIALIZE(144)")
-                         (pg-datatype-mismatch 'ok)))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "SELECT CAST('55Y' AS INTEGER)")
-                       (pg-invalid-text-representation 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "SELECT * FROM nonexistent_table")
-                       (pg-undefined-table 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "CREATE TABLE foobles(a BANANA)")
-                       (pg-programming-error 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "ALTER TABLE nonexistent_table RENAME TO aspirational")
-                       (pg-undefined-table 'ok))))
-    (scalar "CREATE TABLE pgtest_foobles(a INTEGER PRIMARY KEY)")
-    (should (eql 'ok (condition-case nil
-                         (scalar "ALTER TABLE pgtest_foobles DROP COLUMN nonexistent")
-                       (pg-programming-error 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "ALTER TABLE pgtest_foobles RENAME COLUMN nonexistent TO aspirational")
-                       (pg-programming-error 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "ALTER TABLE pgtest_foobles RENAME TO pgtest_foobles")
-                       (pg-programming-error 'ok))))
-    (should (eql 'ok (condition-case nil
-                         ;; This creates a conflict with the system column ctid
-                         (scalar "ALTER TABLE pgtest_foobles RENAME COLUMN a TO ctid")
-                       (pg-programming-error 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "CREATE INDEX pgtest_idx ON pgtest_foobles(inexist)")
-                       (pg-programming-error 'ok))))
-    (scalar "DROP TABLE pgtest_foobles")
-    (should (eql 'ok (condition-case nil
-                         (scalar "DROP INDEX nonexist_idx")
-                       (pg-programming-error 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "DROP VIEW nonexist_view")
-                       (pg-programming-error 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "DROP TYPE")
-                       (pg-programming-error 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "DROP TYPE nonexist_type")
-                       (pg-programming-error 'ok))))
-    ;; CockroachDB reports this as a pg-data-error, and PostgreSQL as pg-undefined-function.
-    (should (eql 'ok (condition-case nil
-                         (scalar "SELECT 100 = false")
-                       (pg-undefined-function 'ok)
-                       (pg-data-error 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "SELECT banana(42)")
-                       (pg-undefined-function 'ok))))
-    ;; insufficient arguments means operator does not exist
-    (should (eql 'ok (condition-case nil
-                         (scalar "SELECT mod(42)")
-                       (pg-undefined-function 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "SELECT unexist FROM pg_catalog.pg_type")
-                       (pg-undefined-column 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "SELECTING incorrect-syntax")
-                       (pg-syntax-error 'ok))))
-    ;; Here check that a pg-syntax-error is raised when using the extended query protocol, in
-    ;; addition to the simple query protocol.
-    (should (eql 'ok (condition-case nil
-                         (pg-exec-prepared con "SELECTING incorrect-syntax" nil)
-                       (pg-syntax-error 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "SELECT * FRÖM VALUES(1,2)")
-                       (pg-syntax-error 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "SELECT '[1,2,3]'::json ->> gg")
-                       (pg-undefined-column 'ok))))
-    ;; The ? operator is only defined for jsonb ? text
+                         (funcall scalar-fn "SELECT int2 '-0b1000000000000001'")
+                       (pg-numeric-value-out-of-range 'ok)))))
+  (should (eql 'ok (condition-case nil
+                       ;; numerical overflow
+                       (funcall scalar-fn "SELECT lcm((-9223372036854775808)::int8, 1::int8)")
+                     (pg-numeric-value-out-of-range 'ok))))
+  (should (eql 'ok (condition-case nil
+                       ;; numerical overflow
+                       (funcall scalar-fn "SELECT '10e-400'::float8")
+                     (pg-numeric-value-out-of-range 'ok))))
+  ;; xata.io fails on this test; returns a generic pg-error.
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT happiness(42)")
+                     (pg-undefined-function 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECTING 42")
+                     (pg-syntax-error 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT 1 * / 2")
+                     (pg-syntax-error 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT abs 1)")
+                     (pg-syntax-error 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT mod 1, 2")
+                     (pg-syntax-error 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT 42 as 42a")
+                     (pg-syntax-error 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT @, $, %, &")
+                     (pg-syntax-error 'ok))))
+  ;; Reserved keyword used as table name.
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "CREATE TABLE from(a INTEGER)")
+                     (pg-syntax-error 'ok))))
+  ;; Reserved keyword used as column name.
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "CREATE TABLE x(as INTEGER)")
+                     (pg-syntax-error 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT '[1,2,3]'::json ->> {}")
+                     (pg-syntax-error 'ok))))
+  (when (> (pgcon-server-version-major con) 11)
     (unless (member (pgcon-server-variant con) '(cockroachdb))
       (should (eql 'ok (condition-case nil
-                           (scalar "SELECT '{\"a\":1, \"b\":2}'::jsonb ? 52")
-                         (pg-undefined-function 'ok))))
-      (should (eql 'ok (condition-case nil
-                           (pg-exec-prepared con "SELECT $1[5]" '(("[1,2,3]" . "json")))
-                         (pg-datatype-mismatch 'ok)))))
-    (when (pg-function-p con "jsonb_path_query")
-      (should (eql 'ok (condition-case nil
-                           (scalar "SELECT jsonb_path_query('{\"h\": 1.7}', '$.floor()')")
-                         (pg-json-error 'ok)))))
+                           (funcall scalar-fn "SELECT jsonb_path_query('{\"a\":42}'::jsonb, '$$.foo')")
+                         (pg-syntax-error 'ok))))))
+  ;; The json_serialize() function is new in PostgreSQL 17
+  (unless (or (member (pgcon-server-variant con) '(cockroachdb yugabyte alloydb))
+              (< (pgcon-server-version-major con) 17))
     (should (eql 'ok (condition-case nil
-                         (scalar "SELECT '{1:\"abc\"}'::json")
+                         (funcall scalar-fn "SELECT json_serialize('{\"a\": \"foo\", 42: 43 }')")
                        (pg-invalid-text-representation 'ok))))
     (should (eql 'ok (condition-case nil
-                         (scalar "SELECT '{\"abc\":1:2}'::json")
-                       (pg-invalid-text-representation 'ok))))
+                         ;; cannot use non-string types with implicit FORMAT JSON clause
+                         (funcall scalar-fn "SELECT JSON_SERIALIZE(144)")
+                       (pg-datatype-mismatch 'ok)))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT CAST('55Y' AS INTEGER)")
+                     (pg-invalid-text-representation 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT 'not-a-uuid'::uuid")
+                     (pg-invalid-text-representation 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT * FROM nonexistent_table")
+                     (pg-undefined-table 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "CREATE TABLE foobles(a BANANA)")
+                     (pg-programming-error 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "ALTER TABLE nonexistent_table RENAME TO aspirational")
+                     (pg-undefined-table 'ok))))
+  (funcall scalar-fn "CREATE TABLE pgtest_foobles(a INTEGER PRIMARY KEY)")
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "ALTER TABLE pgtest_foobles DROP COLUMN nonexistent")
+                     (pg-programming-error 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "ALTER TABLE pgtest_foobles RENAME COLUMN nonexistent TO aspirational")
+                     (pg-programming-error 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "ALTER TABLE pgtest_foobles RENAME TO pgtest_foobles")
+                     (pg-programming-error 'ok))))
+  (should (eql 'ok (condition-case nil
+                       ;; This creates a conflict with the system column ctid
+                       (funcall scalar-fn "ALTER TABLE pgtest_foobles RENAME COLUMN a TO ctid")
+                     (pg-programming-error 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "CREATE INDEX pgtest_idx ON pgtest_foobles(inexist)")
+                     (pg-programming-error 'ok))))
+  (funcall scalar-fn "DROP TABLE pgtest_foobles")
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "DROP INDEX nonexist_idx")
+                     (pg-programming-error 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "DROP VIEW nonexist_view")
+                     (pg-programming-error 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "DROP TYPE")
+                     (pg-programming-error 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "DROP TYPE nonexist_type")
+                     (pg-programming-error 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "DEALLOCATE nonexistent_prepared_statement")
+                     (pg-invalid-sql-statement-name 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "CLOSE nonexistent_cursor")
+                     (pg-invalid-cursor-name 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "EXECUTE phantom_prepared_statement")
+                     (pg-invalid-sql-statement-name 'ok))))
+  ;; In PostgreSQL 18.1, this does not trigger an error.
+  (should (eql nil (pg-close-portal con "nonexistent_portal")))
+  ;; CockroachDB reports this as a pg-data-error, and PostgreSQL as pg-undefined-function.
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT 100 = false")
+                     (pg-undefined-function 'ok)
+                     (pg-data-error 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT banana(42)")
+                     (pg-undefined-function 'ok))))
+  ;; insufficient arguments means operator does not exist
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT mod(42)")
+                     (pg-undefined-function 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT unexist FROM pg_catalog.pg_type")
+                     (pg-undefined-column 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECTING incorrect-syntax")
+                     (pg-syntax-error 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT * FRÖM VALUES(1,2)")
+                     (pg-syntax-error 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT '[1,2,3]'::json ->> gg")
+                     (pg-undefined-column 'ok))))
+  ;; The ? operator is only defined for jsonb ? text
+  (unless (member (pgcon-server-variant con) '(cockroachdb))
     (should (eql 'ok (condition-case nil
-                         (scalar "SELECT '{\"abc\":1,3}'::json")
-                       (pg-invalid-text-representation 'ok))))
+                         (funcall scalar-fn "SELECT '{\"a\":1, \"b\":2}'::jsonb ? 52")
+                       (pg-undefined-function 'ok))))
     (should (eql 'ok (condition-case nil
-                         (scalar "SELECT '1f2'::json")
-                       (pg-invalid-text-representation 'ok))))
+                         (pg-exec-prepared con "SELECT $1[5]" '(("[1,2,3]" . "json")))
+                       (pg-datatype-mismatch 'ok)))))
+  (when (pg-function-p con "jsonb_path_query")
     (should (eql 'ok (condition-case nil
-                         (scalar "SELECT int2 '10__000'")
-                       (pg-invalid-text-representation 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "SELECT 'true false::json")
-                       (pg-syntax-error 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "SELECT 'true false'::json")
-                       (pg-invalid-text-representation 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "SELECT '    '::json")
-                       (pg-invalid-text-representation 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "SELECT '\"\\u00\"'::json")
-                       (pg-invalid-text-representation 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "SELECT '\"\\u\"'::jsonb")
-                       (pg-invalid-text-representation 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "SELECT E'\\xDEADBEEF'")
-                       ;; "Invalid byte sequence for encoding"
-                       (pg-character-not-in-repertoire 'ok)
-                       ;; CockroachDB reports this as a syntax error (different SQLSTATE value)
-                       (pg-syntax-error 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "SELECT '2024-15-01'::date")
-                       (pg-datetime-field-overflow 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (progn
-                           (pg-exec con "PREPARE pgeltestq1(text, int, float, boolean, smallint) AS SELECT 42")
-                           ;; too many params
-                           (pg-exec con "EXECUTE pgeltestq1('AAAAxx', 5::smallint, 10.5::float, false, 4::bigint, 15::int2)"))
-                       (pg-syntax-error 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (pg-exec con "PREPARE pgeltestq1(text, int, float, boolean, smallint) AS SELECT 42")
-                       (pg-duplicate-prepared-statement 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (progn
-                           (pg-exec con "CREATE TABLE test_duplicate(a INTEGER)")
-                           (pg-exec con "CREATE TABLE test_duplicate(a INTEGER)"))
-                       (pg-duplicate-table 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (pg-exec con "CREATE TABLE duplicate_column(a INTEGER, a INTEGER)")
-                       (pg-duplicate-column 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (progn
-                           (pg-exec con "PREPARE pgeltestq2(text, int, float, boolean, smallint) AS SELECT 42")
-                           ;; too few params
-                           (pg-exec con "EXECUTE pgeltestq2('bool')"))
-                       (pg-syntax-error 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (progn
-                           (pg-exec con "PREPARE pgeltestq3(text, int, float, boolean, smallint) AS SELECT 42")
-                           ;; wrong parameter types
-                           (pg-exec con "EXECUTE pgeltestq3(5::smallint, 10.5::float, false, 4::bigint, 'bytea')"))
-                       (pg-datatype-mismatch 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "ALTER OPERATOR @+@(int4, int4) OWNER TO pgeltest_notexist")
-                       (pg-programming-error 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "ALTER OPERATOR @+@(int4, int4) SET SCHEMA pgeltest_notexist")
-                       (pg-programming-error 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "CREATE TABLE pgtest_dupcol(a INTEGER PRIMARY KEY, a VARCHAR)")
-                       (pg-programming-error 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "CREATE TABLE -----(a INTEGER PRIMARY KEY)")
-                       (pg-programming-error 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "CREATE TABLE table(a INTEGER PRIMARY KEY)")
-                       (pg-reserved-name 'ok)
-                       (pg-syntax-error 'ok))))
-    (should (eql 'ok (condition-case nil
-                         (scalar "CREATE TABLE foo (LIKE nonexistent)")
-                       (pg-programming-error 'ok))))
-    (should (eql 'ok
-                 (unwind-protect
-                     (progn
-                       (pg-exec con "CREATE TABLE pgtest_notnull(a INTEGER NOT NULL PRIMARY KEY)")
-                       (pg-exec con "INSERT INTO pgtest_notnull(a) VALUES (6)")
-                       (condition-case nil
-                           (pg-exec con "INSERT INTO pgtest_notnull(a) VALUES (NULL)")
-                         (pg-not-null-violation 'ok)))
-                   (pg-exec con "DROP TABLE IF EXISTS pgtest_notnull"))))
-    (should (eql 'ok
-                 (unwind-protect
-                     (progn
-                       (pg-exec con "CREATE TABLE pgtest_unique(a INTEGER PRIMARY KEY)")
-                       (pg-exec con "INSERT INTO pgtest_unique(a) VALUES (6)")
-                       (condition-case nil
-                           (pg-exec con "INSERT INTO pgtest_unique(a) VALUES (6)")
-                         (pg-unique-violation 'ok)))
-                   (pg-exec con "DROP TABLE IF EXISTS pgtest_unique"))))
-    (should (eql 'ok
-                 (unwind-protect
-                     (progn
-                       (pg-exec con "CREATE TABLE pgtest_check(a INTEGER PRIMARY KEY CHECK (a > 0))")
-                       (pg-exec con "INSERT INTO pgtest_check(a) VALUES (6)")
-                       (condition-case nil
-                           (pg-exec con "INSERT INTO pgtest_check(a) VALUES (-2)")
-                         (pg-check-violation 'ok)))
-                   (pg-exec con "DROP TABLE IF EXISTS pgtest_check"))))
-    (should (eql 'ok
-                 (unwind-protect
-                     (progn
-                       (pg-exec con "CREATE TABLE pgtest_check_num(a INTEGER PRIMARY KEY, b NUMERIC NOT NULL CHECK (b > 10))")
-                       (pg-exec con "INSERT INTO pgtest_check_num(a,b) VALUES(1, 15.0)")
-                       (condition-case nil
-                           (pg-exec con "INSERT INTO pgtest_check_num(a,b) VALUES(2, 5.0)")
-                         (pg-check-violation 'ok)))
-                   (pg-exec con "DROP TABLE IF EXISTS pgtest_check_num"))))
-    ;; As of 2025-02, yugabyte, CockroachDB and OrioleDB do not implement EXCLUDE constraints.
-    (unless (member (pgcon-server-variant con) '(yugabyte cockroachdb orioledb))
-      (should (eql 'ok
-                   (unwind-protect
+                         (funcall scalar-fn "SELECT jsonb_path_query('{\"h\": 1.7}', '$.floor()')")
+                       (pg-json-error 'ok)))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT '{1:\"abc\"}'::json")
+                     (pg-invalid-text-representation 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT '{\"abc\":1:2}'::json")
+                     (pg-invalid-text-representation 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT '{\"abc\":1,3}'::json")
+                     (pg-invalid-text-representation 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT '1f2'::json")
+                     (pg-invalid-text-representation 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT int2 '10__000'")
+                     (pg-invalid-text-representation 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT 'true false::json")
+                     (pg-syntax-error 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT 'true false'::json")
+                     (pg-invalid-text-representation 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT '    '::json")
+                     (pg-invalid-text-representation 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT '\"\\u00\"'::json")
+                     (pg-invalid-text-representation 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT '\"\\u\"'::jsonb")
+                     (pg-invalid-text-representation 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT E'\\xDEADBEEF'")
+                     ;; "Invalid byte sequence for encoding"
+                     (pg-character-not-in-repertoire 'ok)
+                     ;; CockroachDB reports this as a syntax error (different SQLSTATE value)
+                     (pg-syntax-error 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT '2024-15-01'::date")
+                     (pg-datetime-field-overflow 'ok))))
+  (should (eql 'ok (condition-case nil
                        (progn
-                         (pg-exec con "CREATE TABLE pgtest_exclude(a INTEGER, EXCLUDE (a WITH =))")
-                         (pg-exec con "INSERT INTO pgtest_exclude(a) VALUES (6)")
-                         (condition-case nil
-                             (pg-exec con "INSERT INTO pgtest_exclude(a) VALUES (6)")
-                           (pg-exclusion-violation 'ok)))
-                   (pg-exec con "DROP TABLE IF EXISTS pgtest_exclude")))))
-    ;; Greenplum does not implement FOREIGN KEY integrity constraints
-    (unless (member (pgcon-server-variant con) '(greenplum))
-      (unwind-protect
-          (progn
-            (pg-exec con "DROP TABLE IF EXISTS pgtest_referencing")
-            (pg-exec con "DROP TABLE IF EXISTS pgtest_referenced")
-            (pg-exec con "CREATE TABLE pgtest_referenced(a INTEGER PRIMARY KEY)")
-            (pg-exec con "CREATE TABLE pgtest_referencing(a INTEGER NOT NULL REFERENCES pgtest_referenced(a))")
-            (pg-exec con "INSERT INTO pgtest_referenced(a) VALUES (6)")
-            (pg-exec con "INSERT INTO pgtest_referencing(a) VALUES (6)")
-            (should (eql 'ok
-                         (condition-case nil
-                             (pg-exec con "INSERT INTO pgtest_referencing(a) VALUES (1)")
-                           (pg-foreign-key-violation 'ok)))))
-        (pg-exec con "DROP TABLE IF EXISTS pgtest_referencing")
-        (pg-exec con "DROP TABLE IF EXISTS pgtest_referenced")))
+                         (funcall scalar-fn "DEALLOCATE ALL")
+                         (funcall scalar-fn "PREPARE pgeltestq1(text, int, float, boolean, smallint) AS SELECT 42")
+                         ;; too many params
+                         (funcall scalar-fn "EXECUTE pgeltestq1('AAAAxx', 5::smallint, 10.5::float, false, 4::bigint, 15::int2)"))
+                     (pg-syntax-error 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "PREPARE pgeltestq1(text, int, float, boolean, smallint) AS SELECT 42")
+                     (pg-duplicate-prepared-statement 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (progn
+                         (funcall scalar-fn "CREATE TABLE test_duplicate(a INTEGER)")
+                         (funcall scalar-fn "CREATE TABLE test_duplicate(a INTEGER)"))
+                     (pg-duplicate-table 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "CREATE TABLE duplicate_column(a INTEGER, a INTEGER)")
+                     (pg-duplicate-column 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (progn
+                         (funcall scalar-fn "PREPARE pgeltestq2(text, int, float, boolean, smallint) AS SELECT 42")
+                         ;; too few params
+                         (funcall scalar-fn "EXECUTE pgeltestq2('bool')"))
+                     (pg-syntax-error 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (progn
+                         (funcall scalar-fn "PREPARE pgeltestq3(text, int, float, boolean, smallint) AS SELECT 42")
+                         ;; wrong parameter types
+                         (funcall scalar-fn "EXECUTE pgeltestq3(5::smallint, 10.5::float, false, 4::bigint, 'bytea')"))
+                     (pg-datatype-mismatch 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "ALTER OPERATOR @+@(int4, int4) OWNER TO pgeltest_notexist")
+                     (pg-programming-error 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "ALTER OPERATOR @+@(int4, int4) SET SCHEMA pgeltest_notexist")
+                     (pg-programming-error 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "CREATE TABLE pgtest_dupcol(a INTEGER PRIMARY KEY, a VARCHAR)")
+                     (pg-programming-error 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "CREATE TABLE -----(a INTEGER PRIMARY KEY)")
+                     (pg-programming-error 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "CREATE TABLE table(a INTEGER PRIMARY KEY)")
+                     (pg-reserved-name 'ok)
+                     (pg-syntax-error 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "CREATE TABLE foo (LIKE nonexistent)")
+                     (pg-programming-error 'ok))))
+  (should (eql 'ok
+               (unwind-protect
+                   (progn
+                     (funcall scalar-fn "CREATE TABLE pgtest_notnull(a INTEGER NOT NULL PRIMARY KEY)")
+                     (funcall scalar-fn "INSERT INTO pgtest_notnull(a) VALUES (6)")
+                     (condition-case nil
+                         (funcall scalar-fn "INSERT INTO pgtest_notnull(a) VALUES (NULL)")
+                       (pg-not-null-violation 'ok)))
+                 (funcall scalar-fn "DROP TABLE IF EXISTS pgtest_notnull"))))
+  (should (eql 'ok
+               (unwind-protect
+                   (progn
+                     (funcall scalar-fn "CREATE TABLE pgtest_unique(a INTEGER PRIMARY KEY)")
+                     (funcall scalar-fn "INSERT INTO pgtest_unique(a) VALUES (6)")
+                     (condition-case nil
+                         (funcall scalar-fn "INSERT INTO pgtest_unique(a) VALUES (6)")
+                       (pg-unique-violation 'ok)))
+                 (funcall scalar-fn "DROP TABLE IF EXISTS pgtest_unique"))))
+  (should (eql 'ok
+               (unwind-protect
+                   (progn
+                     (funcall scalar-fn "CREATE TABLE pgtest_check(a INTEGER PRIMARY KEY CHECK (a > 0))")
+                     (funcall scalar-fn "INSERT INTO pgtest_check(a) VALUES (6)")
+                     (condition-case nil
+                         (funcall scalar-fn "INSERT INTO pgtest_check(a) VALUES (-2)")
+                       (pg-check-violation 'ok)))
+                 (funcall scalar-fn "DROP TABLE IF EXISTS pgtest_check"))))
+  (should (eql 'ok
+               (unwind-protect
+                   (progn
+                     (funcall scalar-fn "CREATE TABLE pgtest_check_num(a INTEGER PRIMARY KEY, b NUMERIC NOT NULL CHECK (b > 10))")
+                     (funcall scalar-fn "INSERT INTO pgtest_check_num(a,b) VALUES(1, 15.0)")
+                     (condition-case nil
+                         (funcall scalar-fn "INSERT INTO pgtest_check_num(a,b) VALUES(2, 5.0)")
+                       (pg-check-violation 'ok)))
+                 (funcall scalar-fn "DROP TABLE IF EXISTS pgtest_check_num"))))
+  (should (eql 'ok
+               (unwind-protect
+                   (progn
+                     (funcall scalar-fn "CREATE TABLE pgtest_check_in(id INTEGER PRIMARY KEY, status TEXT CHECK (status IN ('OK', 'NOK')))")
+                     (funcall scalar-fn "INSERT INTO pgtest_check_in(id,status) VALUES(1, 'OK')")
+                     (condition-case nil
+                         (funcall scalar-fn "INSERT INTO pgtest_check_in(id,status) VALUES(2, 'INVALID')")
+                       (pg-check-violation 'ok)))
+                 (funcall scalar-fn "DROP TABLE IF EXISTS pgtest_check_in"))))
+  (should (eql 'ok
+               (unwind-protect
+                   (progn
+                     (funcall scalar-fn "DROP DOMAIN IF EXISTS hex_number")
+                     (funcall scalar-fn "CREATE DOMAIN hex_number AS TEXT CHECK (VALUE ~* '^[0-9A-Fa-f]+$')")
+                     (funcall scalar-fn "CREATE TABLE pgtest_check_domain(hex hex_number NOT NULL)")
+                     (funcall scalar-fn "INSERT INTO pgtest_check_domain VALUES('FF11')")
+                     (condition-case nil
+                         (funcall scalar-fn "INSERT INTO pgtest_check_domain VALUES('INVALID')")
+                       (pg-check-violation 'ok)))
+                 (funcall scalar-fn "DROP TABLE IF EXISTS pgtest_check_domain")
+                 (funcall scalar-fn "DROP DOMAIN hex_number"))))
+  ;; As of 2025-02, yugabyte, CockroachDB and OrioleDB do not implement EXCLUDE constraints.
+  (unless (member (pgcon-server-variant con) '(yugabyte cockroachdb orioledb))
     (should (eql 'ok
                  (unwind-protect
                      (progn
-                       (pg-exec con "SET default_transaction_read_only TO on")
-                       (pg-exec con "BEGIN")
+                       (funcall scalar-fn "CREATE TABLE pgtest_exclude(a INTEGER, EXCLUDE (a WITH =))")
+                       (funcall scalar-fn "INSERT INTO pgtest_exclude(a) VALUES (6)")
                        (condition-case nil
-                           (pg-exec con "CREATE TABLE erroring(id SERIAL)")
-                         (pg-error 'ok)))
-                   (pg-exec con "END")
-                   (pg-exec con "SET default_transaction_read_only TO off"))))
-    ;; handler-bind is new in Emacs 30. Here we check the printed representation of our
-    ;; pg-undefined-function error class.
-    (when (fboundp 'handler-bind)
-      (should (eql 'ok
-                   (catch 'pgtest-undefined-function
-                     (handler-bind
-                         ((pg-undefined-function
-                           (lambda (e)
-                             (should (cl-search "undef" (prin1-to-string e)))
-                             (throw 'pgtest-undefined-function 'ok)))
-                          (pg-error
-                           (lambda (_e)
-                             (error "Unexpected error class"))))
-                       (scalar "SELECT undef(42)"))
-                     'nok))))
-;;     (should (eql 'ok (condition-case nil
-;;                          (pg-exec-prepared con "SELECT $1[-5]" '(("{1,2,3}" . "_int4")))
-;;                        (pg-syntax-error 'ok))))
-    ))
+                           (funcall scalar-fn "INSERT INTO pgtest_exclude(a) VALUES (6)")
+                         (pg-exclusion-violation 'ok)))
+                   (funcall scalar-fn "DROP TABLE IF EXISTS pgtest_exclude")))))
+  ;; Greenplum does not implement FOREIGN KEY integrity constraints
+  (unless (member (pgcon-server-variant con) '(greenplum))
+    (unwind-protect
+        (progn
+          (funcall scalar-fn "DROP TABLE IF EXISTS pgtest_referencing")
+          (funcall scalar-fn "DROP TABLE IF EXISTS pgtest_referenced")
+          (funcall scalar-fn "CREATE TABLE pgtest_referenced(a INTEGER PRIMARY KEY)")
+          (funcall scalar-fn "CREATE TABLE pgtest_referencing(a INTEGER NOT NULL REFERENCES pgtest_referenced(a))")
+          (funcall scalar-fn "INSERT INTO pgtest_referenced(a) VALUES (6)")
+          (funcall scalar-fn "INSERT INTO pgtest_referencing(a) VALUES (6)")
+          (should (eql 'ok
+                       (condition-case nil
+                           (funcall scalar-fn "INSERT INTO pgtest_referencing(a) VALUES (1)")
+                         (pg-foreign-key-violation 'ok)))))
+      (funcall scalar-fn "DROP TABLE IF EXISTS pgtest_referencing")
+      (funcall scalar-fn "DROP TABLE IF EXISTS pgtest_referenced")))
+  (should (eql 'ok
+               (unwind-protect
+                   (progn
+                     (funcall scalar-fn "SET default_transaction_read_only TO on")
+                     (funcall scalar-fn "BEGIN")
+                     (condition-case nil
+                         (funcall scalar-fn "CREATE TABLE erroring(id SERIAL)")
+                       (pg-error 'ok)))
+                 (funcall scalar-fn "END")
+                 (funcall scalar-fn "SET default_transaction_read_only TO off"))))
+  ;; handler-bind is new in Emacs 30. Here we check the printed representation of our
+  ;; pg-undefined-function error class.
+  (when (fboundp 'handler-bind)
+    (should (eql 'ok
+                 (catch 'pgtest-undefined-function
+                   (handler-bind
+                       ((pg-undefined-function
+                         (lambda (e)
+                           (should (cl-search "undef" (prin1-to-string e)))
+                           (throw 'pgtest-undefined-function 'ok)))
+                        (pg-error
+                         (lambda (_e)
+                           (error "Unexpected error class"))))
+                     (funcall scalar-fn "SELECT undef(42)"))
+                   'nok))))
+  ;;     (should (eql 'ok (condition-case nil
+  ;;                          (pg-exec-prepared con "SELECT $1[-5]" '(("{1,2,3}" . "_int4")))
+  ;;                        (pg-syntax-error 'ok))))
+  )
+
+;; We test first for correct SQLSTATE handling with the simple query protocol, then with the
+;; extended query protocol.
+(defun pg-test-error-sqlstate (con)
+  (pg-test-error-sqlstate-helper con 
+                                 (lambda (sql) (car (pg-result (pg-exec con sql) :tuple 0))))
+  (pg-test-error-sqlstate-helper con
+                                 (lambda (sql) (car (pg-result (pg-exec-prepared con sql nil) :tuple 0)))))
+
 
 ;; Check our handling of NoticeMessage messages, and the correct operation of
 ;; `pg-handle-notice-functions'.
