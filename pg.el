@@ -160,6 +160,8 @@ SQL queries. To avoid this overhead on establishing a connection, remove
 (define-error 'pg-undefined-function "PostgreSQL undefined function" 'pg-programming-error)
 (define-error 'pg-duplicate-column "Duplicate column" 'pg-programming-error)
 (define-error 'pg-duplicate-prepared-statement "Duplicate prepared statement" 'pg-programming-error)
+(define-error 'pg-invalid-sql-statement-name "Invalid SQL statement name" 'pg-programming-error)
+(define-error 'pg-invalid-cursor-name "Invalid cursor name" 'pg-programming-error)
 (define-error 'pg-duplicate-table "Duplicate table or sequence" 'pg-programming-error)
 (define-error 'pg-reserved-name "PostgreSQL reserved name" 'pg-programming-error)
 (define-error 'pg-copy-failed "PostgreSQL COPY failed" 'pg-operational-error)
