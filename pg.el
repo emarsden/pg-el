@@ -663,6 +663,8 @@ presented to the user."
                         ((pred (lambda (v) (string-prefix-p "38" v))) 'pg-programming-error)
                         ((pred (lambda (v) (string-prefix-p "39" v))) 'pg-programming-error)
                         ((pred (lambda (v) (string-prefix-p "40" v))) 'pg-operational-error)
+                        ("26000" 'pg-invalid-sql-statement-name)
+                        ("34000" 'pg-invalid-cursor-name)
                         ("3D000" 'pg-invalid-catalog-name)
                         ("42000" 'pg-syntax-error)
                         ("42601" 'pg-syntax-error)
