@@ -12,7 +12,7 @@ ELISP> (require 'cl-lib)
 cl-lib
 ELISP> (require 'pg)
 pg
-ELISP> (defvar *pg* (pg-connect "pgeltestdb" "pgeltestuser" "pgeltest" "localhost" 5432))
+ELISP> (defvar *pg* (pg-connect-plist "pgeltestdb" "pgeltestuser" :password "pgeltest" :host "localhost"))
 *pg*
 ```
 ~~~

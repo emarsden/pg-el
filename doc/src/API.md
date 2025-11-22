@@ -288,7 +288,7 @@ to do it (thanks to Gene Selkov, Jr. for the description):
 2. Now that you have a running ssh session, you can point pg.el to the local host at the port number
    which you specified in step 1. For example,
 
-        (pg-connect "dbname" "user" "password" "localhost" 3333)
+        (pg-connect-plist "dbname" "user" :password "password" :host "localhost" :port 3333)
 
    You can omit the port argument if you chose 5432 as the local end of the tunnel, since pg.el
    defaults to this value.
