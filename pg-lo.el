@@ -42,7 +42,7 @@
 (declare-function pg-exec "pg" (con &rest args))
 (declare-function pg-exec-prepared "pg" (con query typed-arguments &rest args))
 (declare-function pgcon-query-log "pg" (pgcon))
-
+(declare-function pg--trim-connection-buffers "pg" (con))
 
 ;; Forward declaration to pacify the bytecode compiler. This variable is defined in pg.el.
 (defvar pg-handle-notice-functions)
