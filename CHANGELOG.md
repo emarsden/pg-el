@@ -7,6 +7,10 @@
   `pg-read-net-int`, `pg-read-int`, `pg-read-chars`, `pg-read-string` to use the naming convention
   for internal functions (`pg--` prefix).
 
+- Microsoft Windows: add additional sleep using `sleep-for` when waiting for network data. The
+  existing calls to `accept-process-output` with a timeout are insufficient on this platform when
+  reading large resultsets.
+
 
 ## [0.61] - 2025-11-22
 

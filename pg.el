@@ -4305,6 +4305,8 @@ The RowDescription data is provided in ATTRIBUTES."
       (when (null (char-after pgcon--position))
         (dotimes (_i (pgcon-timeout con))
           (when (null (char-after pgcon--position))
+            (when (eq system-type 'windows-nt)
+              (sleep-for 0.1))
             (accept-process-output process 1.0))))
       (when (null (char-after pgcon--position))
         (let ((msg (format "Timeout in pg--read-char reading from %s" con)))
