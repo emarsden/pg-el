@@ -901,9 +901,14 @@ bar$$"))))
     (let* ((big (concat "SELECT length('foobles" (make-string (* 10 1024) ?0) "baz')"))
            (res (scalar big)))
       (should (numberp res)))
-    (let ((long (scalar "SELECT repeat('z', 1000000)")))
-      (should (eql 1000000 (length long))))))
-            
+    (dolist (size (list 50 5000 500000))
+      (let* ((sql (format "SELECT repeat('#', %d)" size))
+             (str (scalar sql)))
+        (should (eql size (length str)))))
+    (let ((long (scalar "SELECT repeat('z', 1000000) || 'foo'")))
+      (should (eql 1000003 (length long)))
+      (should (string-prefix-p "zzz" long))
+      (should (string-suffix-p "foo" long)))))
 
 
 (defun pg-test-insert (con)
