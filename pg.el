@@ -616,13 +616,13 @@ presented to the user."
     ;; potentially be handled after the error is signaled. Some databases like Clickhouse
     ;; immediately close their connection on error, so we ignore any errors here.
     (ignore-errors
-      (let ((c (pg-read-char con)))
+      (let ((c (pg--read-char con)))
         (unless (member c '(?Z ?E))
           (message "Unexpected message type after ErrorMsg (error was %s): %s" e c)
-          (pg-unread-char con)))
+          (pg--unread-char con)))
       ;; Read message length then status, which we discard.
-      (pg-read-net-int con 4)
-      (pg-read-char con))
+      (pg--read-net-int con 4)
+      (pg--read-char con))
     (let ((msg (format "%s%s: %s (%s)"
                        (pgerror-severity e)
                        (if context (concat " " context) "")
@@ -728,7 +728,7 @@ Uses database DBNAME, user USER and password PASSWORD."
   (when (pgcon-connect-timer con)
     (cancel-timer (pgcon-connect-timer con)))
   (cl-loop
-   for c = (pg-read-char con) do
+   for c = (pg--read-char con) do
    (cl-case c
      ;; an ErrorResponse message
      (?E
@@ -737,10 +737,10 @@ Uses database DBNAME, user USER and password PASSWORD."
      ;; NegotiateProtocolVersion. Note that this message will not be sent by PostgreSQL if the
      ;; backend implements exactly the requested protocol version.
      (?v
-      (let* ((_msglen (pg-read-net-int con 4))
-             (protocol-major-supported (pg-read-net-int con 2))
-             (protocol-minor-supported (pg-read-net-int con 2))
-             (unrec-option-count (pg-read-net-int con 4)))
+      (let* ((_msglen (pg--read-net-int con 4))
+             (protocol-major-supported (pg--read-net-int con 2))
+             (protocol-minor-supported (pg--read-net-int con 2))
+             (unrec-option-count (pg--read-net-int con 4)))
         (unless (eql protocol-major-supported 3)
           (let ((msg (format "PostgreSQL backend supports protocol major version %d, we only support version 3"
                              protocol-major-supported)))
@@ -753,13 +753,13 @@ Uses database DBNAME, user USER and password PASSWORD."
         (setf (pgcon-minor-protocol-version con) (min protocol-minor-supported 2))
         ;; read the list of protocol options not supported by the server
         (dotimes (_ unrec-option-count)
-          (warn "PostgreSQL backend does not support the option %s" (pg-read-string con 4096)))))
+          (warn "PostgreSQL backend does not support the option %s" (pg--read-string con 4096)))))
 
      ;; BackendKeyData
      (?K
-      (let ((msglen (pg-read-net-int con 4)))
-        (setf (pgcon-pid con) (pg-read-net-int con 4))
-        (setf (pgcon-secret con) (pg-read-chars con (- msglen 8)))))
+      (let ((msglen (pg--read-net-int con 4)))
+        (setf (pgcon-pid con) (pg--read-net-int con 4))
+        (setf (pgcon-secret con) (pg--read-chars con (- msglen 8)))))
 
      ;; NoticeResponse
      (?N
@@ -770,8 +770,8 @@ Uses database DBNAME, user USER and password PASSWORD."
 
      ;; ReadyForQuery message
      (?Z
-      (let ((_msglen (pg-read-net-int con 4))
-            (status (pg-read-char con)))
+      (let ((_msglen (pg--read-net-int con 4))
+            (status (pg--read-char con)))
         ;; status is 'I' or 'T' or 'E', Idle or InTransaction or Error
         (when (eql ?E status)
           (message "PostgreSQL ReadyForQuery message with error status"))
@@ -786,8 +786,8 @@ Uses database DBNAME, user USER and password PASSWORD."
 
      ;; an authentication request
      (?R
-      (let ((_msglen (pg-read-net-int con 4))
-            (areq (pg-read-net-int con 4)))
+      (let ((_msglen (pg--read-net-int con 4))
+            (areq (pg--read-net-int con 4)))
         (cl-case areq
          ;; AuthenticationOK message
           (0
@@ -832,8 +832,8 @@ Uses database DBNAME, user USER and password PASSWORD."
 
      ;; ParameterStatus
      (?S
-      (let* ((msglen (pg-read-net-int con 4))
-             (msg (pg-read-chars con (- msglen 4)))
+      (let* ((msglen (pg--read-net-int con 4))
+             (msg (pg--read-chars con (- msglen 4)))
              (items (split-string msg (unibyte-string 0)))
              (key (cl-first items))
              (val (cl-second items)))
@@ -1040,7 +1040,7 @@ to use the updated protocol features introduced with PostgreSQL version
            (pg-send-uint con 8 4)
            (pg-send-uint con 80877103 4)
            (pg-flush con)
-           (let ((ch (pg-read-char con)))
+           (let ((ch (pg--read-char con)))
              (unless (eql ?S ch)
                (let ((msg (format "Couldn't establish TLS connection to PostgreSQL: read char %s" ch)))
                  (signal 'pg-protocol-error (list msg)))))
@@ -1502,20 +1502,20 @@ Return a result structure which can be decoded using `pg-result'."
       (pg-send-uint con (+ 4 len 1) 4)
       (pg-send-string con encoded)
       (pg-flush con))
-    (cl-loop for c = (pg-read-char con) do
+    (cl-loop for c = (pg--read-char con) do
        ;; (message "pg-exec message-type = %c" c)
        (cl-case c
             ;; NoData
             (?n
-             (pg-read-net-int con 4))
+             (pg--read-net-int con 4))
 
             ;; NotificationResponse
             (?A
-             (let* ((_msglen (pg-read-net-int con 4))
+             (let* ((_msglen (pg--read-net-int con 4))
                     ;; PID of the notifying backend
-                    (_pid (pg-read-int con 4))
-                    (channel (pg-read-string con))
-                    (payload (pg-read-string con))
+                    (_pid (pg--read-int con 4))
+                    (channel (pg--read-string con))
+                    (payload (pg--read-string con))
                     (buf (process-buffer (pgcon-process con)))
                     (handlers (with-current-buffer buf pgcon--notification-handlers)))
                (dolist (handler handlers)
@@ -1525,21 +1525,22 @@ Return a result structure which can be decoded using `pg-result'."
             (?B
              (unless attributes
                (signal 'pg-protocol-error (list "Tuple received before metadata")))
-             (let ((_msglen (pg-read-net-int con 4)))
-               (push (pg-read-tuple con attributes) tuples)))
+             (let ((_msglen (pg--read-net-int con 4)))
+               (push (pg--read-tuple con attributes) tuples)))
 
             ;; CommandComplete -- one SQL command has completed
             (?C
-             (let* ((msglen (pg-read-net-int con 4))
-                    (msg (pg-read-chars con (- msglen 5)))
-                    (_null (pg-read-char con)))
+             (let* ((msglen (pg--read-net-int con 4))
+                    (msg (pg--read-chars con (- msglen 5)))
+                    (_null (pg--read-char con)))
                (setf (pgresult-status result) msg)))
                ;; now wait for the ReadyForQuery message
 
             ;; DataRow
             (?D
-             (let ((_msglen (pg-read-net-int con 4)))
-               (push (pg-read-tuple con attributes) tuples)))
+             (let ((_msglen (pg--read-net-int con 4))
+                   (tuple (pg--read-tuple con attributes)))
+               (push tuple tuples)))
 
             ;; ErrorResponse
             (?E
@@ -1547,14 +1548,14 @@ Return a result structure which can be decoded using `pg-result'."
 
             ;; EmptyQueryResponse -- response to an empty query string
             (?I
-             (pg-read-net-int con 4)
+             (pg--read-net-int con 4)
              (setf (pgresult-status result) "EMPTY"))
 
             ;; BackendKeyData
             (?K
-             (let ((msglen (pg-read-net-int con 4)))
-               (setf (pgcon-pid con) (pg-read-net-int con 4))
-               (setf (pgcon-secret con) (pg-read-chars con (- msglen 8)))))
+             (let ((msglen (pg--read-net-int con 4)))
+               (setf (pgcon-pid con) (pg--read-net-int con 4))
+               (setf (pgcon-secret con) (pg--read-chars con (- msglen 8)))))
 
             ;; NoticeResponse
             (?N
@@ -1569,13 +1570,13 @@ Return a result structure which can be decoded using `pg-result'."
 
             ;; CursorResponse
             (?P
-             (let ((portal (pg-read-string con)))
+             (let ((portal (pg--read-string con)))
                (setf (pgresult-portal result) portal)))
 
             ;; ParameterStatus sent in response to a user update over the connection
             (?S
-             (let* ((msglen (pg-read-net-int con 4))
-                    (msg (pg-read-chars con (- msglen 4)))
+             (let* ((msglen (pg--read-net-int con 4))
+                    (msg (pg--read-chars con (- msglen 4)))
                     (items (split-string msg (unibyte-string 0))))
                ;; ParameterStatus items sent by the backend include application_name,
                ;; DateStyle, TimeZone, in_hot_standby, integer_datetimes
@@ -1587,30 +1588,30 @@ Return a result structure which can be decoded using `pg-result'."
             (?T
              (when attributes
                (signal 'pg-protocol-error (list "Cannot handle multiple result group")))
-             (setq attributes (pg-read-attributes con)))
+             (setq attributes (pg--read-attributes con)))
 
             ;; CopyFail
             (?f
-             (let* ((msglen (pg-read-net-int con 4))
-                    (msg (pg-read-chars con (- msglen 4))))
+             (let* ((msglen (pg--read-net-int con 4))
+                    (msg (pg--read-chars con (- msglen 4))))
                (message "Unexpected CopyFail message %s" msg)))
 
             ;; ParseComplete -- not expecting this using the simple query protocol
             (?1
-             (pg-read-net-int con 4))
+             (pg--read-net-int con 4))
 
             ;; BindComplete -- not expecting this using the simple query protocol
             (?2
-             (pg-read-net-int con 4))
+             (pg--read-net-int con 4))
 
             ;; CloseComplete -- not expecting this using the simple query protocol
             (?3
-             (pg-read-net-int con 4))
+             (pg--read-net-int con 4))
 
             ;; PortalSuspended -- this message is not expected using the simple query protocol
             (?s
              (message "Unexpected PortalSuspended message in pg-exec (sql was %s)" sql)
-             (pg-read-net-int con 4)
+             (pg--read-net-int con 4)
              (setf (pgresult-incomplete result) t)
              (setf (pgresult-tuples result) (nreverse tuples))
              (setf (pgresult-status result) "SUSPENDED")
@@ -1619,8 +1620,8 @@ Return a result structure which can be decoded using `pg-result'."
 
             ;; ReadyForQuery
             (?Z
-             (let ((_msglen (pg-read-net-int con 4))
-                   (status (pg-read-char con)))
+             (let ((_msglen (pg--read-net-int con 4))
+                   (status (pg--read-char con)))
                ;; status is 'I' or 'T' or 'E', Idle or InTransaction or Error
                (when (eql ?E status)
                  (message "PostgreSQL ReadyForQuery message with error status"))
@@ -1687,7 +1688,7 @@ and the keyword WHAT should be one of
 ;; this for example when specifying the name of a column in a SELECT statement. See function
 ;; `pg-exec-prepared' which should be used when possible instead of relying on this function.
 (defun pg-escape-identifier (identifier)
-  "Escape and quote an SQL identifier, such as a table, column, or function name.
+  "Escape and quote an SQL identifier (table, column, function name...).
 IDENTIFIER can be a string or a pg-qualified-name (including a
 schema specifier). Similar to libpq function PQescapeIdentifier.
 You should use prepared statements (`pg-exec-prepared') instead
@@ -1904,24 +1905,24 @@ Returns a pgresult structure (see function `pg-result')."
     ;; exactly one of these messages: CommandComplete, EmptyQueryResponse (if the portal was created
     ;; from an empty query string), ErrorResponse, or PortalSuspended.
     (cl-loop
-     for c = (pg-read-char con) do
+     for c = (pg--read-char con) do
      ;; (message "pg-fetch got %c" c)
      (cl-case c
        ;; ParseComplete
        (?1
-        (pg-read-net-int con 4))
+        (pg--read-net-int con 4))
 
        ;; BindComplete
        (?2
-        (pg-read-net-int con 4))
+        (pg--read-net-int con 4))
 
        ;; NotificationResponse
        (?A
-        (let* ((_msglen (pg-read-net-int con 4))
+        (let* ((_msglen (pg--read-net-int con 4))
                ;; PID of the notifying backend
-               (_pid (pg-read-int con 4))
-               (channel (pg-read-string con))
-               (payload (pg-read-string con))
+               (_pid (pg--read-int con 4))
+               (channel (pg--read-string con))
+               (payload (pg--read-string con))
                (buf (process-buffer (pgcon-process con)))
                (handlers (with-current-buffer buf pgcon--notification-handlers)))
           (dolist (handler handlers)
@@ -1929,8 +1930,8 @@ Returns a pgresult structure (see function `pg-result')."
 
        ;; ParameterStatus
        (?S
-        (let* ((msglen (pg-read-net-int con 4))
-               (msg (pg-read-chars con (- msglen 4)))
+        (let* ((msglen (pg--read-net-int con 4))
+               (msg (pg--read-chars con (- msglen 4)))
                (items (split-string msg (unibyte-string 0)))
                (key (cl-first items))
                (val (cl-second items)))
@@ -1944,20 +1945,20 @@ Returns a pgresult structure (see function `pg-result')."
        (?T
         (when attributes
           (signal 'pg-protocol-error (list "Cannot handle multiple result group")))
-        (setq attributes (pg-read-attributes con))
+        (setq attributes (pg--read-attributes con))
         (setf (pgresult-attributes result) attributes))
 
        ;; DataRow message
        (?D
-        (let ((_msglen (pg-read-net-int con 4)))
-          (push (pg-read-tuple con attributes) tuples)))
+        (let ((_msglen (pg--read-net-int con 4)))
+          (push (pg--read-tuple con attributes) tuples)))
 
        ;; PortalSuspended -- the row-count limit for the Execute message was reached; more data is
        ;; available with another Execute message.
        (?s
         (unless (> max-rows 0)
           (message "Unexpected PortalSuspended message in pg-exec-prepared"))
-        (pg-read-net-int con 4)
+        (pg--read-net-int con 4)
         (setf (pgresult-incomplete result) t)
         (setf (pgresult-tuples result) (nreverse tuples))
         (setf (pgresult-status result) "SUSPENDED")
@@ -1966,9 +1967,9 @@ Returns a pgresult structure (see function `pg-result')."
 
        ;; CommandComplete -- one SQL command has completed (portal's execution is completed)
        (?C
-        (let* ((msglen (pg-read-net-int con 4))
-               (msg (pg-read-chars con (- msglen 5)))
-               (_null (pg-read-char con)))
+        (let* ((msglen (pg--read-net-int con 4))
+               (msg (pg--read-chars con (- msglen 5)))
+               (_null (pg--read-char con)))
           (setf (pgresult-status result) msg))
         (setf (pgresult-incomplete result) nil)
         (when (> max-rows 0)
@@ -1979,13 +1980,13 @@ Returns a pgresult structure (see function `pg-result')."
 
        ;; EmptyQueryResponse -- the response to an empty query string
        (?I
-        (pg-read-net-int con 4)
+        (pg--read-net-int con 4)
         (setf (pgresult-status result) "EMPTY")
         (setf (pgresult-incomplete result) nil))
 
        ;; NoData message
        (?n
-        (pg-read-net-int con 4))
+        (pg--read-net-int con 4))
 
        ;; ErrorResponse
        (?E
@@ -1999,13 +2000,13 @@ Returns a pgresult structure (see function `pg-result')."
 
        ;; CursorResponse
        (?P
-        (let ((portal (pg-read-string con)))
+        (let ((portal (pg--read-string con)))
           (setf (pgresult-portal result) portal)))
 
        ;; ReadyForQuery
        (?Z
-        (let ((_msglen (pg-read-net-int con 4))
-              (status (pg-read-char con)))
+        (let ((_msglen (pg--read-net-int con 4))
+              (status (pg--read-char con)))
           ;; status is 'I' or 'T' or 'E', Idle or InTransaction or Error
           (when (eql ?E status)
             (message "PostgreSQL ReadyForQuery message with error status"))
@@ -2098,19 +2099,19 @@ Uses PostgreSQL connection CON."
     (pg-send-uint con 4 4)
     (pg-flush con)
     (cl-loop
-     for c = (pg-read-char con) do
+     for c = (pg--read-char con) do
      (cl-case c
        ;; ParseComplete
        (?1
-        (pg-read-net-int con 4))
+        (pg--read-net-int con 4))
 
        ;; CloseComplete
        (?3
-        (pg-read-net-int con 4))
+        (pg--read-net-int con 4))
 
        ;; PortalSuspended: sent by some old PostgreSQL versions here?
        (?s
-        (pg-read-net-int con 4))
+        (pg--read-net-int con 4))
 
        ;; ErrorResponse
        (?E
@@ -2124,8 +2125,8 @@ Uses PostgreSQL connection CON."
 
        ;; ReadyForQuery
        (?Z
-        (let ((_msglen (pg-read-net-int con 4))
-              (status (pg-read-char con)))
+        (let ((_msglen (pg--read-net-int con 4))
+              (status (pg--read-char con)))
           ;; status is 'I' or 'T' or 'E'
           (when (eql ?E status)
             (message "PostgreSQL ReadyForQuery message with error status"))
@@ -2155,13 +2156,13 @@ can be decoded using `pg-result'."
     (pg-flush con)
     (let ((more-pending t))
       (while more-pending
-        (let ((c (pg-read-char con)))
+        (let ((c (pg--read-char con)))
           (cl-case c
             (?G
              ;; CopyInResponse
-             (let ((_msglen (pg-read-net-int con 4))
-                   (status (pg-read-net-int con 1))
-                   (cols (pg-read-net-int con 2))
+             (let ((_msglen (pg--read-net-int con 4))
+                   (status (pg--read-net-int con 1))
+                   (cols (pg--read-net-int con 2))
                    (format-codes (list)))
                ;; status=0, which will be returned by recent backend versions: the backend is
                ;; expecting data in textual format (rows separated by newlines, columns separated by
@@ -2170,18 +2171,18 @@ can be decoded using `pg-result'."
                ;; status=1: the backend is expecting binary format (which is similar to DataRow
                ;; format, and which we don't implement here).
                (dotimes (_c cols)
-                 (push (pg-read-net-int con 2) format-codes))
+                 (push (pg--read-net-int con 2) format-codes))
                (unless (zerop status)
                  (signal 'pg-error (list "BINARY format for COPY is not implemented")))
                (setq more-pending nil)))
 
             ;; NotificationResponse
             (?A
-             (let* ((_msglen (pg-read-net-int con 4))
+             (let* ((_msglen (pg--read-net-int con 4))
                     ;; PID of the notifying backend
-                    (_pid (pg-read-int con 4))
-                    (channel (pg-read-string con))
-                    (payload (pg-read-string con))
+                    (_pid (pg--read-int con 4))
+                    (channel (pg--read-string con))
+                    (payload (pg--read-string con))
                     (buf (process-buffer (pgcon-process con)))
                     (handlers (with-current-buffer buf pgcon--notification-handlers)))
                (dolist (handler handlers)
@@ -2193,8 +2194,8 @@ can be decoded using `pg-result'."
 
             ;; ParameterStatus sent in response to a user update over the connection
             (?S
-             (let* ((msglen (pg-read-net-int con 4))
-                    (msg (pg-read-chars con (- msglen 4)))
+             (let* ((msglen (pg--read-net-int con 4))
+                    (msg (pg--read-chars con (- msglen 4)))
                     (items (split-string msg (unibyte-string 0))))
                (when (> (length (cl-first items)) 0)
                  (dolist (handler pg-parameter-change-functions)
@@ -2226,34 +2227,34 @@ can be decoded using `pg-result'."
     (pg-flush con)
     ;; Backend sends us either CopyDone or CopyFail, followed by CommandComplete + ReadyForQuery
     (cl-loop
-     for c = (pg-read-char con) do
+     for c = (pg--read-char con) do
      (cl-case c
        (?c
         ;; CopyDone
-        (let ((_msglen (pg-read-net-int con 4)))
+        (let ((_msglen (pg--read-net-int con 4)))
           nil))
 
        ;; CopyFail
        (?f
-        (let* ((msglen (pg-read-net-int con 4))
-               (msg (pg-read-chars con (- msglen 4)))
+        (let* ((msglen (pg--read-net-int con 4))
+               (msg (pg--read-chars con (- msglen 4)))
                (emsg (format "COPY failed: %s" msg)))
           (signal 'pg-copy-failed (list emsg))))
 
        ;; CommandComplete -- SQL command has completed. After this we expect a ReadyForQuery message.
        (?C
-        (let* ((msglen (pg-read-net-int con 4))
-               (msg (pg-read-chars con (- msglen 5)))
-               (_null (pg-read-char con)))
+        (let* ((msglen (pg--read-net-int con 4))
+               (msg (pg--read-chars con (- msglen 5)))
+               (_null (pg--read-char con)))
           (setf (pgresult-status result) msg)))
 
        ;; NotificationResponse
        (?A
-        (let* ((_msglen (pg-read-net-int con 4))
+        (let* ((_msglen (pg--read-net-int con 4))
                ;; PID of the notifying backend
-               (_pid (pg-read-int con 4))
-               (channel (pg-read-string con))
-               (payload (pg-read-string con))
+               (_pid (pg--read-int con 4))
+               (channel (pg--read-string con))
+               (payload (pg--read-string con))
                (buf (process-buffer (pgcon-process con)))
                (handlers (with-current-buffer buf pgcon--notification-handlers)))
           (dolist (handler handlers)
@@ -2265,8 +2266,8 @@ can be decoded using `pg-result'."
 
        ;; ReadyForQuery message
        (?Z
-        (let ((_msglen (pg-read-net-int con 4))
-              (status (pg-read-char con)))
+        (let ((_msglen (pg--read-net-int con 4))
+              (status (pg--read-char con)))
           (when (eql ?E status)
             (message "PostgreSQL ReadyForQuery message with error status"))
           (pg--trim-connection-buffers con)
@@ -2295,30 +2296,30 @@ can be decoded using `pg-result', but with data in BUF."
     (pg-flush con)
     (let ((more-pending t))
       (while more-pending
-        (let ((c (pg-read-char con)))
+        (let ((c (pg--read-char con)))
           (cl-case c
             ;; CopyOutResponse
             (?H
-             (let ((_msglen (pg-read-net-int con 4))
-                   (status (pg-read-net-int con 1))
-                   (cols (pg-read-net-int con 2))
+             (let ((_msglen (pg--read-net-int con 4))
+                   (status (pg--read-net-int con 1))
+                   (cols (pg--read-net-int con 2))
                    (format-codes (list)))
                ;; status=0 indicates the overall COPY format is textual (rows separated by
                ;; newlines, columns separated by separator characters, etc.). 1 indicates the
                ;; overall copy format is binary (which we don't implement here).
                (dotimes (_c cols)
-                 (push (pg-read-net-int con 2) format-codes))
+                 (push (pg--read-net-int con 2) format-codes))
                (unless (zerop status)
                  (signal 'pg-error (list "BINARY format for COPY is not implemented")))
                (setq more-pending nil)))
 
             ;; NotificationResponse
             (?A
-             (let* ((_msglen (pg-read-net-int con 4))
+             (let* ((_msglen (pg--read-net-int con 4))
                     ;; PID of the notifying backend
-                    (_pid (pg-read-int con 4))
-                    (channel (pg-read-string con))
-                    (payload (pg-read-string con))
+                    (_pid (pg--read-int con 4))
+                    (channel (pg--read-string con))
+                    (payload (pg--read-string con))
                     (buf (process-buffer (pgcon-process con)))
                     (handlers (with-current-buffer buf pgcon--notification-handlers)))
                (dolist (handler handlers)
@@ -2330,8 +2331,8 @@ can be decoded using `pg-result', but with data in BUF."
 
             ;; ParameterStatus sent in response to a user update over the connection
             (?S
-             (let* ((msglen (pg-read-net-int con 4))
-                    (msg (pg-read-chars con (- msglen 4)))
+             (let* ((msglen (pg--read-net-int con 4))
+                    (msg (pg--read-chars con (- msglen 4)))
                     (items (split-string msg (unibyte-string 0))))
                (when (> (length (cl-first items)) 0)
                  (dolist (handler pg-parameter-change-functions)
@@ -2344,42 +2345,42 @@ can be decoded using `pg-result', but with data in BUF."
     (with-current-buffer buf
       ;; TODO: set the buffer to CSV mode?
       (cl-loop
-       for c = (pg-read-char con) do
+       for c = (pg--read-char con) do
        (cl-case c
          ;; CopyData
          (?d
-          (let* ((msglen (pg-read-net-int con 4))
-                 (payload (pg-read-chars-old con (- msglen 4)))
+          (let* ((msglen (pg--read-net-int con 4))
+                 (payload (pg--read-chars-old con (- msglen 4)))
                  (ce (pgcon-client-encoding con))
                  (decoded (if ce (decode-coding-string payload ce t) payload)))
             (insert decoded)))
 
          ;; CopyDone
          (?c
-          (let ((_msglen (pg-read-net-int con 4)))
+          (let ((_msglen (pg--read-net-int con 4)))
             nil))
 
          ;; CopyFail
          (?f
-          (let* ((msglen (pg-read-net-int con 4))
-                 (msg (pg-read-chars con (- msglen 4)))
+          (let* ((msglen (pg--read-net-int con 4))
+                 (msg (pg--read-chars con (- msglen 4)))
                  (emsg (format "COPY failed: %s" msg)))
             (signal 'pg-copy-failed (list emsg))))
 
          ;; CommandComplete -- SQL command has completed. After this we expect a ReadyForQuery message.
          (?C
-          (let* ((msglen (pg-read-net-int con 4))
-                 (msg (pg-read-chars con (- msglen 5)))
-                 (_null (pg-read-char con)))
+          (let* ((msglen (pg--read-net-int con 4))
+                 (msg (pg--read-chars con (- msglen 5)))
+                 (_null (pg--read-char con)))
             (setf (pgresult-status result) msg)))
 
          ;; NotificationResponse
          (?A
-          (let* ((_msglen (pg-read-net-int con 4))
+          (let* ((_msglen (pg--read-net-int con 4))
                  ;; PID of the notifying backend
-                 (_pid (pg-read-int con 4))
-                 (channel (pg-read-string con))
-                 (payload (pg-read-string con))
+                 (_pid (pg--read-int con 4))
+                 (channel (pg--read-string con))
+                 (payload (pg--read-string con))
                  (buf (process-buffer (pgcon-process con)))
                  (handlers (with-current-buffer buf pgcon--notification-handlers)))
             (dolist (handler handlers)
@@ -2391,8 +2392,8 @@ can be decoded using `pg-result', but with data in BUF."
 
          ;; ReadyForQuery message
          (?Z
-          (let ((_msglen (pg-read-net-int con 4))
-                (status (pg-read-char con)))
+          (let ((_msglen (pg--read-net-int con 4))
+                (status (pg--read-char con)))
             (when (eql ?E status)
               (message "PostgreSQL ReadyForQuery message with error status"))
             (pg--trim-connection-buffers con)
@@ -2418,7 +2419,7 @@ can be decoded using `pg-result', but with data in BUF."
     (thread-yield))
   ;; Read the ReadyForQuery message
   (cl-loop
-   for c = (pg-read-char con) do
+   for c = (pg--read-char con) do
    (cl-case c
      ;; ErrorResponse
      (?E
@@ -2426,39 +2427,39 @@ can be decoded using `pg-result', but with data in BUF."
 
      ;; NoData
      (?n
-      (pg-read-net-int con 4))
+      (pg--read-net-int con 4))
 
      ;; ParseComplete
      (?1
-      (pg-read-net-int con 4))
+      (pg--read-net-int con 4))
 
      ;; BindComplete
      (?2
-      (pg-read-net-int con 4))
+      (pg--read-net-int con 4))
 
      ;; CloseComplete
      (?3
-      (pg-read-net-int con 4))
+      (pg--read-net-int con 4))
 
      ;; RowDescription message. We really shouldn't be seeing this here, but some PostgreSQL
      ;; variants like TheNile are sending this after the Sync. Read and discard the attributes.
      (?T
-      (pg-read-attributes con))
+      (pg--read-attributes con))
 
      ;; DataRow. Should not be seen here; read and discard.
      (?D
-      (let ((msglen (pg-read-net-int con 4)))
-        (pg-read-chars con (- msglen 4))))
+      (let ((msglen (pg--read-net-int con 4)))
+        (pg--read-chars con (- msglen 4))))
 
      ;; CommandComplete -- read and discard
      (?C
-      (let ((msglen (pg-read-net-int con 4)))
-        (pg-read-chars con (- msglen 4))))
+      (let ((msglen (pg--read-net-int con 4)))
+        (pg--read-chars con (- msglen 4))))
 
      ;; ReadyForQuery message
      (?Z
-      (let ((_msglen (pg-read-net-int con 4))
-            (status (pg-read-char con)))
+      (let ((_msglen (pg--read-net-int con 4))
+            (status (pg--read-char con)))
         (when (eql ?E status)
           (message "PostgreSQL ReadyForQuery message with error status"))
         (pg-connection-set-busy con nil)
@@ -2466,7 +2467,7 @@ can be decoded using `pg-result', but with data in BUF."
 
      (t
       (message "Unexpected message type after Sync: %s" c)
-      (pg-unread-char con)
+      (pg--unread-char con)
       (pg-connection-set-busy con nil)
       (cl-return-from pg-sync nil)))))
 
@@ -3544,7 +3545,7 @@ zero-argument function that returns a string."
   (let* ((password-string (if (functionp password)
                               (funcall password)
                             password))
-         (salt (pg-read-chars con 4))
+         (salt (pg--read-chars con 4))
          (pwdhash (md5 (concat password-string user)))
          (hash (concat "md5" (md5 (concat pwdhash salt)))))
     (pg-send-char con ?p)
@@ -3633,7 +3634,7 @@ Authenticate as USER with PASSWORD, a string."
     (pg-send-uint con len-cf 4)
     (pg-send-octets con client-first)
     (pg-flush con)
-    (let ((c (pg-read-char con)))
+    (let ((c (pg--read-char con)))
       (cl-case c
         (?E
          ;; an ErrorResponse message
@@ -3641,9 +3642,9 @@ Authenticate as USER with PASSWORD, a string."
 
         ;; AuthenticationSASLContinue message, what we are hoping for
         (?R
-         (let* ((len (pg-read-net-int con 4))
-                (type (pg-read-net-int con 4))
-                (server-first-msg (pg-read-chars con (- len 8))))
+         (let* ((len (pg--read-net-int con 4))
+                (type (pg--read-net-int con 4))
+                (server-first-msg (pg--read-chars con (- len 8))))
            (unless (eql type 11)
              (let ((msg (format "Unexpected AuthenticationSASLContinue type %d" type)))
                (signal 'pg-protocol-error (list msg))))
@@ -3678,7 +3679,7 @@ Authenticate as USER with PASSWORD, a string."
              (pg-send-uint con (+ 4 (length client-final-msg)) 4)
              (pg-send-octets con client-final-msg)
              (pg-flush con)
-             (let ((c (pg-read-char con)))
+             (let ((c (pg--read-char con)))
                (cl-case c
                  (?E
                   ;; an ErrorResponse message
@@ -3686,9 +3687,9 @@ Authenticate as USER with PASSWORD, a string."
 
                  (?R
                   ;; an AuthenticationSASLFinal message
-                  (let* ((len (pg-read-net-int con 4))
-                         (type (pg-read-net-int con 4))
-                         (server-final-msg (pg-read-chars con (- len 8))))
+                  (let* ((len (pg--read-net-int con 4))
+                         (type (pg--read-net-int con 4))
+                         (server-final-msg (pg--read-chars con (- len 8))))
                     (unless (eql type 12)
                       (let ((msg (format "Expecting AuthenticationSASLFinal, got type %d" type)))
                         (signal 'pg-protocol-error (list msg))))
@@ -3719,7 +3720,7 @@ zero-argument function that returns a string."
                            password))
         (mechanisms (list)))
     ;; read server's list of preferered authentication mechanisms
-    (cl-loop for mech = (pg-read-string con 4096)
+    (cl-loop for mech = (pg--read-string con 4096)
              while (not (zerop (length mech)))
              do (push mech mechanisms))
     (if (member "SCRAM-SHA-256" mechanisms)
@@ -4243,7 +4244,7 @@ COLUMN is in TABLE. Uses connection to PostgreSQL CON."
 
 
 (defun pg-backend-version (con)
-  "Version and operating environment of PostgreSQL backend.
+  "Return version and operating environment of PostgreSQL backend.
 Concerns the backend that we are connected to over connection CON.
 PostgreSQL returns the version as a string. CrateDB returns it as an integer."
   (let ((res (pg-exec con "SELECT version()")))
@@ -4253,46 +4254,50 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
 ;; support routines ============================================================
 
 ;; Called to handle a RowDescription message
-(defun pg-read-attributes (con)
-  (let* ((_msglen (pg-read-net-int con 4))
-         (attribute-count (pg-read-net-int con 2))
+(defun pg--read-attributes (con)
+  "Read RowDescription attributes from PostgreSQL connection CON."
+  (let* ((_msglen (pg--read-net-int con 4))
+         (attribute-count (pg--read-net-int con 2))
          (attributes (list))
          (ce (pgcon-client-encoding con)))
     (cl-do ((i attribute-count (- i 1)))
         ((zerop i) (nreverse attributes))
-      (let ((type-name  (pg-read-string con))
-            (_table-oid (pg-read-net-int con 4))
-            (_col       (pg-read-net-int con 2))
-            (type-oid   (pg-read-net-int con 4))
-            (type-len   (pg-read-net-int con 2))
-            (_type-mod  (pg-read-net-int con 4))
-            (_format-code (pg-read-net-int con 2)))
+      (let ((type-name  (pg--read-string con))
+            (_table-oid (pg--read-net-int con 4))
+            (_col       (pg--read-net-int con 2))
+            (type-oid   (pg--read-net-int con 4))
+            (type-len   (pg--read-net-int con 2))
+            (_type-mod  (pg--read-net-int con 4))
+            (_format-code (pg--read-net-int con 2)))
         (push (list (pg-text-parser type-name ce) type-oid type-len) attributes)))))
 
 ;; Read data following a DataRow message
-(defun pg-read-tuple (con attributes)
+(defun pg--read-tuple (con attributes)
+  "Read a tuple from a DataRow message on PostgreSQL connection CON.
+The RowDescription data is provided in ATTRIBUTES."
   (let* ((num-attributes (length attributes))
-         (col-count (pg-read-net-int con 2))
+         (col-count (pg--read-net-int con 2))
          (tuples (list)))
     (unless (eql col-count num-attributes)
       (signal 'pg-protocol-error '("Unexpected value for attribute count sent by backend")))
     (cl-do ((i 0 (+ i 1))
             (type-ids (mapcar #'cl-second attributes) (cdr type-ids)))
         ((= i num-attributes) (nreverse tuples))
-      (let ((col-octets (pg-read-net-int con 4)))
+      (let ((col-octets (pg--read-net-int con 4)))
         (cl-case col-octets
           (4294967295
-           ;; this is "-1" (pg-read-net-int doesn't handle integer overflow), which indicates a
+           ;; this is "-1" (pg--read-net-int doesn't handle integer overflow), which indicates a
            ;; NULL column
            (push pg-null-marker tuples))
           (0
            (push "" tuples))
           (t
-           (let* ((col-value (pg-read-chars con col-octets))
+           (let* ((col-value (pg--read-chars con col-octets))
                   (parsed (pg-parse con col-value (car type-ids))))
              (push parsed tuples))))))))
 
-(defun pg-read-char (con)
+(defun pg--read-char (con)
+  "Read a single character from PostgreSQL connection CON."
   (declare (speed 3))
   (let ((process (pgcon-process con)))
     ;; (accept-process-output process 0.1)
@@ -4300,42 +4305,41 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
       (when (null (char-after pgcon--position))
         (dotimes (_i (pgcon-timeout con))
           (when (null (char-after pgcon--position))
-            ;; (sleep-for 0.1)
             (accept-process-output process 1.0))))
       (when (null (char-after pgcon--position))
-        (let ((msg (format "Timeout in pg-read-char reading from %s" con)))
+        (let ((msg (format "Timeout in pg--read-char reading from %s" con)))
           (signal 'pg-timeout (list msg))))
       (prog1 (char-after pgcon--position)
         (setq-local pgcon--position (1+ pgcon--position))))))
 
-(defun pg-unread-char (con)
+(defun pg--unread-char (con)
   (let ((process (pgcon-process con)))
     (with-current-buffer (process-buffer process)
       (setq-local pgcon--position (1- pgcon--position)))))
 
 ;; FIXME should be more careful here; the integer could overflow.
-(defun pg-read-net-int (con bytes)
+(defun pg--read-net-int (con bytes)
   (declare (speed 3))
   (cl-do ((i bytes (- i 1))
           (accum 0))
       ((zerop i) accum)
-    (setq accum (+ (* 256 accum) (pg-read-char con)))))
+    (setq accum (+ (* 256 accum) (pg--read-char con)))))
 
-(defun pg-read-int (con bytes)
+(defun pg--read-int (con bytes)
   (declare (speed 3))
   (cl-do ((i bytes (- i 1))
           (multiplier 1 (* multiplier 256))
           (accum 0))
       ((zerop i) accum)
-    (cl-incf accum (* multiplier (pg-read-char con)))))
+    (cl-incf accum (* multiplier (pg--read-char con)))))
 
-(defun pg-read-chars-old (con howmany)
+(defun pg--read-chars-old (con howmany)
   (cl-do ((i 0 (+ i 1))
           (chars (make-string howmany ?.)))
       ((= i howmany) chars)
-    (aset chars i (pg-read-char con))))
+    (aset chars i (pg--read-char con))))
 
-(defun pg-read-chars (con count)
+(defun pg--read-chars (con count)
   (declare (speed 3))
   (let ((process (pgcon-process con)))
     (with-current-buffer (process-buffer process)
@@ -4348,18 +4352,18 @@ PostgreSQL returns the version as a string. CrateDB returns it as an integer."
               ;; (sleep-for 0.1)
               (accept-process-output process 1.0))))
         (when (> end (point-max))
-          (let ((msg (format "Timeout in pg-read-chars reading from %s" con)))
+          (let ((msg (format "Timeout in pg--read-chars reading from %s" con)))
             (signal 'pg-timeout (list msg))))
         (prog1 (buffer-substring-no-properties start end)
           (setq-local pgcon--position end))))))
 
-(cl-defun pg-read-string (con &optional (max-bytes 1048576))
+(cl-defun pg--read-string (con &optional (max-bytes 1048576))
   "Read a null-terminated string from PostgreSQL connection CON.
 If MAX-BYTES is specified, it designates the maximal number of octets
 that will be read."
   (declare (speed 3))
   (cl-loop for i below max-bytes
-           for ch = (pg-read-char con)
+           for ch = (pg--read-char con)
            until (eql ch ?\0)
            concat (byte-to-string ch)))
 
@@ -4367,9 +4371,9 @@ that will be read."
   severity sqlstate message detail hint table column dtype file line routine where constraint)
 
 (defun pg-read-error-response (con)
-  (let* ((response-len (pg-read-net-int con 4))
+  (let* ((response-len (pg--read-net-int con 4))
          (msglen (- response-len 4))
-         (msg (pg-read-chars con msglen))
+         (msg (pg--read-chars con msglen))
          (msgpos 0)
          (err (make-pgerror))
          (ce (pgcon-client-encoding con)))

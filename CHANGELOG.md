@@ -1,6 +1,13 @@
 # Changelog
 
 
+## [0.62] - Unreleased
+
+- Rename functions `pg-read-attributes`, `pg-read-tuple`, `pg-read-char`, `pg-unread-char`,
+  `pg-read-net-int`, `pg-read-int`, `pg-read-chars`, `pg-read-string` to use the naming convention
+  for internal functions (`pg--` prefix).
+
+
 ## [0.61] - 2025-11-22
 
 - Add support for providing a password for authentication as a function, rather than as a string.
