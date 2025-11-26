@@ -3,7 +3,6 @@ title = "Using pg-el"
 authors = ["Eric Marsden <eric.marsden@risk-engineering.org>"]
 description = "User manual for the pg-el Emacs Lisp socket-level interface to PostgreSQL."
 language = "en"
-multilingual = false
 src = "src"
 
 
