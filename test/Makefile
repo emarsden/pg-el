@@ -3,7 +3,7 @@ DOCKER ?= podman
 WORKDIR := $(shell mktemp -d)
 
 # export DEPS_DIR = $(shell realpath .deps)
-export DEPS_DIR := $(shell mktemp -d --tmpdir emacsdepsXXXX)
+export DEPS_DIR := $(shell mktemp -d -t emacsdepsXXXX)
 
 default: test
 
