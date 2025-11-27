@@ -711,19 +711,19 @@ Uses database DBNAME, user USER and password PASSWORD."
                           (1+ (length "client_encoding"))
                           (1+ (length "UTF8"))
                           1)))
-    (pg-send-uint con packet-octets 4)
-    (pg-send-uint con 3 2)              ; Protocol major version = 3
-    (pg-send-uint con 0 2)              ; Protocol minor version = 0
-    (pg-send-string con "user")
-    (pg-send-string con user)
-    (pg-send-string con "database")
-    (pg-send-string con dbname)
-    (pg-send-string con "application_name")
-    (pg-send-string con pg-application-name)
-    (pg-send-string con "client_encoding")
-    (pg-send-string con "UTF8")
+    (pg--send-uint con packet-octets 4)
+    (pg--send-uint con 3 2)              ; Protocol major version = 3
+    (pg--send-uint con 0 2)              ; Protocol minor version = 0
+    (pg--send-string con "user")
+    (pg--send-string con user)
+    (pg--send-string con "database")
+    (pg--send-string con dbname)
+    (pg--send-string con "application_name")
+    (pg--send-string con pg-application-name)
+    (pg--send-string con "client_encoding")
+    (pg--send-string con "UTF8")
     ;; A zero byte is required as a terminator after the last name/value pair.
-    (pg-send-uint con 0 1)
+    (pg--send-uint con 0 1)
     (pg-flush con))
   (when (pgcon-connect-timer con)
     (cancel-timer (pgcon-connect-timer con)))
@@ -809,9 +809,9 @@ Uses database DBNAME, user USER and password PASSWORD."
            (let ((password-string (if (functionp password)
                                       (funcall password)
                                     password)))
-             (pg-send-char con ?p)
-             (pg-send-uint con (+ 5 (length password-string)) 4)
-             (pg-send-string con password-string))
+             (pg--send-char con ?p)
+             (pg--send-uint con (+ 5 (length password-string)) 4)
+             (pg--send-string con password-string))
            (pg-flush con))
 
          ;; AUTH_REQ_CRYPT
@@ -1037,8 +1037,8 @@ to use the updated protocol features introduced with PostgreSQL version
            (unless (gnutls-available-p)
              (signal 'pg-error '("Connecting over TLS requires GnuTLS support in Emacs")))
            ;; send the SSLRequest message
-           (pg-send-uint con 8 4)
-           (pg-send-uint con 80877103 4)
+           (pg--send-uint con 8 4)
+           (pg--send-uint con 80877103 4)
            (pg-flush con)
            (let ((ch (pg--read-char con)))
              (unless (eql ?S ch)
@@ -1498,9 +1498,9 @@ Return a result structure which can be decoded using `pg-result'."
     (let ((len (length encoded)))
       (when (> len (- (expt 2 32) 5))
         (signal 'pg-user-error (list "Query is too large")))
-      (pg-send-char con ?Q)
-      (pg-send-uint con (+ 4 len 1) 4)
-      (pg-send-string con encoded)
+      (pg--send-char con ?Q)
+      (pg--send-uint con (+ 4 len 1) 4)
+      (pg--send-string con encoded)
       (pg-flush con))
     (cl-loop for c = (pg--read-char con) do
        ;; (message "pg-exec message-type = %c" c)
@@ -1788,13 +1788,13 @@ Returns the prepared statement name (a string)."
            (len (+ 4 (1+ (length name)) (1+ (length query/enc)) 2 (* 4 (length oids)))))
       ;; send a Parse message
       (pg-connection-set-busy con t)
-      (pg-send-char con ?P)
-      (pg-send-uint con len 4)
-      (pg-send-string con name)
-      (pg-send-string con query/enc)
-      (pg-send-uint con (length oids) 2)
+      (pg--send-char con ?P)
+      (pg--send-uint con len 4)
+      (pg--send-string con name)
+      (pg--send-string con query/enc)
+      (pg--send-uint con (length oids) 2)
       (dolist (oid oids)
-        (pg-send-uint con oid 4))
+        (pg--send-uint con oid 4))
       (pg-flush con))
     name))
 
@@ -1833,38 +1833,38 @@ Uses PostgreSQL connection CON."
     (when (> len (expt 2 32))
       (signal 'pg-user-error (list "Field is too large")))
     ;; send a Bind message
-    (pg-send-char con ?B)
-    (pg-send-uint con len 4)
+    (pg--send-char con ?B)
+    (pg--send-uint con len 4)
     ;; the destination portal
-    (pg-send-string con portal)
-    (pg-send-string con statement-name)
-    (pg-send-uint con (length argument-types) 2)
+    (pg--send-string con portal)
+    (pg--send-string con statement-name)
+    (pg--send-uint con (length argument-types) 2)
     (cl-loop for (_ . binary-p) in serialized-values
-             do (pg-send-uint con binary-p 2))
-    (pg-send-uint con (length argument-values) 2)
+             do (pg--send-uint con binary-p 2))
+    (pg--send-uint con (length argument-values) 2)
     (cl-loop
      for (v . _) in serialized-values
      do (if (null v)
             ;; for a null value, send -1 followed by zero octets for the value
-            (pg-send-uint con -1 4)
+            (pg--send-uint con -1 4)
           (let ((len (length v)))
             (when (> len (expt 2 32))
               (signal 'pg-user-error (list "Field is too large")))
-            (pg-send-uint con len 4)
-            (pg-send-octets con v))))
+            (pg--send-uint con len 4)
+            (pg--send-octets con v))))
     ;; the number of result-column format codes: we use zero to indicate that result columns can use
     ;; text format
-    (pg-send-uint con 0 2)
+    (pg--send-uint con 0 2)
     (pg-flush con)
     portal))
 
 (defun pg-describe-portal (con portal)
   (let ((len (+ 4 1 (1+ (length portal)))))
     ;; send a Describe message for this portal
-    (pg-send-char con ?D)
-    (pg-send-uint con len 4)
-    (pg-send-char con ?P)
-    (pg-send-string con portal)
+    (pg--send-char con ?D)
+    (pg--send-uint con len 4)
+    (pg--send-char con ?P)
+    (pg--send-string con portal)
     (pg-flush con)))
 
 (cl-defun pg-execute (con portal &key (max-rows 0))
@@ -1872,12 +1872,12 @@ Uses PostgreSQL connection CON."
          (pn/encoded (if ce (encode-coding-string portal ce t) portal))
          (len (+ 4 (1+ (length pn/encoded)) 4)))
     ;; send an Execute message
-    (pg-send-char con ?E)
-    (pg-send-uint con len 4)
+    (pg--send-char con ?E)
+    (pg--send-uint con len 4)
     ;; the destination portal
-    (pg-send-string con pn/encoded)
+    (pg--send-string con pn/encoded)
     ;; Maximum number of rows to return; zero means "no limit"
-    (pg-send-uint con max-rows 4)
+    (pg--send-uint con max-rows 4)
     (pg-flush con)))
 
 (cl-defun pg-fetch (con result &key (max-rows 0))
@@ -1894,12 +1894,12 @@ Returns a pgresult structure (see function `pg-result')."
     ;; to retrieve more rows on the next call to pg-fetch.
     (cond ((zerop max-rows)
            ;; send a Sync message
-           (pg-send-char con ?S)
-           (pg-send-uint con 4 4))
+           (pg--send-char con ?S)
+           (pg--send-uint con 4 4))
           (t
            ;; send a Flush message
-           (pg-send-char con ?H)
-           (pg-send-uint con 4 4)))
+           (pg--send-char con ?H)
+           (pg--send-uint con 4 4)))
     (pg-flush con)
     ;; In the extended query protocol, the Execute phase is always terminated by the appearance of
     ;; exactly one of these messages: CommandComplete, EmptyQueryResponse (if the portal was created
@@ -1974,8 +1974,8 @@ Returns a pgresult structure (see function `pg-result')."
         (setf (pgresult-incomplete result) nil)
         (when (> max-rows 0)
           ;; send a Sync message to close the portal and request the ReadyForQuery
-          (pg-send-char con ?S)
-          (pg-send-uint con 4 4)
+          (pg--send-char con ?S)
+          (pg--send-uint con 4 4)
           (pg-flush con)))
 
        ;; EmptyQueryResponse -- the response to an empty query string
@@ -2090,13 +2090,13 @@ the query plan."
 Uses PostgreSQL connection CON."
   (let ((len (+ 4 1 (1+ (length portal)))))
     ;; send a Close message
-    (pg-send-char con ?C)
-    (pg-send-uint con len 4)
-    (pg-send-char con ?P)
-    (pg-send-string con portal)
+    (pg--send-char con ?C)
+    (pg--send-uint con len 4)
+    (pg--send-char con ?P)
+    (pg--send-string con portal)
     ;; send a Sync message
-    (pg-send-char con ?S)
-    (pg-send-uint con 4 4)
+    (pg--send-char con ?S)
+    (pg--send-uint con 4 4)
     (pg-flush con)
     (cl-loop
      for c = (pg--read-char con) do
@@ -2150,9 +2150,9 @@ can be decoded using `pg-result'."
         (len (length query)))
     (when (> len (expt 2 32))
       (signal 'pg-user-error (list "Query is too large")))
-    (pg-send-char con ?Q)
-    (pg-send-uint con (+ 4 len 1) 4)
-    (pg-send-string con query)
+    (pg--send-char con ?Q)
+    (pg--send-uint con (+ 4 len 1) 4)
+    (pg--send-string con query)
     (pg-flush con)
     (let ((more-pending t))
       (while more-pending
@@ -2217,13 +2217,13 @@ can be decoded using `pg-result'."
                  (data (buffer-substring-no-properties chunk-start chunk-end))
                  (encoded (if ce (encode-coding-string data ce t) data)))
             ;; a CopyData message with the encoded data
-            (pg-send-char con ?d)
-            (pg-send-uint con (+ 4 (length encoded)) 4)
-            (pg-send-octets con encoded)
+            (pg--send-char con ?d)
+            (pg--send-uint con (+ 4 (length encoded)) 4)
+            (pg--send-octets con encoded)
             (pg-flush con)))))
     ;; send a CopyDone message
-    (pg-send-char con ?c)
-    (pg-send-uint con 4 4)
+    (pg--send-char con ?c)
+    (pg--send-uint con 4 4)
     (pg-flush con)
     ;; Backend sends us either CopyDone or CopyFail, followed by CommandComplete + ReadyForQuery
     (cl-loop
@@ -2290,9 +2290,9 @@ can be decoded using `pg-result', but with data in BUF."
     (signal 'pg-programming-error (list "COPY command must contain 'TO STDOUT'")))
   (pg-connection-set-busy con t)
   (let ((result (make-pgresult :connection con)))
-    (pg-send-char con ?Q)
-    (pg-send-uint con (+ 4 (length query) 1) 4)
-    (pg-send-string con query)
+    (pg--send-char con ?Q)
+    (pg--send-uint con (+ 4 (length query) 1) 4)
+    (pg--send-string con query)
     (pg-flush con)
     (let ((more-pending t))
       (while more-pending
@@ -2412,8 +2412,8 @@ can be decoded using `pg-result', but with data in BUF."
     (setq-local pgcon--position (point-max)))
   (when (member (pgcon-server-variant con) '(datafusion))
     (cl-return-from pg-sync nil))
-  (pg-send-char con ?S)
-  (pg-send-uint con 4 4)
+  (pg--send-char con ?S)
+  (pg--send-uint con 4 4)
   (pg-flush con)
   (when (fboundp 'thread-yield)
     (thread-yield))
@@ -2520,12 +2520,12 @@ The cancellation request concerns the command requested over connection CON."
       (set-buffer-multibyte nil)
       (buffer-disable-undo)
       (setq-local pgcon--position 1))
-    (pg-send-uint ccon 16 4)
-    (pg-send-uint ccon 80877102 4)
-    (pg-send-uint ccon (pgcon-pid con) 4)
+    (pg--send-uint ccon 16 4)
+    (pg--send-uint ccon 80877102 4)
+    (pg--send-uint ccon (pgcon-pid con) 4)
     ;; From PostgreSQL v18 and version 3.2 of the wire protocol, the "cancel request keys" can
     ;; be variable in length, up to 256 bits. Previously, they were only 32 bits in length.
-    (pg-send-octets ccon (pgcon-secret con))
+    (pg--send-octets ccon (pgcon-secret con))
     (pg-flush ccon)
     (pg-disconnect ccon)))
 
@@ -2540,8 +2540,8 @@ PostgreSQL and Emacs. CON should no longer be used."
   ;; mode), PostgreSQL can close the network connection before we have finished flushing the output.
   ;; This triggers an Emacs error, which we don't want to propagate to the caller here.
   (ignore-errors
-    (pg-send-char con ?X)
-    (pg-send-uint con 4 4)
+    (pg--send-char con ?X)
+    (pg--send-uint con 4 4)
     (pg-flush con))
   (let ((process (pgcon-process con)))
     (delete-process process)
@@ -3548,9 +3548,9 @@ zero-argument function that returns a string."
          (salt (pg--read-chars con 4))
          (pwdhash (md5 (concat password-string user)))
          (hash (concat "md5" (md5 (concat pwdhash salt)))))
-    (pg-send-char con ?p)
-    (pg-send-uint con (+ 5 (length hash)) 4)
-    (pg-send-string con hash)
+    (pg--send-char con ?p)
+    (pg--send-uint con (+ 5 (length hash)) 4)
+    (pg--send-string con hash)
     (pg-flush con)))
 
 
@@ -3628,11 +3628,11 @@ Authenticate as USER with PASSWORD, a string."
          ;; packet length doesn't include the initial ?p message type indicator
          (len-packet (+ 4 (1+ (length mechanism)) 4 len-cf)))
     ;; send the SASLInitialResponse message
-    (pg-send-char con ?p)
-    (pg-send-uint con len-packet 4)
-    (pg-send-string con mechanism)
-    (pg-send-uint con len-cf 4)
-    (pg-send-octets con client-first)
+    (pg--send-char con ?p)
+    (pg--send-uint con len-packet 4)
+    (pg--send-string con mechanism)
+    (pg--send-uint con len-cf 4)
+    (pg--send-octets con client-first)
     (pg-flush con)
     (let ((c (pg--read-char con)))
       (cl-case c
@@ -3675,9 +3675,9 @@ Authenticate as USER with PASSWORD, a string."
                (signal 'pg-protocol-error
                        (list "SASL response doesn't include correct client nonce")))
              ;; we send a SASLResponse message with SCRAM client-final-message as content
-             (pg-send-char con ?p)
-             (pg-send-uint con (+ 4 (length client-final-msg)) 4)
-             (pg-send-octets con client-final-msg)
+             (pg--send-char con ?p)
+             (pg--send-uint con (+ 4 (length client-final-msg)) 4)
+             (pg--send-octets con client-final-msg)
              (pg-flush con)
              (let ((c (pg--read-char con)))
                (cl-case c
@@ -4477,7 +4477,7 @@ that will be read."
     (insert octets)))
 
 ;; higher order bits first / little endian
-(defun pg-send-uint (con num bytes)
+(defun pg--send-uint (con num bytes)
   (declare (speed 3))
   (let ((str (make-string bytes 0))
         (i (- bytes 1)))
@@ -4488,7 +4488,7 @@ that will be read."
     (pg--buffered-send con str)))
 
 ;; big endian
-(defun pg-send-net-uint (con num bytes)
+(defun pg--send-net-uint (con num bytes)
   (declare (speed 3))
   (let ((str (make-string bytes 0)))
     (dotimes (i bytes)
@@ -4496,18 +4496,18 @@ that will be read."
       (setq num (floor num 256)))
     (pg--buffered-send con str)))
 
-(defun pg-send-char (con char)
+(defun pg--send-char (con char)
   (pg--buffered-send con (char-to-string char)))
 
-(defun pg-send-string (con string)
+(defun pg--send-string (con string)
   (pg--buffered-send con string)
   ;; the null-terminator octet
   (pg--buffered-send con (unibyte-string 0)))
 
-(defun pg-send-octets (con octets)
+(defun pg--send-octets (con octets)
   (pg--buffered-send con octets))
 
-(defun pg-send (con str &optional bytes)
+(defun pg--send (con str &optional bytes)
   (declare (speed 3))
   (let ((padding (if (and (numberp bytes) (> bytes (length str)))
                      (make-string (- bytes (length str)) 0)

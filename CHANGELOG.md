@@ -4,12 +4,14 @@
 ## [0.62] - Unreleased
 
 - Rename functions `pg-read-attributes`, `pg-read-tuple`, `pg-read-char`, `pg-unread-char`,
-  `pg-read-net-int`, `pg-read-int`, `pg-read-chars`, `pg-read-string` to use the naming convention
-  for internal functions (`pg--` prefix).
+  `pg-read-net-int`, `pg-read-int`, `pg-read-chars`, `pg-read-string`, `pg-send-char`,
+  `pg-send-string`, `pg-send-octets`, `pg-send-uint`, `pg-send-net-uint` to use the naming convention for
+  internal functions (`pg--` prefix).
 
 - Microsoft Windows: add additional sleep using `sleep-for` when waiting for network data. The
   existing calls to `accept-process-output` with a timeout are insufficient on this platform when
-  reading large resultsets.
+  reading large resultsets. Further testing is needed to determine whether this is also necessary on
+  other non-Linux platforms like MS-DOS and Darwin.
 
 
 ## [0.61] - 2025-11-22

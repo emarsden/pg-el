@@ -26,17 +26,17 @@
 (require 'cl-lib)
 (require 'hex-util)
 
-(declare-function pg-read-string "pg" (con maxbytes))
-(declare-function pg-read-char "pg" (con))
-(declare-function pg-read-chars "pg" (con count))
-(declare-function pg-read-net-int "pg" (con bytes))
+(declare-function pg--read-string "pg" (con maxbytes))
+(declare-function pg--read-char "pg" (con))
+(declare-function pg--read-chars "pg" (con count))
+(declare-function pg--read-net-int "pg" (con bytes))
 (declare-function pg-read-error-response "pg" (con))
 (declare-function pg-handle-error-response "pg" (con &optional context))
 (declare-function pg-flush "pg" (con))
-(declare-function pg-send "pg" (con str &optional bytes))
-(declare-function pg-send-uint "pg" (con num bytes))
-(declare-function pg-send-char "pg" (con char))
-(declare-function pg-send-octets "pg" (con octets))
+(declare-function pg--send "pg" (con str &optional bytes))
+(declare-function pg--send-uint "pg" (con num bytes))
+(declare-function pg--send-char "pg" (con char))
+(declare-function pg--send-octets "pg" (con octets))
 (declare-function pg-connection-set-busy "pg" (con busy))
 (declare-function pg-result "pg" (result what &rest arg))
 (declare-function pg-exec "pg" (con &rest args))
@@ -94,53 +94,53 @@
                      (let ((msg (format "Unknown builtin function %s" fn)))
                        (signal 'pg-user-error (list msg)))))))
     ;; https://www.postgresql.org/docs/17/protocol-message-formats.html
-    (pg-send-char con ?F)
+    (pg--send-char con ?F)
     (let* ((arg-len (length args))
            (msg-len (+ 4 4 2 (* 2 arg-len) 2
                        (cl-loop for arg in args
                                 sum (+ 4 (if (integerp arg) 4 (length arg))))
                        2)))
-      (pg-send-uint con msg-len 4))
-    (pg-send-uint con fnid 4)
+      (pg--send-uint con msg-len 4))
+    (pg--send-uint con fnid 4)
     ; The number of argument format codes that follow
-    (pg-send-uint con (length args) 2)
+    (pg--send-uint con (length args) 2)
     ;; The argument format codes, either zero for text or 1 for binary.
     (dolist (arg args)
       (cond ((integerp arg)
-             (pg-send-uint con 1 2))
+             (pg--send-uint con 1 2))
             ((stringp arg)
-             (pg-send-uint con 0 2))
+             (pg--send-uint con 0 2))
             (t
              (let ((msg (format "Unknown fastpath type %s" arg)))
                (signal 'pg-user-error (list msg))))))
     ;; Send the number of arguments being specified to the function
-    (pg-send-uint con (length args) 2)
+    (pg--send-uint con (length args) 2)
     ;; Send length/value for each argument
     (dolist (arg args)
       (cond ((integerp arg)
-             (pg-send-uint con 4 4)
-             (pg-send-uint con arg 4))
+             (pg--send-uint con 4 4)
+             (pg--send-uint con arg 4))
             ((stringp arg)
-             (pg-send-uint con (length arg) 4)
-             (pg-send-octets con arg))))
+             (pg--send-uint con (length arg) 4)
+             (pg--send-octets con arg))))
     ;; Int16: the format code for the function result. Must presently be zero (text) or one (binary).
     (if integer-result
-        (pg-send-uint con 1 2)
-      (pg-send-uint con 0 2))
+        (pg--send-uint con 1 2)
+      (pg--send-uint con 0 2))
     (pg-flush con)
     (cl-loop with result = nil
-             for c = (pg-read-char con) do
+             for c = (pg--read-char con) do
              (cl-case c
                ;; ErrorResponse
                (?E (pg-handle-error-response con "in pg-fn"))
 
                ;; FunctionCallResult
                (?V
-                (let ((_msg-len (pg-read-net-int con 4))
-                      (value-len (pg-read-net-int con 4)))
+                (let ((_msg-len (pg--read-net-int con 4))
+                      (value-len (pg--read-net-int con 4)))
                   (setq result (if integer-result
-                                   (pg-read-net-int con value-len)
-                                 (pg-read-chars con value-len)))))
+                                   (pg--read-net-int con value-len)
+                                 (pg--read-chars con value-len)))))
 
                ;; NoticeResponse
                (?N
@@ -153,8 +153,8 @@
 
                ;; ReadyForQuery message
                (?Z
-                (let ((_msglen (pg-read-net-int con 4))
-                      (status (pg-read-char con)))
+                (let ((_msglen (pg--read-net-int con 4))
+                      (status (pg--read-char con)))
                   (when (eql ?E status)
                     (message "PostgreSQL ReadyForQuery message with error status"))
                   (pg--trim-connection-buffers con)
