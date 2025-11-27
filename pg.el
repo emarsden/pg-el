@@ -509,7 +509,7 @@ Uses PostgreSQL connection CON.")
 
 (cl-defmethod pg-do-variant-specific-setup ((con pgcon) (variant t))
   ;; This statement fails on ClickHouse (and the database immediately closes the connection!).
-  (unless (member variant '(clickhouse datafusion))
+  (unless (member variant '(clickhouse datafusion stoolap))
     (pg-exec con "SET datestyle = 'ISO'")))
 
 (defun pg-detect-server-variant (con)
@@ -856,7 +856,9 @@ Uses database DBNAME, user USER and password PASSWORD."
             (when (cl-search "OrioleDB" val)
               (setf (pgcon-server-variant con) 'orioledb))
             (when (cl-search "(ReadySet)" val)
-              (setf (pgcon-server-variant con) 'readyset)))
+              (setf (pgcon-server-variant con) 'readyset))
+            (when (cl-search "(Stoolap)" val)
+              (setf (pgcon-server-variant con) 'stoolap)))
           ;; Now some somewhat ugly code to detect semi-compatible PostgreSQL variants, to allow us
           ;; to work around some of their behaviour that is incompatible with real PostgreSQL.
           (when (string= "session_authorization" key)
@@ -2616,8 +2618,12 @@ PostgreSQL and Emacs. CON should no longer be used."
     (maphash (lambda (k _v) (push k type-names)) pg--textual-serializers)
     (maphash (lambda (k _v) (push k type-names)) pg--parser-by-typname)
     (let* ((qnames (mapcar (lambda (tn) (format "'%s'" tn)) type-names))
-           (sql (format "SELECT typname,oid FROM pg_catalog.pg_type WHERE typname IN (%s)"
-                        (string-join qnames ",")))
+           (pg-type
+            (pcase (pgcon-server-variant con)
+              ('stoolap "pg_type")
+              (_ "pg_catalog.pg_type")))
+           (sql (format "SELECT typname,oid FROM %s WHERE typname IN (%s)"
+                        pg-type (string-join qnames ",")))
            (res (ignore-errors (pg-exec con sql)))
            (pgtypes (and res (pg-result res :tuples)))
            ;; We only use the pg_type information if it looks plausible, and otherwise populate our
@@ -3929,6 +3935,7 @@ Uses database connection CON."
        (cl-first row)))
     ('arcadedb nil)
     ('datafusion nil)
+    ('stoolap nil)
     (_
      (let* ((res (pg-exec con "SELECT current_schema()"))
             (tuple (pg-result res :tuple 0))
@@ -3944,6 +3951,7 @@ Uses database connection CON."
     ('questdb (list "sys" "public"))
     ('arcadedb nil)
     ('datafusion nil)
+    ('stoolap nil)
     ((or 'risingwave 'octodb 'pgsqlite)
      (let ((res (pg-exec con "SELECT DISTINCT table_schema FROM information_schema.tables")))
        (apply #'append (pg-result res :tuples))))
@@ -4047,6 +4055,11 @@ Queries legacy internal PostgreSQL tables."
   (let ((res (pg-exec con "SELECT FROM schema:types")))
     (apply #'append (pg-result res :tuples))))
 
+(defun pg--tables-stoolap (con)
+  (let ((res (pg-exec con "SHOW TABLES")))
+    (apply #'append (pg-result res :tuples))))
+
+
 (defun pg-tables (con)
   "List of the tables present in the database we are connected to via CON.
 Only tables to which the current user has access are listed."
@@ -4064,6 +4077,8 @@ Only tables to which the current user has access are listed."
            (pg--tables-vertica con))
           ((eq (pgcon-server-variant con) 'arcadedb)
            (pg--tables-arcadedb con))
+          ((eq (pgcon-server-variant con) 'stoolap)
+           (pg--tables-stoolap con))
           ((eq (pgcon-server-variant con) 'octodb)
            (pg--tables-legacy con))
           ((> (pgcon-server-version-major con) 11)
