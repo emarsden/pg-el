@@ -375,18 +375,21 @@
       (pgtest-add #'pg-test-result
                   :skip-variants  '(risingwave ydb spanner clickhouse vertica))
       (pgtest-add #'pg-test-cursors
-                  :skip-variants '(xata cratedb cockroachdb risingwave questdb greptimedb ydb materialize spanner octodb cedardb yellowbrick))
+                  :skip-variants '(xata cratedb cockroachdb risingwave questdb greptimedb ydb materialize spanner octodb
+                                        cedardb yellowbrick datafusion))
       ;; CrateDB does not support the BYTEA type (!), nor sequences. Spanner does not support the encode() function.
       (pgtest-add #'pg-test-bytea
                   :skip-variants '(cratedb risingwave spanner materialize))
       ;; Spanner does not support the INCREMENT clause in CREATE SEQUENCE. Vertica does not
       ;; implement the pg_sequences system table.
       (pgtest-add #'pg-test-sequence
-                  :skip-variants '(cratedb risingwave questdb materialize greptimedb ydb spanner clickhouse thenile vertica yellowbrick opengauss))
+                  :skip-variants '(cratedb risingwave questdb materialize greptimedb ydb spanner clickhouse thenile
+                                           vertica yellowbrick opengauss datafusion))
       (pgtest-add #'pg-test-array
                   :skip-variants '(cratedb risingwave questdb materialize clickhouse octodb))
       (pgtest-add #'pg-test-enums
-                  :skip-variants '(cratedb risingwave questdb greptimedb ydb materialize spanner octodb clickhouse vertica cedardb yellowbrick))
+                  :skip-variants '(cratedb risingwave questdb greptimedb ydb materialize spanner octodb clickhouse
+                                           vertica cedardb yellowbrick datafusion))
       (pgtest-add #'pg-test-server-prepare
                   :skip-variants '(cratedb risingwave questdb greptimedb ydb octodb datafusion))
       (pgtest-add #'pg-test-comments
@@ -395,7 +398,7 @@
                   :skip-variants '(cratedb cockroachdb risingwave materialize questdb greptimedb ydb spanner vertica))
       ;; CrateDB doesn't support the JSONB type. CockroachDB doesn't support casting to JSON.
       (pgtest-add #'pg-test-json
-                  :skip-variants '(xata cratedb risingwave questdb greptimedb ydb materialize spanner octodb vertica cedardb))
+                  :skip-variants '(xata cratedb risingwave questdb greptimedb ydb materialize spanner octodb vertica cedardb datafusion))
       (pgtest-add #'pg-test-schemas
                   :skip-variants '(xata cratedb risingwave questdb ydb materialize yellowbrick))
       (pgtest-add #'pg-test-hstore
@@ -405,28 +408,30 @@
       (pgtest-add #'pg-test-vector
                   :skip-variants '(xata cratedb materialize octodb vertica))
       (pgtest-add #'pg-test-tsvector
-                  :skip-variants '(xata cratedb cockroachdb risingwave questdb greptimedb ydb materialize spanner octodb vertica cedardb yellowbrick))
+                  :skip-variants '(xata cratedb cockroachdb risingwave questdb greptimedb ydb materialize spanner
+                                        octodb vertica cedardb yellowbrick datafusion))
       (pgtest-add #'pg-test-bm25
                   :skip-variants '(xata cratedb cockroachdb risingwave materialize octodb vertica))
       (pgtest-add #'pg-test-geometric
-                  :skip-variants '(xata cratedb cockroachdb risingwave questdb materialize spanner octodb vertica cedardb yellowbrick))
+                  :skip-variants '(xata cratedb cockroachdb risingwave questdb materialize spanner octodb vertica cedardb
+                                        yellowbrick datafusion))
       (pgtest-add #'pg-test-gis
                   :skip-variants '(xata cratedb cockroachdb risingwave materialize octodb))
       (pgtest-add #'pg-test-copy
-                  :skip-variants '(spanner ydb cratedb risingwave materialize questdb xata vertica yellowbrick))
+                  :skip-variants '(spanner ydb cratedb risingwave materialize questdb xata vertica yellowbrick datafusion))
       ;; QuestDB fails due to lack of support for the NUMERIC type
       (pgtest-add #'pg-test-copy-large
-                  :skip-variants '(spanner ydb cratedb risingwave questdb materialize))
+                  :skip-variants '(spanner ydb cratedb risingwave questdb materialize datafusion))
       ;; Apparently Xata does not support CREATE DATABASE
       (pgtest-add #'pg-test-createdb
                   :skip-variants '(xata cratedb questdb ydb vertica))
       ;; Many PostgreSQL variants only support UTF8 as the client encoding.
       (pgtest-add #'pg-test-client-encoding
-                  :skip-variants '(cratedb cockroachdb ydb risingwave materialize spanner greptimedb questdb xata vertica))
+                  :skip-variants '(cratedb cockroachdb ydb risingwave materialize spanner greptimedb questdb xata vertica datafusion))
       (pgtest-add #'pg-test-unicode-names
                   :skip-variants '(xata cratedb cockroachdb risingwave questdb ydb spanner vertica))
       (pgtest-add #'pg-test-returning
-                  :skip-variants '(risingwave questdb))
+                  :skip-variants '(risingwave questdb datafusion))
       (pgtest-add #'pg-test-parameter-change-handlers
                   :skip-variants '(cratedb risingwave))
       (pgtest-add #'pg-test-errors)
@@ -436,11 +441,13 @@
                   :skip-variants '(cratedb risingwave))
       ;; As of 2025-08, CedarDB does not implement DO.
       (pgtest-add #'pg-test-notice
-                  :skip-variants '(cedardb))
+                  :skip-variants '(cedardb datafusion))
       (pgtest-add #'pg-test-notify
-                  :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb ydb questdb spanner vertica cedardb yellowbrick opengauss))
+                  :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb ydb questdb spanner vertica cedardb
+                                           yellowbrick opengauss datafusion))
       (pgtest-add #'pg-test-lo
-                  :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb ydb questdb spanner vertica greenplum cedardb yellowbrick opengauss))
+                  :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb ydb questdb spanner vertica greenplum
+                                           cedardb yellowbrick opengauss datafusion))
       (dolist (test (reverse tests))
         (message "== Running test %s" test)
         (condition-case err
@@ -496,12 +503,19 @@
 ;; Simple connect and list tables test on a public RNAcentral PostgreSQL server hosted at ebi.ac.uk, see
 ;;  https://rnacentral.org/help/public-database.
 (defun pg-test-ebiacuk ()
-  (let ((con (pg-connect/uri "postgres://reader:NWDMCE5xdipIjRrp@hh-pgsql-public.ebi.ac.uk/pfmegrnargs")))
+  (let ((con (pg-connect/uri "postgres://reader:NWDMCE5xdipIjRrp@hh-pgsql-public.ebi.ac.uk/pfmegrnargs?read_timeout=1000")))
     (message "Connected to %s, %s"
              (cl-prin1-to-string con)
              (pg-backend-version con))
     (dolist (table (pg-tables con))
-      (message "  Table: %s" table))))
+      (message "  Table: %s" table))
+    ;; Here test that a very long resultset is received correctly on this Emacs platform.
+    (cl-labels ((row (sql) (pg-result (pg-exec con sql) :tuple 0))
+                (scalar (sql) (cl-first (pg-result (pg-exec con sql) :tuple 0))))
+      (let ((long (scalar "SELECT repeat('z', 1000000) || 'foo'")))
+        (should (eql 1000003 (length long)))
+        (should (string-prefix-p "zzz" long))
+        (should (string-suffix-p "foo" long))))))
 
 
 (defun pg-test-prepared (con)
