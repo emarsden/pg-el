@@ -312,13 +312,14 @@
       (message "Backend major-version is %s" (pgcon-server-version-major con))
       (message "Detected backend variant: %s" (pgcon-server-variant con))
       (unless (member (pgcon-server-variant con)
-                      '(cockroachdb cratedb yugabyte ydb xata greptimedb risingwave clickhouse octodb vertica arcadedb cedardb pgsqlite datafusion))
+                      '(cockroachdb cratedb yugabyte ydb xata greptimedb risingwave clickhouse octodb vertica arcadedb
+                                    cedardb pgsqlite datafusion stoolap))
         (when (> (pgcon-server-version-major con) 11)
           (let* ((res (pg-exec con "SELECT current_setting('ssl_library')"))
                  (row (pg-result res :tuple 0)))
             (message "Backend compiled with SSL library %s" (cl-first row)))))
       (unless (member (pgcon-server-variant con)
-                      '(questdb cratedb ydb xata greptimedb risingwave clickhouse materialize vertica arcadedb datafusion))
+                      '(questdb cratedb ydb xata greptimedb risingwave clickhouse materialize vertica arcadedb datafusion stoolap))
         (let* ((res (pg-exec con "SHOW ssl"))
                (row (pg-result res :tuple 0)))
           (message "PostgreSQL connection TLS: %s" (cl-first row))))
@@ -327,9 +328,9 @@
       (message "List of tables in db: %s" (pg-tables con))
       (when (eq 'orioledb (pgcon-server-variant con))
         (pg-exec con "CREATE EXTENSION IF NOT EXISTS orioledb"))
-      (unless (member (pgcon-server-variant con) '(clickhouse alloydb risingwave))
+      (unless (member (pgcon-server-variant con) '(clickhouse alloydb risingwave stoolap))
         (pg-setup-postgis con))
-      (unless (member (pgcon-server-variant con) '(clickhouse risingwave))
+      (unless (member (pgcon-server-variant con) '(clickhouse risingwave stoolap))
         (pg-vector-setup con))
       (pgtest-add #'pg-test-basic)
       (pgtest-add #'pg-test-insert)
@@ -368,7 +369,7 @@
       (pgtest-add #'pg-test-collation
                   :skip-variants '(xata cratedb questdb clickhouse greptimedb octodb vertica yellowbrick datafusion))
       (pgtest-add #'pg-test-xml
-                  :skip-variants '(xata ydb cockroachdb yugabyte clickhouse alloydb vertica opengauss))
+                  :skip-variants '(xata ydb cockroachdb yugabyte clickhouse alloydb vertica opengauss datafusion))
       (pgtest-add #'pg-test-uuid
                   :skip-variants '(cratedb risingwave ydb clickhouse greptimedb spanner octodb vertica yellowbrick datafusion))
       ;; Risingwave doesn't support VARCHAR(N) type. YDB and Vertica don't support SELECT generate_series().
@@ -395,14 +396,14 @@
       (pgtest-add #'pg-test-comments
                    :skip-variants '(ydb cratedb cockroachdb spanner questdb thenile cedardb datafusion))
       (pgtest-add #'pg-test-metadata
-                  :skip-variants '(cratedb cockroachdb risingwave materialize questdb greptimedb ydb spanner vertica))
+                  :skip-variants '(cratedb cockroachdb risingwave materialize questdb greptimedb ydb spanner vertica datafusion))
       ;; CrateDB doesn't support the JSONB type. CockroachDB doesn't support casting to JSON.
       (pgtest-add #'pg-test-json
                   :skip-variants '(xata cratedb risingwave questdb greptimedb ydb materialize spanner octodb vertica cedardb datafusion))
       (pgtest-add #'pg-test-schemas
                   :skip-variants '(xata cratedb risingwave questdb ydb materialize yellowbrick))
       (pgtest-add #'pg-test-hstore
-                  :skip-variants '(risingwave materialize octodb readyset vertica cockroachdb))
+                  :skip-variants '(risingwave materialize octodb readyset vertica cockroachdb datafusion))
       ;; Xata doesn't support extensions, but doesn't signal an SQL error when we attempt to load the
       ;; pgvector extension, so our test fails despite being intended to be robust.
       (pgtest-add #'pg-test-vector
@@ -416,7 +417,7 @@
                   :skip-variants '(xata cratedb cockroachdb risingwave questdb materialize spanner octodb vertica cedardb
                                         yellowbrick datafusion))
       (pgtest-add #'pg-test-gis
-                  :skip-variants '(xata cratedb cockroachdb risingwave materialize octodb))
+                  :skip-variants '(xata cratedb cockroachdb risingwave materialize octodb datafusion))
       (pgtest-add #'pg-test-copy
                   :skip-variants '(spanner ydb cratedb risingwave materialize questdb xata vertica yellowbrick datafusion))
       ;; QuestDB fails due to lack of support for the NUMERIC type
@@ -546,7 +547,7 @@
       (should (or (string= "text" (cl-first typs))
                   ;; RisingWave returns this
                   (string= "character varying" (cl-first typs)))))
-    (unless (member (pgcon-server-variant con) '(cratedb risingwave materialize ydb yellowbrick))
+    (unless (member (pgcon-server-variant con) '(cratedb risingwave materialize ydb yellowbrick datafusion))
       (let ((bv1 (make-bool-vector 1 nil))
             (bv2 (make-bool-vector 1 t)))
         (should (equal bv1 (scalar "SELECT $1::bit" `((,bv1 . "bit")))))
@@ -931,7 +932,7 @@ bar$$"))))
     (let ((count 100))
       (when (pgtest-have-table con "count_test")
         (pg-exec con "DROP TABLE count_test"))
-      (let ((sql (pgtest-massage con "CREATE TABLE count_test(key INT PRIMARY KEY, val INT) %s"
+      (let ((sql (pgtest-massage con "CREATE TABLE count_test(mykey INT PRIMARY KEY, val INT) %s"
                                  (if (eq 'orioledb (pgcon-server-variant con))
                                      " USING orioledb"
                                    ""))))
@@ -956,7 +957,7 @@ bar$$"))))
         (pg-exec con "VACUUM ANALYZE count_test"))
       (pgtest-flush-table con "count_test")
       (should (eql count (scalar "SELECT count(*) FROM count_test")))
-      (should (eql (/ (* count (1+ count)) 2) (scalar "SELECT sum(key) FROM count_test")))
+      (should (eql (/ (* count (1+ count)) 2) (scalar "SELECT sum(mykey) FROM count_test")))
       (pg-exec con "DROP TABLE count_test")
       (should (not (pgtest-have-table con "count_test"))))
     ;; Test for specific bugs when we have a table name and column names of length 1 (could be
@@ -1003,7 +1004,7 @@ bar$$"))))
     (let ((count 100))
       (when (pgtest-have-table con "count_test")
         (pg-exec con "DROP TABLE count_test"))
-      (when-let* ((sql (pgtest-massage con "CREATE TABLE count_test(key INT PRIMARY KEY, val INT)")))
+      (when-let* ((sql (pgtest-massage con "CREATE TABLE count_test(mykey INT PRIMARY KEY, val INT)")))
         (pg-exec con sql)
         (should (pgtest-have-table con "count_test"))
         (should (member "val" (pg-columns con "count_test")))
@@ -1014,7 +1015,7 @@ bar$$"))))
                             `((,i . "int4") (,(* i i) . "int4"))))
         (pgtest-flush-table con "count_test")
         (should (eql count (scalar "SELECT COUNT(*) FROM count_test")))
-        (should (eql (/ (* (1- count) count) 2) (scalar "SELECT sum(key) FROM count_test")))
+        (should (eql (/ (* (1- count) count) 2) (scalar "SELECT sum(mykey) FROM count_test")))
         (pg-exec con "DROP TABLE count_test"))
       (should (not (pgtest-have-table con "count_test")))
       ;; Serialization functions for character and varchar types
@@ -1367,7 +1368,7 @@ bar$$"))))
     (unless (member (pgcon-server-variant con) '(risingwave questdb))
       (should (pgtest-approx= 3.14 (scalar "SELECT 3.14::decimal(10,2) as pi"))))
     ;; CrateDB doesn't support the OID type, nor casting integers to bits.
-    (unless (member (pgcon-server-variant con) '(cratedb risingwave materialize octodb yellowbrick))
+    (unless (member (pgcon-server-variant con) '(cratedb risingwave materialize octodb yellowbrick datafusion))
       (should (eql 123 (scalar "SELECT 123::oid")))
       (should (equal (make-bool-vector 1 nil) (scalar "SELECT 0::bit")))
       (should (equal (make-bool-vector 1 t) (scalar "SELECT 1::bit")))
@@ -1379,14 +1380,14 @@ bar$$"))))
         (should (eql nil (aref bv 14)))))
     ;; Emacs version prior to 27 can't coerce to bool-vector type
     (when (> emacs-major-version 26)
-      ;; RisingWave does not implement the bit type
-      (unless (member (pgcon-server-variant con) '(risingwave materialize yellowbrick))
+      ;; RisingWave and DataFusion do not implement the bit type
+      (unless (member (pgcon-server-variant con) '(risingwave materialize yellowbrick datafusion))
         (should (equal (cl-coerce (vector t nil t nil) 'bool-vector)
                        (scalar "SELECT '1010'::bit(4)"))))
-      (unless (member (pgcon-server-variant con) '(cockroachdb risingwave materialize yellowbrick))
+      (unless (member (pgcon-server-variant con) '(cockroachdb risingwave materialize yellowbrick datafusion))
         (should (equal (cl-coerce (vector t nil nil t nil nil nil) 'bool-vector)
                        (scalar "SELECT b'1001000'"))))
-      (unless (member (pgcon-server-variant con) '(cratedb risingwave materialize yellowbrick))
+      (unless (member (pgcon-server-variant con) '(cratedb risingwave materialize yellowbrick datafusion))
         (should (equal (cl-coerce (vector t nil t t t t) 'bool-vector)
                        (scalar "SELECT '101111'::varbit(6)")))))
     ;; (should (eql 66 (scalar "SELECT 66::money")))
