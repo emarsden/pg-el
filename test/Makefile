@@ -1071,7 +1071,7 @@ test-ydb: test-pg.el
           -e YDB_PG_DATABASE=pgeltestdb \
           -e YDB_USE_IN_MEMORY_PDISKS=true \
           -e YDB_FEATURE_FLAGS=enable_temp_tables \
-          -d docker.io/ydbplatform/local-ydb:25.2
+          -d docker.io/ydbplatform/local-ydb:nightly
 	sleep 5
 	PGURI="postgresql://pgeltestuser:pgeltest@localhost:5119/local?read_timeout=100" $(MAKE) test
 	${DOCKER} stop ydb
@@ -1262,6 +1262,8 @@ test-alloydb: test-pg.el
 # CMU NoisePage, which seems to have been abandoned in 2023
 # https://github.com/cmu-db/noisepage/blob/master/docs/tech_docker.md
 # https://hub.docker.com/r/wwfalcon/noisepage
+#
+# This Docker image is not working.
 test-noisepage: test-pg.el
 	${DOCKER} run --rm --name noisepage \
           --net host \
@@ -1274,14 +1276,33 @@ test-noisepage: test-pg.el
 
 # https://seafowl.io/docs/guides/querying-postgresql
 # https://hub.docker.com/r/splitgraph/seafowl/
+# No longer under active development following aquisition by EDB
 test-seafowl: test-pg.el
 	${DOCKER} run --rm --name seafowl \
-           --net host \
+           --publish 127.0.0.1:6432 \
            -v "./seafowl.toml:/etc/seafowl.toml" \
            -d docker.io/splitgraph/seafowl:nightly -c /etc/seafowl.toml
 	sleep 10
 	PGURI=postgresql://seafowl@127.0.0.1:6432/pgeltestdb $(MAKE) test
 	${DOCKER} stop seafowl
+
+
+# Apache Datafusion with PostgreSQL protocol frontend
+#
+# https://github.com/datafusion-contrib/datafusion-postgres
+#
+# This database does not implement primay keys, nor cursors, nor CREATE INDEX, nor insert-returning,
+# nor SQL types TIMETZ, BIT. BPCHAR.
+test-datafusion: test-pg.el
+	$(eval TMPBDIR := $(shell mktemp -d -t datafusion-buildXXXX))
+	(cd ${TMPBDIR} && \
+         git clone --depth 1 https://github.com/datafusion-contrib/datafusion-postgres && \
+         cd datafusion-postgres && \
+         cargo build --release)
+	(cd ${TMPBDIR}/datafusion-postgres && cargo run --release -- -p 5666 & )
+	sleep 5
+	PGURI=postgresql://postgres@127.0.0.1:5666/pgeltestdb $(MAKE) test
+	rm -rf ${TMPBDIR}
 
 
 # https://hub.docker.com/r/clockworklabs/spacetime
@@ -1406,12 +1427,15 @@ test-arcadedb: test-pg.el
 # compatibility at the SQL level is very low. For instance, it doesn't recognize schema-qualified
 # names such as schema.table.
 test-stoolap: test-pg.el
-	cd /tmp/ && git clone --depth 1 https://github.com/stoolap/stoolap.git
-	cd /tmp/stoolap && go build -o /tmp/stoolap-pgserver ./cmd/stoolap-pgserver
+	$(eval TMPBDIR := $(shell mktemp -d -t stoolap-buildXXXX))
+	(cd ${TMPBDIR} && \
+         git clone --depth 1 https://github.com/stoolap/stoolap.git && \
+         cd stoolap && \
+         go build -o /tmp/stoolap-pgserver ./cmd/stoolap-pgserver)
 	/tmp/stoolap-pgserver --database memory:// --bind 127.0.0.1:5401 &
 	sleep 2
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5401/stoolap $(MAKE) test
-	rm -rf /tmp/stoolap-pgserver /tmp/stoolap
+	rm -rf /tmp/stoolap-pgserver ${TMPBDIR}
 
 
 # https://www.kinetica.com/kinetica-developer-edition/
