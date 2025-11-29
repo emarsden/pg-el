@@ -17,6 +17,15 @@ installability:
    printf '%s' "$INSTALL_EL" > {{ init-el }}
    ls -l {{ init-el }}
    cat {{ init-el }}
-   podman run --rm -ti -v {{ tmpdir }}:/tmp docker.io/silex/emacs:29.4-ci \
+   podman run --rm -ti -v {{ tmpdir }}:/tmp docker.io/silex/emacs:30.2-ci \
       ${EMACS:-emacs} -l /tmp/init.el
 
+
+
+# Build the documentation.
+#
+# Uses mdbook and mdbook-admonish
+# https://github.com/tommilligan/mdbook-admonish
+doc:
+   (cd doc && mdbook-admonish install .)
+   (cd doc && mdbook build )
