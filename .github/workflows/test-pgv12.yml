@@ -34,7 +34,7 @@ jobs:
            version: 29.4
 
       - name: Check out repository code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Run connection tests over TCP
         run: make -C test
