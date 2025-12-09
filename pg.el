@@ -2783,6 +2783,7 @@ the PostgreSQL connection CON."
 (defun pg-bool-parser (str _encoding)
   (cond ((string= "t" str) t)
         ((string= "f" str) nil)
+        ((string= "NULL" str) pg-null-marker)
         (t (let ((msg (format "Badly formed boolean from backend: %s" str)))
              (signal 'pg-protocol-error (list msg))))))
 
@@ -2791,11 +2792,13 @@ the PostgreSQL connection CON."
 (defun pg-bit-parser (str _encoding)
   "Parse STR as a PostgreSQL bit to an Emacs bool-vector."
   (declare (speed 3))
-  (let* ((len (length str))
-         (bv (make-bool-vector len t)))
-    (dotimes (i len)
-      (setf (aref bv i) (eql ?1 (aref str i))))
-    bv))
+  (if (string= "NULL" str)
+      pg-null-marker
+    (let* ((len (length str))
+           (bv (make-bool-vector len t)))
+      (dotimes (i len)
+        (setf (aref bv i) (eql ?1 (aref str i))))
+      bv)))
 
 (pg-register-parser "bit" #'pg-bit-parser)
 (pg-register-parser "varbit" #'pg-bit-parser)
@@ -2803,7 +2806,9 @@ the PostgreSQL connection CON."
 (defun pg-text-parser (str encoding)
   "Parse PostgreSQL value STR as text using ENCODING."
   (if encoding
-      (decode-coding-string str encoding)
+      (if (string= "NULL" str)
+          pg-null-marker
+        (decode-coding-string str encoding))
     str))
 
 ;; STR could be either a single character (char datatype) or a character sequence for the PostgreSQL
@@ -3936,6 +3941,7 @@ Uses database connection CON."
     ('arcadedb nil)
     ('datafusion nil)
     ('stoolap nil)
+    ('immudb nil)
     (_
      (let* ((res (pg-exec con "SELECT current_schema()"))
             (tuple (pg-result res :tuple 0))
@@ -3952,6 +3958,7 @@ Uses database connection CON."
     ('arcadedb nil)
     ('datafusion nil)
     ('stoolap nil)
+    ('immudb nil)
     ((or 'risingwave 'octodb 'pgsqlite)
      (let ((res (pg-exec con "SELECT DISTINCT table_schema FROM information_schema.tables")))
        (apply #'append (pg-result res :tuples))))
