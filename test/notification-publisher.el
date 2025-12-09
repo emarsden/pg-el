@@ -3,7 +3,7 @@
 ;;; This allows implementation of basic publish-subscribe functionality.
 ;;;
 ;;; Author: Eric Marsden <eric.marsden@risk-engineering.org>
-;;; Copyright: (C) 2023  Eric Marsden
+;;; Copyright: (C) 2023-2025  Eric Marsden
 
 
 (require 'cl-lib)
@@ -16,7 +16,7 @@
         (password (or (getenv "PGEL_PASSWORD") "pgeltest"))
         (host (or (getenv "PGEL_HOSTNAME") "localhost"))
         (port (let ((p (getenv "PGEL_PORT"))) (if p (string-to-number p) 5432))))
-    `(with-pg-connection ,conn (,db ,user ,password ,host ,port)
+    `(with-pg-connection-plist ,conn (,db ,user :password ,password :host ,host :port ,port)
                          ,@body)))
 
 ;; Connect to the database over an encrypted (TLS) connection
@@ -26,7 +26,7 @@
         (password (or (getenv "PGEL_PASSWORD") "pgeltest"))
         (host (or (getenv "PGEL_HOSTNAME") "localhost"))
         (port (let ((p (getenv "PGEL_PORT"))) (if p (string-to-number p) 5432))))
-    `(with-pg-connection ,conn (,db ,user ,password ,host ,port t)
+    `(with-pg-connection-plist ,conn (,db ,user :password ,password :host ,host :port ,port :tls-options t)
                          ,@body)))
 
 (defmacro with-pgtest-connection-local (conn &rest body)
