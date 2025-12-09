@@ -20,7 +20,7 @@
 
 
 ;; for performance testing
-;; (setq process-adaptive-read-buffering nil)
+(setq process-adaptive-read-buffering nil)
 
 
 ;; https://www.reidatcheson.com/floating%20point/comparison/2019/03/20/floating-point-comparison.html
@@ -319,7 +319,7 @@
                  (row (pg-result res :tuple 0)))
             (message "Backend compiled with SSL library %s" (cl-first row)))))
       (unless (member (pgcon-server-variant con)
-                      '(questdb cratedb ydb xata greptimedb risingwave clickhouse materialize vertica arcadedb datafusion stoolap))
+                      '(questdb cratedb ydb xata greptimedb risingwave clickhouse materialize vertica arcadedb datafusion stoolap immudb))
         (let* ((res (pg-exec con "SHOW ssl"))
                (row (pg-result res :tuple 0)))
           (message "PostgreSQL connection TLS: %s" (cl-first row))))
@@ -349,7 +349,7 @@
       (pgtest-add #'pg-test-numeric
                   :skip-variants '(vertica))
       (pgtest-add #'pg-test-numeric-range
-                  :skip-variants '(xata cratedb cockroachdb ydb risingwave questdb clickhouse greptimedb spanner octodb vertica cedardb datafusion))
+                  :skip-variants '(xata cratedb cockroachdb ydb risingwave questdb clickhouse greptimedb spanner octodb vertica cedardb datafusion immudb))
       (pgtest-add #'pg-test-prepared
                   :skip-variants '(ydb cratedb)
                   :need-emacs "28")
@@ -367,7 +367,7 @@
                   :skip-variants '(risingwave ydb)
                   :need-emacs "28")
       (pgtest-add #'pg-test-collation
-                  :skip-variants '(xata cratedb questdb clickhouse greptimedb octodb vertica yellowbrick datafusion))
+                  :skip-variants '(xata cratedb questdb clickhouse greptimedb octodb vertica yellowbrick datafusion immudb))
       (pgtest-add #'pg-test-xml
                   :skip-variants '(xata ydb cockroachdb yugabyte clickhouse alloydb vertica opengauss datafusion))
       (pgtest-add #'pg-test-uuid
@@ -385,12 +385,12 @@
       ;; implement the pg_sequences system table.
       (pgtest-add #'pg-test-sequence
                   :skip-variants '(cratedb risingwave questdb materialize greptimedb ydb spanner clickhouse thenile
-                                           vertica yellowbrick opengauss datafusion))
+                                           vertica yellowbrick opengauss datafusion immudb))
       (pgtest-add #'pg-test-array
                   :skip-variants '(cratedb risingwave questdb materialize clickhouse octodb))
       (pgtest-add #'pg-test-enums
                   :skip-variants '(cratedb risingwave questdb greptimedb ydb materialize spanner octodb clickhouse
-                                           vertica cedardb yellowbrick datafusion))
+                                           vertica cedardb yellowbrick datafusion immudb))
       (pgtest-add #'pg-test-server-prepare
                   :skip-variants '(cratedb risingwave questdb greptimedb ydb octodb datafusion))
       (pgtest-add #'pg-test-comments
@@ -399,7 +399,7 @@
                   :skip-variants '(cratedb cockroachdb risingwave materialize questdb greptimedb ydb spanner vertica datafusion))
       ;; CrateDB doesn't support the JSONB type. CockroachDB doesn't support casting to JSON.
       (pgtest-add #'pg-test-json
-                  :skip-variants '(xata cratedb risingwave questdb greptimedb ydb materialize spanner octodb vertica cedardb datafusion))
+                  :skip-variants '(xata cratedb risingwave questdb greptimedb ydb materialize spanner octodb vertica cedardb datafusion immudb))
       (pgtest-add #'pg-test-schemas
                   :skip-variants '(xata cratedb risingwave questdb ydb materialize yellowbrick))
       (pgtest-add #'pg-test-hstore
@@ -425,14 +425,14 @@
                   :skip-variants '(spanner ydb cratedb risingwave questdb materialize datafusion))
       ;; Apparently Xata does not support CREATE DATABASE
       (pgtest-add #'pg-test-createdb
-                  :skip-variants '(xata cratedb questdb ydb vertica))
+                  :skip-variants '(xata cratedb questdb ydb vertica immudb))
       ;; Many PostgreSQL variants only support UTF8 as the client encoding.
       (pgtest-add #'pg-test-client-encoding
                   :skip-variants '(cratedb cockroachdb ydb risingwave materialize spanner greptimedb questdb xata vertica datafusion))
       (pgtest-add #'pg-test-unicode-names
-                  :skip-variants '(xata cratedb cockroachdb risingwave questdb ydb spanner vertica))
+                  :skip-variants '(xata cratedb cockroachdb risingwave questdb ydb spanner vertica immudb))
       (pgtest-add #'pg-test-returning
-                  :skip-variants '(risingwave questdb datafusion))
+                  :skip-variants '(risingwave questdb datafusion immudb))
       (pgtest-add #'pg-test-parameter-change-handlers
                   :skip-variants '(cratedb risingwave))
       (pgtest-add #'pg-test-errors)
@@ -783,6 +783,7 @@
     (unless (member (pgcon-server-variant con) '(questdb spanner))
       (should (string= "Z" (scalar "SELECT chr(90)"))))
     (should (eql 12 (scalar "SELECT length('(╯°□°)╯︵ ┻━┻')")))
+    (should (eql 37 (scalar "SELECT length('Text Line إلا بسم الله 🥝 𒐫  a⃰⃰⃰⃰⃰⃰⃰ ')")))
     (should (string= "::!!::" (scalar "SELECT '::!!::'::varchar")))
     (should (string= "éàç⟶∪" (scalar "SELECT 'éàç⟶∪'")))
     ;; Note that we need to escape the ?\ character in an elisp string by repeating it.
@@ -795,6 +796,7 @@
     (should (eql 4 (scalar "SELECT ((2 * 2))")))
     (should (string= "abcdef" (scalar "SELECT 'abc' || 'def'")))
     (should (string= "abc" (scalar "SELECT concat('abc', NULL)")))
+    (should (string= "foo69" (scalar "SELECT concat('foo', 69)")))
     (should (string= "howdy" (scalar "SELECT 'howdy'::text")))
     (should (eql t (scalar "SELECT 'abc' LIKE 'a%'")))
     (should (string= "banana" (scalar "SELECT split_part('apple,banana,cherry', ',', 2)")))
@@ -854,6 +856,9 @@
     ;; Empty strings are equal
     (should (eql t (scalar "SELECT '' = ''")))
     (should (eql 0 (scalar "SELECT length('')")))
+    (should (eql pg-null-marker (scalar "SELECT length(null)")))
+    (when (pg-function-p con "bit_length")
+      (should (eql pg-null-marker (scalar "SELECT bit_length(null)"))))
     (should (eql 0 (scalar "SELECT length(lower(''))")))
     (should (eql 0 (scalar "SELECT length('' || '')")))
     (should (string= "" (scalar "SELECT substring('foobles' from 2 for 0)")))
@@ -871,7 +876,14 @@
     (should (equal pg-null-marker (scalar "SELECT ABS(NULL)")))
     ;; NULL is propagated in logical operations.
     (should (equal pg-null-marker (scalar "SELECT true AND NULL")))
+    (should (equal pg-null-marker (scalar "SELECT true <= NULL")))
+    (should (equal pg-null-marker (scalar "SELECT NULL < NULL")))
     (should (equal pg-null-marker (scalar "SELECT NOT NULL")))
+    (should (equal pg-null-marker (scalar "SELECT NULL BETWEEN 1 and 42")))
+    (should (equal pg-null-marker (scalar "SELECT 42 BETWEEN 1 and NULL")))
+    (should (equal pg-null-marker (scalar "SELECT 42 & NULL")))
+    (should (equal pg-null-marker (scalar "SELECT 42 | NULL")))
+    (should (equal pg-null-marker (scalar "SELECT coalesce(NULL)")))
     (should (eql t (scalar "SELECT TRUE OR NULL")))
     ;; This leads to a timeout with YDB
     (unless (member (pgcon-server-variant con) '(ydb))
@@ -1421,6 +1433,10 @@ bar$$"))))
     (should (eql 1.0e+INF (scalar "SELECT 'Infinity'::numeric")))
     (should (pgtest-approx= (scalar "SELECT 100.0::numeric(30,20) + 500.0::numeric(30,20)") 600.0))
     (should (pgtest-approx= (scalar "SELECT 0.000005::numeric(30,20) + 0.000005::numeric(30,20)") 0.00001))
+    (should (eql 42 (scalar "SELECT ceil(41.9)")))
+    (should (eql -42 (scalar "SELECT ceil(-42.9)")))
+    (should (eql 42 (scalar "SELECT ceil(42::bigint)")))
+    (should (eql pg-null-marker (scalar "SELECT ceil(NULL)")))
     ;; The cube root operator
     (unless (member (pgcon-server-variant con) '(cratedb materialize))
       (should (pgtest-approx= 3.0 (scalar "SELECT ||/ float8 '27'"))))
@@ -1662,6 +1678,18 @@ bar$$"))))
     (should (equal (vector) (scalar "SELECT '{}'::bool[]")))
     (should (equal (vector) (scalar "SELECT '{}'::float4[]")))
     (should (equal (vector) (scalar "SELECT '{}'::float8[]")))
+    (should (equal (vector pg-null-marker) (scalar "SELECT ARRAY[NULL]")))
+    (should (equal (vector 1 pg-null-marker 55)
+                   (scalar "SELECT ARRAY[1,NULL,55]")))
+    (should (equal (vector t pg-null-marker nil)
+                   (scalar "SELECT ARRAY[true,NULL,false]")))
+    (should (equal (vector ?A pg-null-marker ?Z)
+                   (scalar "SELECT ARRAY['A'::char,NULL,'Z'::char]")))
+    (should (equal (vector "foo" pg-null-marker "bar")
+                   (scalar "SELECT ARRAY['foo',NULL,'bar']")))
+    (let ((vec (scalar "SELECT ARRAY[3.14, NULL, 69.420]")))
+      (should (floatp (aref vec 0)))
+      (should (equal pg-null-marker (aref vec 1))))
     (unless (member (pgcon-server-variant con) '(cratedb cockroachdb cedardb spanner))
       (should (equal (vector "AB1234" "4321BA") (scalar "SELECT '{\"AB1234\",\"4321BA\"}'::bpchar[]"))))
     (let ((vec (scalar "SELECT ARRAY[3.14::float]")))
@@ -1690,6 +1718,9 @@ bar$$"))))
       (should (equal pg-null-marker (aref res 1))))
     (let ((res (scalar "SELECT array_remove(ARRAY[1,2,-3], 10)")))
       (should (equal (vector 1 2 -3) res)))
+    (should (equal (vector 1 2) (scalar "SELECT concat(NULL, ARRAY[1, 2])")))
+    (should (equal (vector 1 2 69) (scalar "SELECT concat(ARRAY[1::bigint], ARRAY[2, 69::int2])")))
+    (should (equal (vector 69 420) (scalar "SELECT concat(69, ARRAY[420])")))
     (let* ((res (pg-exec-prepared con "SELECT $1" '(([1 2 3] . "_int4"))))
            (row (pg-result res :tuple 0)))
       (should (equal (vector 1 2 3) (cl-first row))))
@@ -3281,7 +3312,7 @@ bar$$"))))
         (should (eql pos target-len)))
       (let ((pos (pg-lo-lseek con fd 0 pg-SEEK_END)))
         (should (eql pos target-len)))
-      (dotimes (i 100)
+      (dotimes (_ 100)
         (let ((pos (random target-len)))
           (pg-lo-lseek con fd pos pg-SEEK_SET)
           (should (string= "Z" (pg-lo-read con fd 1)))))
@@ -3299,7 +3330,7 @@ bar$$"))))
         (let ((filler (make-string (* 1024 1024) ?#)))
           (dotimes (i 512)
             (pg-lo-write con fd filler)))
-        (dotimes (i 100)
+        (dotimes (_ 100)
           (let ((pos (random halfway)))
             (pg-lo-lseek con fd pos pg-SEEK_SET)
             (should (string= "#" (pg-lo-read con fd 1))))))
