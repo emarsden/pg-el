@@ -2782,7 +2782,10 @@ the PostgreSQL connection CON."
 
 (defun pg-bool-parser (str _encoding)
   (cond ((string= "t" str) t)
+        ;; This syntax used by ArcadeDB
+        ((string= "true" str) t)
         ((string= "f" str) nil)
+        ((string= "false" str) nil)
         ((string= "NULL" str) pg-null-marker)
         (t (let ((msg (format "Badly formed boolean from backend: %s" str)))
              (signal 'pg-protocol-error (list msg))))))
@@ -3882,8 +3885,28 @@ TABLE can be a string or a schema-qualified name. Uses database connection CON."
         (pg-exec ,con sql)
         ,comment))))
 
+(defun pg-table-acl (con table)
+  "Return the access control list for TABLE. Uses database connection CON.
+Return nil if no ACL is defined, or if the pg_get_acl query function is not defined."
+  ;; the pg_get_acl() function was introduced in PostgreSQL 18
+  (when (>= (pgcon-server-version-major con) 18)
+    (let* ((default-schema (if (eq (pgcon-server-variant con) 'cratedb)
+                               "postgres"
+                             "public"))
+           (schema (if (pg-qualified-name-p table)
+                       (pg-qualified-name-schema table)
+                     default-schema))
+           (tname (if (pg-qualified-name-p table)
+                      (pg-qualified-name-name table)
+                    table))
+           (sql "SELECT pg_get_acl('pg_class'::regclass, c.oid, 0) FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = $1 AND c.relname = $2")
+           (res (pg-exec-prepared con sql `((,schema . "text") (,tname . "text")))))
+      (cl-first (pg-result res :tuple 0)))))
+
 (defun pg-function-p (con name)
-  "Returns non-null when a function with NAME is defined in PostgreSQL.
+  "Return non-null when a function with NAME is defined in PostgreSQL.
 Uses database connection CON."
   (pcase (pgcon-server-variant con)
     ;; The pg_proc table exists, but is empty.
@@ -4328,7 +4351,7 @@ The RowDescription data is provided in ATTRIBUTES."
         (dotimes (_i (pgcon-timeout con))
           (when (null (char-after pgcon--position))
             (when (eq system-type 'windows-nt)
-              (sleep-for 0.1))
+              (sit-for 0.1))
             (accept-process-output process 1.0))))
       (when (null (char-after pgcon--position))
         (let ((msg (format "Timeout in pg--read-char reading from %s" con)))
