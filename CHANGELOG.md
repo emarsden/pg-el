@@ -5,6 +5,11 @@
 
 - New function `pg-table-acl` which returns the access control list for a specified table.
 
+- Type aliases are recognized as type names in `pg-exec-prepared`, in additional to the type names
+  present in the `pg_type` system table. This means that you can use `bigint` as an alternative to
+  `int8`, `real` as an alternative to `float4`, `bit varying` as an alternative to `bit`, for
+  example. The aliases are also the canonical type names as shown by function `pg_typeof`.
+
 - Rename functions `pg-read-attributes`, `pg-read-tuple`, `pg-read-char`, `pg-unread-char`,
   `pg-read-net-int`, `pg-read-int`, `pg-read-chars`, `pg-read-string`, `pg-send-char`,
   `pg-send-string`, `pg-send-octets`, `pg-send-uint`, `pg-send-net-uint` to use the naming convention for
