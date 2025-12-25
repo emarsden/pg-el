@@ -16,6 +16,7 @@ install-deps:
 test: test-pg.el install-deps
 	${EMACS} -Q --batch -L .. -L . -l load-deps.el ../pg.el \
 	   -l pg.el -l pg-geometry.el -l pg-gis.el -l pg-lo.el -l test-pg.el -f pg-test
+	rm -r ${DEPS_DIR}
 
 test-interactive: test-pg.el install-deps
 	${EMACS} -Q -L .. -L . -l load-deps.el ../pg.el \
@@ -434,7 +435,7 @@ test-timescale: test-pg.el
            -e POSTGRES_USER=pgeltestuser \
            -e POSTGRES_PASSWORD=pgeltest \
            -e PGPORT=5981 \
-           -d docker.io/timescale/timescaledb-ha:pg17.7-ts2.23.0
+           -d docker.io/timescale/timescaledb-ha:pg18-ts2.24-oss
 	sleep 5
 	PGEL_PORT=5981 $(MAKE) test
 	${DOCKER} stop timescale
@@ -501,7 +502,7 @@ test-ivorysql: test-pg.el
 	  -e IVORYSQL_DB=pgeltestdb \
 	  -e IVORYSQL_USER=pgeltestuser \
 	  -e IVORYSQL_PASSWORD=pgeltest \
-	  -d docker.io/ivorysql/ivorysql:4.5-ubi8
+	  -d docker.io/ivorysql/ivorysql:5.0-ubi8
 	sleep 5
 	PGEL_PORT=5437 $(MAKE) test
 	${DOCKER} stop ivorydb
@@ -985,15 +986,18 @@ test-yellowbrick: test-pg.el
 # though few SQL commands work.
 test-immudb: test-pg.el
 	${DOCKER} run --rm --name immudb \
-	  --net host \
+          --net host \
+          -e IMMUDB_PGSQL_SERVER=true \
+          -e IMMUDB_ADMIN_PASSWORD=pgeltest \
+          -e USER=pgeltestuser \
           -d docker.io/codenotary/immudb:latest \
             --pgsql-server --pgsql-server-port 5667 \
-	    --admin-password pgeltest --force-admin-password
+            --admin-password pgeltest --force-admin-password
 	sleep 2
 	echo pgeltest|${DOCKER} exec -ti immudb immuadmin login immudb
 	${DOCKER} exec -ti immudb immuadmin database create pgeltestdb
 	expect -c 'spawn ${DOCKER} exec -ti immudb immuadmin user create pgeltestuser readwrite pgeltestdb;sleep 0.1;expect "Choose a password for";sleep 0.1;send "pgeltest\r";expect "continue with your password instead.*Y/n";sleep 0.1;send "Y\r";expect "Confirm password";sleep 0.1;send "pgeltest\r";sleep 0.1;exit'
-	PGURI=postgresql://pgeltestuser:pgeltest@localhost:5667/pgeltestdb $(MAKE) test
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5667/pgeltestdb $(MAKE) test
 	${DOCKER} stop immudb
 
 
@@ -1007,6 +1011,23 @@ test-greenplum: test-pg.el
           -d docker.io/andruche/greenplum:7
 	sleep 10
 	PGURI=postgresql://gpadmin@localhost:5433/postgres $(MAKE) test
+	${DOCKER} stop greenplum
+
+
+# https://github.com/woblerr/docker-greenplum
+#
+# This is failing with Podman in user mode with "/usr/bin/ping6: raw socket: Operation not permitted"
+#
+# TODO: perhaps try also https://hub.docker.com/r/qpod/greenplum
+test-greenplum2: test-pg.el
+	${DOCKER} run --rm --name greenplum \
+          --pull=newer \
+          --publish 127.0.0.1:5433:5432 \
+          -e GREENPLUM_DEPLOYMENT=singlenode \
+          -e GREENPLUM_DATABASE_NAME=pgeltestdb \
+          -e GREENPLUM_PASSWORD=pgeltest \
+          ghcr.io/woblerr/greenplum:7.1.0
+	PGURI=postgresql://gpadmin:pgeltest@127.0.0.1:5433/pgeltestdb $(MAKE) test
 	${DOCKER} stop greenplum
 
 
@@ -1255,8 +1276,18 @@ test-alloydb: test-pg.el
 	${DOCKER} stop alloydb
 
 
-# TODO: test Doltgres (Database version control in Postgres-flavored SQL), which doesn't seem to
-# have a maintaine Docker image currently (and is in beta) https://github.com/dolthub/doltgresql
+# Doltgres provides database version control in Postgres-flavored SQL
+# https://github.com/dolthub/doltgresql
+# https://hub.docker.com/r/dolthub/doltgresql
+test-doltgres: test-pg.el
+	${DOCKER} run --rm --name doltgres \
+           --publish 127.0.0.1:5489:5432 \
+           -e DOLTGRES_USER=pgeltestuser \
+           -e DOLTGRES_PASSWORD=pgeltest \
+           -e DOLTGRES_DB=pgeltestdb \
+           -d docker.io/dolthub/doltgresql:latest
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5489/pgeltestdb $(MAKE) test
+	${DOCKER} stop doltgres
 
 
 # CMU NoisePage, which seems to have been abandoned in 2023
@@ -1371,6 +1402,8 @@ test-mindsdb: test-pg.el
 #
 # To give a user permission to modify schemas, recreate the user using ydboctoAdmin with the --allowschemachanges
 #   yottadb -r %ydboctoAdmin add user OctoUser --readwrite --allowschemachanges
+#
+# also at docker.io/yottadb/octo:latest
 test-octodb: test-pg.el
 	cp octo-entrypoint.sh /tmp
 	chmod og+x /tmp/octo-entrypoint.sh
@@ -1378,7 +1411,7 @@ test-octodb: test-pg.el
           --pull=newer \
           --publish 127.0.0.1:5669:1337 \
           -v /tmp/octo-entrypoint.sh:/entrypoint.sh \
-          -d docker.io/yottadb/octo:latest
+          -d docker.io/yottadb/octo-vehu:latest-master
 	sleep 5
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5669/hello $(MAKE) test
 	${DOCKER} stop octodb
@@ -1426,7 +1459,7 @@ test-arcadedb: test-pg.el
 # We don't currently bother recognizing this as a PostgreSQL variant, because its PostgreSQL
 # compatibility at the SQL level is very low. For instance, it doesn't recognize schema-qualified
 # names such as schema.table.
-test-stoolap: test-pg.el
+test-stoolap-old: test-pg.el
 	$(eval TMPBDIR := $(shell mktemp -d -t stoolap-buildXXXX))
 	(cd ${TMPBDIR} && \
          git clone --depth 1 https://github.com/stoolap/stoolap.git && \
@@ -1436,6 +1469,22 @@ test-stoolap: test-pg.el
 	sleep 2
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5401/stoolap $(MAKE) test
 	rm -rf /tmp/stoolap-pgserver ${TMPBDIR}
+
+# https://stoolap.io/
+# https://github.com/stoolap/stoolap
+#
+# But this rewrite in Rust of the Go project doesn't currently support the PostgreSQL network protocol.
+test-stoolap: test-pg.el
+	$(eval TMPBDIR := $(shell mktemp -d -t stoolap-buildXXXX))
+	(cd ${TMPBDIR} && \
+         git clone --depth 1 https://github.com/stoolap/stoolap && \
+         cd stoolap && \
+         cargo build)
+	(cd ${TMPBDIR}/stoolap && cargo run -- --db memory:// --bind 127.0.0.1:5401 &)
+	sleep 2
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5401/stoolap $(MAKE) test
+	rm -rf ${TMPBDIR}
+
 
 
 # https://www.kinetica.com/kinetica-developer-edition/
@@ -1462,6 +1511,10 @@ test-surrealdb: test-pg.el
 	${DOCKER} stop surrealdb
 
 
+# TODO: test https://github.com/serenedb/serenedb ("distributed real-time search analytics DB")
+
+
+
 # https://github.com/risinglightdb/risinglight
 #
 # This educational database implementation is not very PostgreSQL compatible; it doesn't implement
@@ -1481,10 +1534,17 @@ test-chrondb: test-pg.el
 	PGURI=postgresql://chrondb@127.0.0.1:5432/chrondb $(MAKE) test
 
 
-# https://github.com/erans/pgsqlite?tab=readme-ov-file
+# https://github.com/erans/pgsqlite -- a PostgreSQL protocol adapter for SQLite databases
 test-pgsqlite: test-pg.el
-	pgsqlite --port 7778 --in-memory &
+	$(eval TMPBDIR := $(shell mktemp -d -t pgsqlite-buildXXXX))
+	(cd ${TMPBDIR} && \
+         git clone --depth 1 https://github.com/erans/pgsqlite && \
+         cd pgsqlite && \
+         cargo build)
+	(cd ${TMPBDIR}/pgsqlite && PGSQLITE_AUDIT_LOG_QUERIES=true cargo run --bin pgsqlite -- --port 7778 --in-memory & )
+	sleep 2
 	PGURI=postgresql://pgeltestuser@127.0.0.1:7778/pgeltestdb $(MAKE) test
+	rm -rf ${TMPBDIR}
 
 
 # Create and populate a new database with information concerning works by Shakespeare.
