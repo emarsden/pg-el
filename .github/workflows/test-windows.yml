@@ -4,7 +4,7 @@ on: push
 jobs:
   runner-job:
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
 
     steps:
       - name: Set runner timezone
