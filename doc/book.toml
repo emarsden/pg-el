@@ -5,8 +5,15 @@ description = "User manual for the pg-el Emacs Lisp socket-level interface to Po
 language = "en"
 src = "src"
 
-
 [output.html]
 git-repository-url = "https://github.com/emarsden/pg-el"
-git-repository-icon = "fa-github"
+git-repository-icon = "fab-github"
 smart-punctuation = true
+additional-css = ["./mdbook-admonish.css"]
+
+# This is currently failing due to a breaking mdbook update
+# https://github.com/tommilligan/mdbook-admonish/issues/233
+[preprocessor.admonish]
+command = "mdbook-admonish"
+on_failure = "bail"
+assets_version = "3.1.0" # do not edit: managed by `mdbook-admonish install`
