@@ -1,7 +1,7 @@
 # Changelog
 
 
-## [0.62] - Unreleased
+## [0.62] - 2025-12-26
 
 - New function `pg-table-acl` which returns the access control list for a specified table.
 
@@ -12,8 +12,8 @@
 
 - Rename functions `pg-read-attributes`, `pg-read-tuple`, `pg-read-char`, `pg-unread-char`,
   `pg-read-net-int`, `pg-read-int`, `pg-read-chars`, `pg-read-string`, `pg-send-char`,
-  `pg-send-string`, `pg-send-octets`, `pg-send-uint`, `pg-send-net-uint` to use the naming convention for
-  internal functions (`pg--` prefix).
+  `pg-send-string`, `pg-send-octets`, `pg-send-uint`, `pg-send-net-uint` to use the naming
+  convention for internal functions (`pg--` prefix).
 
 - Microsoft Windows: add additional sleep using `sleep-for` when waiting for network data. The
   existing calls to `accept-process-output` with a timeout are insufficient on this platform when

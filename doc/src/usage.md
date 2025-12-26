@@ -171,7 +171,7 @@ ELISP> (let ((res (pg-exec *pg* "SELECT 'NaN'::float8")))
 ~~~
 
 
-~~~admonish title="Numerical ranges"
+~~~admonish example title="Numerical ranges"
 ```lisp
 ELISP> (let ((res (pg-exec *pg* "SELECT int4range(10, 20)")))
          (car (pg-result res :tuple 0)))
