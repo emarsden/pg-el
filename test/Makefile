@@ -1520,6 +1520,23 @@ test-stoolap: test-pg.el
 
 
 
+# A Pgwire adaptor for GlueSQL. More an SQL engine than really providing PostgreSQL compatibility;
+# basic functions like version() are not implemented.
+#
+# https://github.com/gluesql/gluesql
+# https://github.com/sunng87/pgwire/blob/master/examples/gluesql.rs
+test-gluesql: test-pg.el
+	$(eval TMPBDIR := $(shell mktemp -d -t gluesql-buildXXXX))
+	(cd ${TMPBDIR} && \
+         git clone --depth 1 https://github.com/sunng87/pgwire/ && \
+         cd pgwire && \
+         cargo run --example gluesql &)
+	sleep 2
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1/pgwire $(MAKE) test
+	rm -rf ${TMPBDIR}
+
+
+
 # https://www.kinetica.com/kinetica-developer-edition/
 test-kinetica: test-pg.el
 	${DOCKER} run --rm --name kinetica \
