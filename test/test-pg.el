@@ -20,7 +20,7 @@
 
 
 ;; for performance testing
-(setq process-adaptive-read-buffering nil)
+(setq process-adaptive-read-buffering t)
 
 
 ;; https://www.reidatcheson.com/floating%20point/comparison/2019/03/20/floating-point-comparison.html
@@ -326,11 +326,15 @@
       (message "Current schema: %s" (pg-current-schema con))
       (message "List of schemas in db: %s" (pg-schemas con))
       (message "List of tables in db: %s" (pg-tables con))
+      ;; Special testing for pg_duckdb
+      (when (cl-find "duckdb" (pg-schemas con) :test #'string=)
+        (message "Activating duckdb.force_execution")
+        (pg-exec con "SET duckdb.force_execution = true"))
       (when (eq 'orioledb (pgcon-server-variant con))
         (pg-exec con "CREATE EXTENSION IF NOT EXISTS orioledb"))
       (unless (member (pgcon-server-variant con) '(clickhouse alloydb risingwave stoolap))
         (pg-setup-postgis con))
-      (unless (member (pgcon-server-variant con) '(clickhouse risingwave stoolap))
+      (unless (member (pgcon-server-variant con) '(clickhouse risingwave stoolap arcadedb))
         (pg-vector-setup con))
       (pgtest-add #'pg-test-basic)
       (pgtest-add #'pg-test-insert)
@@ -349,7 +353,7 @@
       (pgtest-add #'pg-test-numeric
                   :skip-variants '(vertica))
       (pgtest-add #'pg-test-numeric-range
-                  :skip-variants '(xata cratedb cockroachdb ydb risingwave questdb clickhouse greptimedb spanner octodb vertica cedardb datafusion immudb))
+                  :skip-variants '(xata cratedb cockroachdb ydb risingwave questdb clickhouse greptimedb spanner octodb vertica cedardb datafusion immudb stoolap))
       (pgtest-add #'pg-test-prepared
                   :skip-variants '(ydb cratedb)
                   :need-emacs "28")
@@ -574,6 +578,10 @@
     (should (eql 42 (scalar "SELECT $1 + 142" '((-100 . "int4")))))
     (should (eql 42 (scalar "SELECT $1 + 1" '((41 . "int8")))))
     (should (eql 42 (scalar "SELECT $1 + 142" '((-100 . "int8")))))
+    (should (eql 42 (scalar "SELECT $1 + 142" '((-100 . "smallint")))))
+    (should (eql 42 (scalar "SELECT $1 + 142" '((-100 . "integer")))))
+    (should (eql 42 (scalar "SELECT $1 + 142" '((-100 . "bigint")))))
+    (should (eql 100 (scalar "SELECT $1" '((100 . "oid")))))
     (should (pgtest-approx= -55.0 (scalar "SELECT $1" '((-55.0 . "float4")))))
     (should (pgtest-approx= -55.0 (scalar "SELECT $1" '((-55.0 . "float8")))))
     (should (pgtest-approx= 42.0 (scalar "SELECT $1 + 1" '((41.0 . "float4")))))
@@ -748,6 +756,8 @@
     (should (eql -6 (scalar "SELECT -(6)")))
     (should (eql ?Z (scalar "SELECT 'Z'::char")))
     (should (eql ?@ (scalar "SELECT '@'::char(1)")))
+    (should (eql 97 (scalar "SELECT ascii('a')")))
+    (should (eql 0 (scalar "SELECT ascii('')")))
     (unless (member (pgcon-server-variant con) '(cratedb cockroachdb cedardb spanner))
       (should (eql ?! (scalar "SELECT '!'::bpchar(1)"))))
     (should (string= "Z" (scalar "SELECT 'Z'::varchar")))
@@ -755,6 +765,9 @@
     (should (string= "AB" (scalar "SELECT 'AB'::char(2)")))
     (should (string= "ÁÔ" (scalar "SELECT 'ÁÔ'::char(2)")))
     (should (string= "ÁÔ" (scalar "SELECT 'ÁÔ'::varchar(2)")))
+    (should (string= "3" (scalar "SELECT CAST (1+2 AS text)")))
+    (should (string= "3" (scalar "SELECT CAST (1+2 AS varchar)")))
+    (should (string= "3" (scalar "SELECT CAST (1+2 AS varchar(10))")))
     (unless (member (pgcon-server-variant con) '(cratedb cockroachdb cedardb spanner))
       (should (string= "12" (scalar "SELECT '12'::bpchar(2)"))))
     (should (string= "£Öí" (scalar "SELECT '£Öí'::text")))
@@ -795,6 +808,7 @@
       (should (eql nil (row " SELECT 3 WHERE 1=0"))))
     (should (eql 4 (scalar "SELECT ((2 * 2))")))
     (should (string= "abcdef" (scalar "SELECT 'abc' || 'def'")))
+    (should (equal pg-null-marker (scalar "SELECT NULL || NULL")))
     (should (string= "abc" (scalar "SELECT concat('abc', NULL)")))
     (should (string= "foo69" (scalar "SELECT concat('foo', 69)")))
     (should (string= "howdy" (scalar "SELECT 'howdy'::text")))
@@ -864,6 +878,8 @@
     (should (string= "" (scalar "SELECT substring('foobles' from 2 for 0)")))
     (should (eql 0 (scalar "SELECT length(concat('', NULL, ''))")))
     (should (string= "" (scalar "SELECT ''::VARCHAR")))
+    (should (string= "" (scalar "SELECT substr('foobles', 8, 0)")))
+    (should (equal pg-null-marker (scalar "SELECT substring('foo' FROM null::text)")))
     ;; Returns NULL because NULL is weird in SQL
     (should (equal pg-null-marker (scalar "SELECT NULL = NULL")))
     ;; IS checks for NULL identity
@@ -893,6 +909,14 @@
     (unless (member (pgcon-server-variant con) '(cratedb))
       (should (eql nil (row "-- comment")))
       (should (eql nil (row "  /* only a comment */ "))))
+    (should (eql 42 (scalar "SELECT 42; -- comment")))
+    (should (eql 42 (scalar "SELECT /* Free Palestine */ 42 -- more ")))
+    (should (eql 42 (scalar "SELECT 40
+-- more
+-- that
+-- is
+-- ignored
++ 2")))
     ;; This statement is strangely very poorly supported in semi-compatible PostgreSQL variants...
     (unless (member (pgcon-server-variant con) '(cratedb risingwave))
       (let* ((res (pg-exec con "SELECT 42 as éléphant"))
@@ -1303,6 +1327,7 @@ bar$$"))))
       ;; Here the hh:mm:ss are taken into account.
       (should (equal (scalar "SELECT '2063-03-31T22:13:02'::timestamp")
                      (encode-time (list 2 13 22 31 3 2063 nil -1 nil))))
+      (should (eql 21 (scalar "SELECT EXTRACT (century FROM NOW())")))
       (unless (member (pgcon-server-variant con) '(ydb))
         (message "TZ test: current PostgreSQL timezone is %s" (scalar "SHOW timezone")))
       (message "TZ test: current Emacs timezone is %s" (current-time-zone))
@@ -1351,6 +1376,8 @@ bar$$"))))
                      (encode-time (list 21 42 14 5 4 2010 nil -1 nil))))
       (should (equal (scalar "SELECT 'PT42S'::interval") "00:00:42"))
       (should (equal (scalar "SELECT 'PT3H4M42S'::interval") "03:04:42"))
+      (should (equal (scalar "SELECT 0 * interval '10 second'") "00:00:00"))
+      (should (eql 3 (scalar "SELECT extract(year from '3 years'::interval)")))
       (should (equal (scalar "select '05:00'::time") "05:00:00"))
       (should (equal (scalar "SELECT '04:15:31.445+05'::timetz") "04:15:31.445+05"))
       (should (equal (scalar "SELECT '2001-02-03 04:05:06'::timestamp")
@@ -1436,7 +1463,15 @@ bar$$"))))
     (should (eql 42 (scalar "SELECT ceil(41.9)")))
     (should (eql -42 (scalar "SELECT ceil(-42.9)")))
     (should (eql 42 (scalar "SELECT ceil(42::bigint)")))
+    (should (pgtest-approx= 1.0 (scalar "SELECT sign(42.0)")))
+    (should (pgtest-approx= 1.0 (scalar "SELECT sign(42::bigint)")))
+    (should (pgtest-approx= 1.0 (scalar "SELECT sign(42.0::float)")))
+    (should (equal pg-null-marker (scalar "SELECT sqrt(NULL)")))
     (should (eql pg-null-marker (scalar "SELECT ceil(NULL)")))
+    (should (pgtest-approx= (scalar "SELECT log(10, 10)") 1.0))
+    (should (pgtest-approx= (scalar "SELECT log(100.0)") 2.0))
+    (should (eql 1 (scalar "SELECT 3 % 2")))
+    (should (pgtest-approx= 81 (scalar "SELECT 3::numeric ^ 4::numeric")))
     ;; The cube root operator
     (unless (member (pgcon-server-variant con) '(cratedb materialize))
       (should (pgtest-approx= 3.0 (scalar "SELECT ||/ float8 '27'"))))
@@ -1718,16 +1753,22 @@ bar$$"))))
       (should (equal pg-null-marker (aref res 1))))
     (let ((res (scalar "SELECT array_remove(ARRAY[1,2,-3], 10)")))
       (should (equal (vector 1 2 -3) res)))
-    (should (equal (vector 1 2) (scalar "SELECT concat(NULL, ARRAY[1, 2])")))
-    (should (equal (vector 1 2 69) (scalar "SELECT concat(ARRAY[1::bigint], ARRAY[2, 69::int2])")))
-    (should (equal (vector 69 420) (scalar "SELECT concat(69, ARRAY[420])")))
+    (let ((res (scalar "SELECT array_prepend(42, ARRAY[7,8,9])")))
+      (should (eql (length res) 4))
+      (should (eql (aref res 0) 42)))
+    (should (equal (vector 2 3 4) (scalar "SELECT a[2:] FROM (SELECT '{1,2,3,4}'::integer[] AS a)")))
+    (should (equal (vector) (scalar "SELECT a[10:] FROM (SELECT '{1,2,3,4}'::integer[] AS a)")))
+    (should (string= "{1,2}" (scalar "SELECT concat(NULL, ARRAY[1, 2])")))
+    (should (string= "{1}{2,69}" (scalar "SELECT concat(ARRAY[1::bigint], ARRAY[2, 69::int2])")))
+    (should (string= "69{420}" (scalar "SELECT concat(69, ARRAY[420])")))
     (let* ((res (pg-exec-prepared con "SELECT $1" '(([1 2 3] . "_int4"))))
            (row (pg-result res :tuple 0)))
       (should (equal (vector 1 2 3) (cl-first row))))
     (let ((vec (scalar "SELECT ARRAY[44.3, 8999.5]")))
       (should (equal 2 (length vec)))
       (should (pgtest-approx= 44.3 (aref vec 0)))
-      (should (pgtest-approx= 8999.5 (aref vec 1))))))
+      (should (pgtest-approx= 8999.5 (aref vec 1))))
+    (should (equal 42 (scalar "SELECT unnest(ARRAY[42])")))))
 
 ;; TODO: we do not currently handle multidimension arrays correctly
 ;; (should (equal (vector (vector 4 5) (vector 6 7))
@@ -2446,6 +2487,7 @@ bar$$"))))
       (should (string= (scalar "SELECT 'SRID=4326;POINT(45 80.0)'::geography")
                        ;; "0101000020E610000000000000008046400000000000005440"
                        "POINT (45 80)"))
+      (should (eql 20 (scalar "SELECT st_distance('POINT (10 20)'::geometry, 'POINT (30 20)'::geometry)")))
       (should (string= (scalar "SELECT 'SPHEROID[\"GRS_1980\",6378137,298.2572]'::spheroid")
                        "SPHEROID(\"GRS_1980\",6378137,298.2572)"))
       (should (string= (scalar "SELECT Box2D(ST_GeomFromText('LINESTRING(1 2, 3 4, 5 6)'))")
@@ -2781,6 +2823,9 @@ bar$$"))))
                        (funcall scalar-fn "SELECT log(-2.1)")
                      (pg-floating-point-exception 'ok))))
   (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT asin(2.0)")
+                     (pg-numeric-value-out-of-range 'ok))))
+  (should (eql 'ok (condition-case nil
                        (funcall scalar-fn "SELECT abs(true)")
                      (pg-undefined-function 'ok))))
   (should (eql 'ok (condition-case nil
@@ -2819,6 +2864,9 @@ bar$$"))))
                        (funcall scalar-fn "SELECT (-32768)::int2 / (-1)::int2")
                      (pg-numeric-value-out-of-range 'ok))))
   (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT  -2147483647::integer - 2::integer")
+                     (pg-numeric-value-out-of-range 'ok))))
+  (should (eql 'ok (condition-case nil
                        (funcall scalar-fn "SELECT -12345::numeric(3)")
                      (pg-numeric-value-out-of-range 'ok))))
   (should (eql 'ok (condition-case nil
@@ -2831,6 +2879,10 @@ bar$$"))))
                          ;; numerical overflow on smallint
                          (funcall scalar-fn "SELECT int2 '-0b1000000000000001'")
                        (pg-numeric-value-out-of-range 'ok)))))
+  (should (eql 'ok (condition-case nil
+                       ;; Can't OR bitstrings of different length
+                       (funcall scalar-fn "SELECT B'10001' | B'001'")
+                     (pg-data-error 'ok))))
   (should (eql 'ok (condition-case nil
                        ;; numerical overflow
                        (funcall scalar-fn "SELECT lcm((-9223372036854775808)::int8, 1::int8)")
@@ -2941,6 +2993,9 @@ bar$$"))))
   (should (eql 'ok (condition-case nil
                        (funcall scalar-fn "EXECUTE phantom_prepared_statement")
                      (pg-invalid-sql-statement-name 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "ALTER DATABASE pgeltest_nonexistent REFRESH COLLATION VERSION")
+                     (pg-invalid-catalog-name 'ok))))
   ;; In PostgreSQL 18.1, this does not trigger an error.
   (should (eql nil (pg-close-portal con "nonexistent_portal")))
   ;; CockroachDB reports this as a pg-data-error, and PostgreSQL as pg-undefined-function.
@@ -2994,6 +3049,10 @@ bar$$"))))
   (should (eql 'ok (condition-case nil
                        (funcall scalar-fn "SELECT int2 '10__000'")
                      (pg-invalid-text-representation 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT '{ }}'::text[]")
+                     (pg-invalid-text-representation 'ok)
+                     (pg-syntax-error 'ok))))
   (should (eql 'ok (condition-case nil
                        (funcall scalar-fn "SELECT 'true false::json")
                      (pg-syntax-error 'ok))))
