@@ -417,6 +417,19 @@ test-neon: test-pg.el
 	PGURI="postgresql://user:password@foo.eu-central-1.aws.neon.tech/main?sslmode=require" $(MAKE) test-tls
 
 
+# https://github.com/neondatabase/neon/blob/main/docs/docker.md
+#
+# need docker-compose / podman-compose
+# https://github.com/neondatabase/neon/blob/main/docker-compose/docker-compose.yml
+test-neon-local: test-pg.el
+	${DOCKER} run --rm --name neon \
+          --pull=newer \
+          --publish 5662:5432 \
+          docker.io/neondatabase/neon
+	sleep 5
+	${DOCKER} stop neon
+
+
 # app.xata.io are running PostgreSQL 15.5 on aarch64/Linux as of 2025-01
 test-xata: test-pg.el
 	PGURI="postgresql://user:password@eu-central-1.sql.xata.sh/pgeltestdb:main?sslmode=force" $(MAKE) test-tls
@@ -883,7 +896,6 @@ test-cratedb: test-pg.el
 test-cockroach: test-pg.el
 	${DOCKER} run --rm --name cockroachdb \
           --pull=newer \
-          -v /dev/log:/dev/log \
           --publish 26257:26257 \
           -e COCKROACH_DATABASE=pgeltestdb \
           -e COCKROACH_USER=pgeltestuser \
@@ -1585,6 +1597,8 @@ test-chrondb: test-pg.el
 
 
 # https://github.com/erans/pgsqlite -- a PostgreSQL protocol adapter for SQLite databases
+#
+# Last tested 2025-12 with v0.0.19
 test-pgsqlite: test-pg.el
 	$(eval TMPBDIR := $(shell mktemp -d -t pgsqlite-buildXXXX))
 	(cd ${TMPBDIR} && \
