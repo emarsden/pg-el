@@ -175,7 +175,7 @@ The following PostgreSQL-compatible databases or extensions have been tested:
   `SERIAL` columns, nor datatypes such as `text`, `bit` and `timetz`, nor collation, nor enums, nor
   functions such as `gen_random_uuid`, nor large objects. It has limited support for the UTF8
   encoding, and its implementation of the `numeric` type is buggy. It works with these limitations
-  with pg-el (last tested 2025-11 with version 7.4.0 of the YellowBrick community edition).
+  with pg-el (last tested 2025-12 with version 7.4.0 of the YellowBrick community edition).
 
 - [Google Spanner](https://cloud.google.com/spanner) proprietary distributed database: tested with
   the Spanner emulator (that reports itself as `PostgreSQL 14.1`) and the PGAdapter library that
