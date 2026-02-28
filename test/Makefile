@@ -830,6 +830,21 @@ test-gatewayd: test-pg.el
 
 # to test: ShardingSphere-Proxy: Apache ShardingSphere's proxy for distributed PostgreSQL setups, handling sharding and scaling.
 
+# to test: Hoop.dev security-scanning proxy, https://github.com/hoophq/hoop
+
+
+
+# https://github.com/multigres/multigres
+#
+# "Vitess for PostgreSQL", seems (202602) to require k8s
+test-multigres: test-pg.el
+	${DOCKER} run --rm --name multigres \
+          --pull=newer \
+          --publish 127.0.0.1:65532:65532 \
+          ghcr.io/multigres/multigres:sha-efc9381
+	sleep 10
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:65532/pgeltestdb $(MAKE) test
+	${DOCKER} stop multigres
 
 
 # https://supabase.github.io/supavisor/
@@ -1514,7 +1529,7 @@ test-octodb: test-pg.el
           --pull=newer \
           --publish 127.0.0.1:5669:1337 \
           -v /tmp/octo-entrypoint.sh:/entrypoint.sh \
-          -d docker.io/yottadb/octo-vehu:latest-master
+          -d docker.io/yottadb/octo:latest
 	sleep 5
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5669/hello $(MAKE) test
 	${DOCKER} stop octodb
@@ -1657,7 +1672,13 @@ test-risinglight: test-pg.el
 # This has extremely poor PostgreSQL wire protocol support (eg. no support for the extended query
 # protocol).
 test-chrondb: test-pg.el
-	PGURI=postgresql://chrondb@127.0.0.1:5432/chrondb $(MAKE) test
+	${DOCKER} run --rm --name chrondb \
+          --pull=newer  \
+          --publish 127.0.0.1:5438:5432 \
+          ghcr.io/avelino/chrondb:latest 
+	sleep 5
+	PGURI=postgresql://chrondb@127.0.0.1:5438/chrondb $(MAKE) test
+	${DOCKER} stop chrondb
 
 
 # https://github.com/erans/pgsqlite -- a PostgreSQL protocol adapter for SQLite databases
