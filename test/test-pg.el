@@ -22,6 +22,7 @@
 
 (defvar pgtest--enable-query-log nil)
 (setq debug-on-error t)
+(setq pg-use-auth-source nil)
 
 
 ;; for performance testing
@@ -464,6 +465,8 @@
             (funcall test con)
           (error (message "\033[31;1mTest failed\033[0m: %s" err)))
         (pgtest-reset con))
+      (message "At end of tests, list of schemas in db: %s" (pg-schemas con))
+      (message "At end of tests, list of tables in db: %s" (pg-tables con))
       (message "== Tests finished; producing a report on memory usage")
       (memory-report)
       (with-current-buffer "*Memory Report*"
@@ -2731,7 +2734,7 @@ bar$$"))))
   (should (member "pgel😎" (pg-databases con)))
   (pg-exec con "DROP DATABASE pgel😎")
   (pg-exec con "CREATE TEMPORARY TABLE pgel😏(data TEXT)")
-  (pg-exec con "INSERT INTO pgel😏 VALUES('Foobles')")
+  (pg-exec con "INSERT INTO pgel😏 VALUES('Foobles﷽')")
   (let ((r (pg-exec con "SELECT * FROM pgel😏")))
     (should (eql 1 (length (pg-result r :tuples)))))
   (pg-exec-prepared con "CREATE SCHEMA IF NOT EXISTS un␂icode" nil)
@@ -2744,7 +2747,7 @@ bar$$"))))
   (pg-exec con "DROP TABLE un␂icode.ma🪄c")
   (pg-exec con "DROP SCHEMA un␂icode")
   (pg-exec con (pgtest-massage con "CREATE TEMPORARY TABLE pgeltestunicode(pg→el TEXT PRIMARY KEY)"))
-  (pg-exec con "INSERT INTO pgeltestunicode(pg→el) VALUES ('Foobles')")
+  (pg-exec con "INSERT INTO pgeltestunicode(pg→el) VALUES ('Foobles௵')")
   (pg-exec con "INSERT INTO pgeltestunicode(pg→el) VALUES ('Bizzles')")
   (let ((r (pg-exec con "SELECT pg→el FROM pgeltestunicode")))
     (should (eql 2 (length (pg-result r :tuples)))))
