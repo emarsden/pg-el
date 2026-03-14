@@ -1217,7 +1217,6 @@ test-yugabyte: test-pg.el
             --advertise_address 127.0.0.1 \
             --ysql_port=5499 \
             --base_dir=/tmp \
-            --enable_pg_parity_early_access \
             --ysql_enable_auth=true \
             --background=false
 	sleep 30
