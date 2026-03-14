@@ -57,6 +57,7 @@
                   ('cratedb "TEXT DEFAULT gen_random_text_uuid()")
                   ;; https://www.cockroachlabs.com/docs/stable/serial.html#generated-values-for-mode-sql_sequence
                   ('cockroachdb "UUID NOT NULL DEFAULT gen_random_uuid()")
+                  ('datafusion "BIGINT GENERATED ALWAYS AS IDENTITY")
                   ;; RisingWave does not (2025-03) implement NOT NULL constraints, nor an autoincrementing column type.
                   ('risingwave nil)
                   ('questdb "UUID NOT NULL DEFAULT gen_random_uuid()")
@@ -695,6 +696,7 @@
       (should (string-prefix-p "INSERT" (pg-result res :status)))
       (should (eql 1 count))
       (should (cl-search "Robert" name)))
+    (pg-exec con "DROP TABLE students")
     (should-error (scalar "SELECT * FROM" '(("a" . "text"))))
     (pg-sync con)
     (should-error (scalar "SELECT $1::int4" '(("2147483649" . "int4"))))
@@ -1465,6 +1467,9 @@ bar$$"))))
     (should (eql -1.0e+INF (scalar "SELECT '-Infinity'::float8")))
     (should (isnan (scalar "SELECT 'NaN'::float4")))
     (should (isnan (scalar "SELECT 'NaN'::float8")))
+    (should (eql t (scalar "SELECT 'NaN'::float8 = 'NaN'::float8")))
+    (should (eql t (scalar "SELECT 'NaN'::float4 = 'NaN'::float4")))
+    (should (eql t (scalar "SELECT 'NaN'::float8 > 1e308")))
     (should (eql 1.0e+INF (scalar "SELECT 'Infinity'::numeric")))
     (should (pgtest-approx= (scalar "SELECT 100.0::numeric(30,20) + 500.0::numeric(30,20)") 600.0))
     (should (pgtest-approx= (scalar "SELECT 0.000005::numeric(30,20) + 0.000005::numeric(30,20)") 0.00001))
@@ -2184,7 +2189,8 @@ bar$$"))))
                      (should (or (cl-search "bazzles" v)
                                  (cl-search "bâçé" v)
                                  (ignore-errors (string-to-number v)))))
-                   ht))))))
+                   ht)))
+      (pg-exec con "DROP TABLE hstored"))))
 
 
 ;; Testing support for the pgvector extension.
@@ -3129,6 +3135,7 @@ bar$$"))))
                          (funcall scalar-fn "CREATE TABLE test_duplicate(a INTEGER)")
                          (funcall scalar-fn "CREATE TABLE test_duplicate(a INTEGER)"))
                      (pg-duplicate-table 'ok))))
+  (pg-exec con "DROP TABLE test_duplicate")
   (should (eql 'ok (condition-case nil
                        (funcall scalar-fn "CREATE TABLE duplicate_column(a INTEGER, a INTEGER)")
                      (pg-duplicate-column 'ok))))
