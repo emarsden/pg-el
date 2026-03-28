@@ -1040,8 +1040,19 @@ to use the updated protocol features introduced with PostgreSQL version
     (unless (eql 3 (car protocol-version))
       (error 'pg-user-error "This library only supports a major protocol version of 3"))
     (setf (pgcon-minor-protocol-version con) (cdr protocol-version))
-    ;; Save connection info in the pgcon object, for possible later use by pg-cancel
+    ;; Save connection info in the pgcon object, for possible later use by pg-cancel. The function
+    ;; pgcon-connect-info is deprecated in 2026-03, replaced by pgcon-connect-plist.
     (setf (pgcon-connect-info con) (list :tcp host port dbname user password))
+    (setf (pgcon-connect-plist con) (list 'method :tcp
+                                          'host host
+                                          'port port
+                                          'dbname dbname
+                                          'user user
+                                          'password password
+                                          'tls-options tls-options
+                                          'direct-tls direct-tls
+                                          'server-variant server-variant
+                                          'protocol-version protocol-version))
     (cond (direct-tls
            ;; Here we make a "direct" TLS connection to PostgreSQL, rather than the STARTTLS-like
            ;; connection upgrade handshake. This requires ALPN support in Emacs. This connection
