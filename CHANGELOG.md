@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.64] - 2026-03-28
+
+- Save all connection info in the pgcon object, for possible later use by `pg-cancel`, rather than
+  only a subset of the user-specified connection info. The function `pgcon-connect-info` which
+  returned this subset is deprecated in 2026-03, replaced by `pgcon-connect-plist` which returns a
+  full list including previously unsaved aspects such as the `tls-info`.
+
+- New function `pg-clone-connection` that establishes a new connection to PostgreSQL “cloned” from
+  its argument, an existing PostgreSQL connection. Opens a new connection to the same PostgreSQL
+  instance, using the same authentication information. This function works both for TCP connections
+  to the database and for local (Unix socket) connections.
+
+- Add code to detect PostgreSQL variants SereneDB, Apache Cloudberry and Picodata.
+
+- Add workarounds for the SereneDB variant, which does not currently implement the standard
+  information schema but implements PostgreSQL-style system tables.
+
+- Add workarounds for the Picodata variant, which does not implement many of the PostgreSQL system
+  tables.
+
 
 ## [0.63] - 2026-02-08
 
