@@ -1181,10 +1181,16 @@ database (as an opaque type)."
                  (funcall password))
                 ((and (null password)
                       pg-use-auth-source)
-                 (auth-source-pick-first-password :host host :user user :port port))))
+                 (auth-source-pick-first-password :host "localhost" :user user :port path))))
          (password (or maybe-password "")))
-    ;; Save connection info in the pgcon object, for possible later use by pg-cancel
+    ;; Save connection info in the pgcon object, for possible later use by pg-cancel. The
+    ;; pgcon-connect-info function is deprecated in 2026-03, replaced by pgcon-connect-plist.
     (setf (pgcon-connect-info con) (list :local path nil dbname user password))
+    (setf (pgcon-connect-plist con) (list 'method :local
+                                          'path path
+                                          'dbname dbname
+                                          'user user
+                                          'password password))
     (with-current-buffer buf
       (set-process-coding-system process 'binary 'binary)
       (set-buffer-multibyte nil)
