@@ -541,6 +541,14 @@
         (should (string-prefix-p "zzz" long))
         (should (string-suffix-p "foo" long))))))
 
+(defun pg-test-udd ()
+  (let ((con (pg-connect/uri "postgresql://udd-mirror:udd-mirror@udd-mirror.debian.net/udd")))
+    (message "Connected to %s, %s"
+             (cl-prin1-to-string con)
+             (pg-backend-version con))
+    (dolist (table (pg-tables con))
+      (message "  Table: %s" table))))
+
 
 (defun pg-test-prepared (con)
   (cl-labels ((row (query args) (pg-result (pg-exec-prepared con query args) :tuple 0))
