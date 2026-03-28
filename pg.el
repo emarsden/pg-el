@@ -1474,6 +1474,28 @@ paramspec keywords are `sslmode' (partial support), `connect_timeout',
           (pg-handle-connection-options con options))
         con))))
 
+(defun pg-clone-connection (con)
+  "Establish a new connection to PostgreSQL cloned from CON.
+Open a new connection to the same PostgreSQL instance as CON, using the
+same authentication information. This function works both for TCP
+connections to the database and for local (Unix socket) connections."
+  (let ((ci (pgcon-connect-plist con)))
+    (cl-case (plist-get ci 'method)
+      (:tcp
+       (pg-connect-plist (plist-get ci 'dbname)
+                         (plist-get ci 'user)
+                         :password (plist-get ci 'password)
+                         :host (plist-get ci 'host)
+                         :port (plist-get ci 'port)
+                         :tls-options (plist-get ci 'tls-options)
+                         :direct-tls (plist-get ci 'direct-tls)
+                         :server-variant (plist-get ci 'server-variant)
+                         :protocol-version (plist-get ci 'protocol-version)))
+      (:local
+       (pg-connect-local (plist-get ci 'path)
+                         (plist-get ci 'dbname)
+                         (plist-get ci 'user)
+                         (plist-get ci 'password))))))
 
 ;; Called from pg-parameter-change-functions when we receive a ParameterStatus
 ;; message of type name=value from the backend. If the status message concerns
