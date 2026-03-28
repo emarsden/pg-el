@@ -292,9 +292,13 @@ SQL queries. To avoid this overhead on establishing a connection, remove
     :type hash-table
     :initform (make-hash-table :test #'equal)
     :accessor pgcon-prepared-statement-cache)
+   ;; connect-info is deprecated in 2026-03, replaced by connect-plist
    (connect-info
     :initform nil
-    :accessor pgcon-connect-info)))
+    :accessor pgcon-connect-info)
+   (connect-plist
+    :initform nil
+    :accessor pgcon-connect-plist)))
 
 (defun make-pgcon (&rest args)
   (apply #'make-instance (cons 'pgcon args)))
