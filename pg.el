@@ -561,6 +561,12 @@ Uses connection CON. The variant can be accessed by `pgcon-server-variant'."
               (setf (pgcon-server-variant con) 'opengauss))
              ((cl-search "Apache DataFusion" version)
               (setf (pgcon-server-variant con) 'datafusion))
+             ((cl-search "Apache Cloudberry" version)
+              (setf (pgcon-server-variant con) 'cloudberry))
+             ((cl-search "SereneDB" version)
+              (setf (pgcon-server-variant con) 'serenedb))
+             ((cl-search "picodata" version)
+              (setf (pgcon-server-variant con) 'picodata))
              ;; TODO: find a better detection method for ArcadeDB
              ((string-suffix-p "/main)" version)
               (setf (pgcon-server-variant con) 'arcadedb))
