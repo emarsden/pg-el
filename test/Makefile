@@ -1748,7 +1748,7 @@ test-risinglight: test-pg.el
 	(cd ${TMPBDIR} && \
          git clone --depth 1 https://github.com/risinglightdb/risinglight && \
          cd risinglight && \
-         cargo run -- --server --port 5367 & )
+         cargo build && cargo run -- --server --port 5367 & )
 	sleep 3
 	PGURI=postgresql://postgres@localhost:5367/postgres $(MAKE) test
 	rm -rf ${TMPBDIR}
@@ -1763,7 +1763,7 @@ test-chrondb: test-pg.el
 	${DOCKER} run --rm --name chrondb \
           --pull=newer  \
           --publish 127.0.0.1:5438:5432 \
-          ghcr.io/avelino/chrondb:latest 
+          -d ghcr.io/avelino/chrondb:latest
 	sleep 5
 	PGURI=postgresql://chrondb@127.0.0.1:5438/chrondb $(MAKE) test
 	${DOCKER} stop chrondb
