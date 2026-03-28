@@ -4031,6 +4031,7 @@ Uses database connection CON."
     ('datafusion nil)
     ('stoolap nil)
     ('immudb nil)
+    ('picodata nil)
     (_
      (let* ((res (pg-exec con "SELECT current_schema()"))
             (tuple (pg-result res :tuple 0))
@@ -4048,6 +4049,10 @@ Uses database connection CON."
     ('datafusion nil)
     ('stoolap nil)
     ('immudb nil)
+    ('picodata nil)
+    ('serenedb
+     (let ((res (pg-exec con "SELECT DISTINCT nspname FROM pg_namespace")))
+       (apply #'append (pg-result res :tuples))))
     ((or 'risingwave 'octodb 'pgsqlite)
      (let ((res (pg-exec con "SELECT DISTINCT table_schema FROM information_schema.tables")))
        (apply #'append (pg-result res :tuples))))
@@ -4155,6 +4160,14 @@ Queries legacy internal PostgreSQL tables."
   (let ((res (pg-exec con "SHOW TABLES")))
     (apply #'append (pg-result res :tuples))))
 
+(defun pg--tables-picodata (con)
+  (let* ((sql "SELECT name FROM public._pico_table")
+         (res (pg-exec con sql))
+         (names (mapcar #'cl-first (pg-result res :tuples))))
+    (cl-loop
+     for name in names
+     unless (string-prefix-p "_pico_" name)
+     collect name)))
 
 (defun pg-tables (con)
   "List of the tables present in the database we are connected to via CON.
@@ -4175,7 +4188,11 @@ Only tables to which the current user has access are listed."
            (pg--tables-arcadedb con))
           ((eq (pgcon-server-variant con) 'stoolap)
            (pg--tables-stoolap con))
+          ((eq (pgcon-server-variant con) 'picodata)
+           (pg--tables-picodata con))
           ((eq (pgcon-server-variant con) 'octodb)
+           (pg--tables-legacy con))
+          ((eq (pgcon-server-variant con) 'serenedb)
            (pg--tables-legacy con))
           ((> (pgcon-server-version-major con) 11)
            (pg--tables-information-schema con))
@@ -4204,7 +4221,7 @@ Only tables to which the current user has access are listed."
 
 (defun pg-columns (con table)
   "List of the columns present in TABLE over PostgreSQL connection CON."
-  (cond ((member (pgcon-server-variant con) '(ydb vertica))
+  (cond ((member (pgcon-server-variant con) '(ydb vertica serenedb picodata))
          (pg--columns-legacy con table))
         ((> (pgcon-server-version-major con) 7)
          (pg--columns-information-schema con table))
