@@ -46,6 +46,9 @@ test-local: test-pg.el install-deps
 test-ebiacuk: test-pg.el install-deps
 	${EMACS} -Q --batch -L .. -L . -l load-deps.el -l ../pg.el -l test-pg.el -f pg-test-ebiacuk
 
+test-udd: test-pg.el install-deps
+	${EMACS} -Q --batch -L .. -L . -l load-deps.el -l ../pg.el -l test-pg.el -f pg-test-udd
+
 
 test-connections: test-pg.el install-deps
 	${EMACS} -Q --batch -L .. -L . -l load-deps.el -l ../pg.el -l test-pg.el -f pg-connection-tests
@@ -904,17 +907,17 @@ test-supavisor: test-pg.el
 test-readyset: test-pg.el
 	${DOCKER} run --rm --name bitnamipg \
            --pull=newer \
-	   --publish 127.0.0.1:5488:5488 \
-	   -e POSTGRESQL_PORT_NUMBER=5488 \
-	   -e POSTGRESQL_DATABASE=pgeltestdb \
-	   -e POSTGRESQL_USERNAME=pgeltestuser \
-	   -e POSTGRESQL_PASSWORD=pgeltest \
-	   -d docker.io/bitnami/postgresql:latest
+           --publish 127.0.0.1:5488:5488 \
+           -e POSTGRESQL_PORT_NUMBER=5488 \
+           -e POSTGRESQL_DATABASE=pgeltestdb \
+           -e POSTGRESQL_USERNAME=pgeltestuser \
+           -e POSTGRESQL_PASSWORD=pgeltest \
+           -d docker.io/bitnami/postgresql:latest
 	sleep 5
 	${DOCKER} run --rm --name readyset \
           --pull=newer --net=host \
           -e DISABLE_UPSTREAM_SSL_VERIFICATION=true \
-          -e UPSTREAM_DB_URL=postgresql://pgeltestuser:pgeltest@localhost:5488/pgeltestdb \
+          -e UPSTREAM_DB_URL=postgresql://pgeltestuser:pgeltest@127.0.0.1:5488/pgeltestdb \
           -e LISTEN_ADDRESS=127.0.0.1:5433 \
           -d docker.io/readysettech/readyset:latest --disable-telemetry --database-type=postgresql
 	sleep 10
@@ -1112,39 +1115,79 @@ test-greenplum: test-pg.el
 # TODO: perhaps try also https://hub.docker.com/r/qpod/greenplum
 test-greenplum2: test-pg.el
 	${DOCKER} run --rm --name greenplum \
+          --cap-add=NET_RAW \
           --pull=newer \
           --publish 127.0.0.1:5433:5432 \
           -e GREENPLUM_DEPLOYMENT=singlenode \
           -e GREENPLUM_DATABASE_NAME=pgeltestdb \
+          -e GREENPLUM_USER=pgeltestuser \
           -e GREENPLUM_PASSWORD=pgeltest \
-          ghcr.io/woblerr/greenplum:7.1.0
-	PGURI=postgresql://gpadmin:pgeltest@127.0.0.1:5433/pgeltestdb $(MAKE) test
+          -d ghcr.io/woblerr/greenplum:7.1.0
+	sleep 20
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5433/pgeltestdb $(MAKE) test
 	${DOCKER} stop greenplum
+
+
+# A Greenplum fork
+#
+# https://warehouse-pg.io/
+# https://github.com/warehouse-pg/warehouse-pg
+# https://hub.docker.com/r/woblerr/warehousepg
+# 
+# The NET_RAW capability is needed to be able to run ping6 in the rootless container.
+test-warehousepg: test-pg.el
+	${DOCKER} run --rm --name warehousepg \
+          --cap-add=NET_RAW \
+          --pull=newer \
+          --publish 127.0.0.1:5299:5432 \
+          -e GREENPLUM_DEPLOYMENT=singlenode \
+          -e GREENPLUM_DATABASE_NAME=pgeltestdb \
+          -e GREENPLUM_USER=pgeltestuser \
+          -e GREENPLUM_PASSWORD=pgeltest \
+          -d ghcr.io/woblerr/warehousepg:6.27.3-WHPG
+	sleep 40
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5299/pgeltestdb $(MAKE) test
+	${DOCKER} stop warehousepg
+
+
+# A Greenplum fork
+#
+# https://github.com/warehouse-pg/warehouse-pg
+# https://hub.docker.com/r/woblerr/warehousepg
+#
+# The NET_RAW capability is needed to be able to run ping6 in the rootless container.
+test-gpdb: test-pg.el
+	${DOCKER} run --rm --name gpdb \
+          --cap-add=NET_RAW \
+          --pull=newer \
+          --publish 127.0.0.1:5433:5432 \
+          -e GREENPLUM_DEPLOYMENT=singlenode \
+          -e GREENPLUM_DATABASE_NAME=pgeltestdb \
+          -e GREENPLUM_USER=pgeltestuser \
+          -e GREENPLUM_PASSWORD=pgeltest \
+          -d ghcr.io/woblerr/opengpdb:6.29.5
+	sleep 40
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5433/pgeltestdb $(MAKE) test
+	${DOCKER} stop warehousepg
+
 
 
 # The Cloudberry fork of Greenplum, incubated at Apache.
 # https://github.com/apache/cloudberry/
-# https://hub.docker.com/r/apache/incubator-cloudberry/
-#
-# No prebuilt Docker image seems to be available.
+# https://github.com/woblerr/docker-cloudberry
+# https://hub.docker.com/r/woblerr/cloudberry/tags
 test-cloudberry: test-pg.el
 	${DOCKER} run --rm --name cloudberry \
-          --publish 127.0.0.1:5661:5661 \
-          -h cdw -e PGPORT=5661 \
-          -d docker.io/apache/incubator-cloudberry:cbdb-test-rocky9-latest
-	sleep 5
-	PGEL_DATABASE=postgres PGEL_USER=gpadmin PGEL_PASSWORD="greenplum" PGEL_PORT=5661 $(MAKE) test
-	${DOCKER} stop cloudberry
-
-
-test-cloudberry2: test-pg.el
-	${DOCKER} run --rm --name cloudberry \
+          --cap-add=NET_RAW \
           --pull=newer \
-          --publish 127.0.0.1:5661:5661 \
-          -h cdw -e PGPORT=5661 \
-          docker.io/scottdolecki/cloudberry:latest
-	sleep 5
-	PGEL_DATABASE=postgres PGEL_USER=gpadmin PGEL_PASSWORD="greenplum" PGEL_PORT=5661 $(MAKE) test
+          --publish 127.0.0.1:5661:5432 \
+          -h cdw \
+          -e CLOUDBERRY_DATABASE_NAME=pgeltestdb \
+          -e CLOUDBERRY_USER=pgeltestuser \
+          -e CLOUDBERRY_PASSWORD=pgeltest \
+          -d docker.io/woblerr/cloudberry:2.1.0-incubating-rc2
+	sleep 40
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5661/pgeltestdb $(MAKE) test
 	${DOCKER} stop cloudberry
 
 
@@ -1228,6 +1271,8 @@ test-yugabyte: test-pg.el
 #
 # Note: primary runs on $POLARDB_PORT, replicas on ${POLARDB_PORT}+1 and ${POLARDB_PORT}+2
 # We don't seem to be able to set POLARDB_DATABASE or equivalent
+#
+# Don't use the :latest tag on the container; it's not kept up to date
 test-polardb: test-pg.el
 	${DOCKER} run --rm --name polardb \
           --pull=newer \
@@ -1235,7 +1280,7 @@ test-polardb: test-pg.el
           -e POLARDB_PORT=5998 \
           -e POLARDB_USER=pgeltestuser \
           -e POLARDB_PASSWORD=pgeltest \
-          -d docker.io/polardb/polardb_pg_local_instance:15
+          -d docker.io/polardb/polardb_pg_local_instance:17
 	sleep 10
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5998/postgres $(MAKE) test
 	${DOCKER} stop polardb
@@ -1646,7 +1691,51 @@ test-surrealdb: test-pg.el
 	${DOCKER} stop surrealdb
 
 
-# TODO: test https://github.com/serenedb/serenedb ("distributed real-time search analytics DB")
+# https://github.com/serenedb/serenedb ("distributed real-time search analytics DB")
+# This should but does not work with --publish 127.0.0.1:7890:7890
+#
+# Limited PostgreSQL compatibility: no ALTER TABLE, no foreign keys, no privilege functions
+# https://docs.serenedb.com/compatibility/core-sql-compatibility
+test-serenedb: test-pg.el
+	${DOCKER} run --rm --name serenedb \
+          --pull=newer \
+          --net=host \
+          -d docker.io/serenedb/serenedb:26.03.3
+	sleep 5
+	PGURI=postgresql://postgres@127.0.0.1:7890/postgres $(MAKE) test
+	${DOCKER} stop serenedb
+
+
+
+# https://git.picodata.io/core/picodata
+# https://picodata.io/en/download-picodata/
+# https://docs.picodata.io/picodata/stable/reference/settings/
+#
+# 2026-03 error on connection "sbroad: SQL function version not found ()"
+test-picodata: test-pg.el
+	${DOCKER} run --rm --name picodata \
+          --pull=newer \
+          --publish 127.0.0.1:5660:5660 \
+          -e PICODATA_PG_LISTEN=0.0.0.0:5660 \
+          -e PICODATA_ADMIN_PASSWORD=PGeltest9 \
+          -d docker.binary.picodata.io/picodata:master
+	sleep 10
+	PGURI=postgresql://admin:PGeltest9@127.0.0.1:5660/picodata $(MAKE) test
+	${DOCKER} stop picodata
+
+
+# https://github.com/neoalienson/Vaultgres
+# No public Docker image as of 2026-03
+# 2026-03: failing on "select version()" --> Execution error: InternalError("Table '' not found")
+test-vaultgres: test-pg.el
+	$(eval TMPBDIR := $(shell mktemp -d -t vaultgres-buildXXXX))
+	(cd ${TMPBDIR} && \
+         git clone --depth 1 https://github.com/neoalienson/Vaultgres.git && \
+         cd Vaultgres && \
+         cargo build && cargo run & )
+	sleep 3
+	PGURI=postgresql://postgres@127.0.0.1:5433/testdb $(MAKE) test
+	${DOCKER} stop vaultgres
 
 
 
