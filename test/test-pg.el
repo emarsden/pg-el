@@ -2725,6 +2725,24 @@ bar$$"))))
   (pg-exec con "DROP TABLE cursor_test"))
 
 
+;; Test the support for pg-clone-connection
+(defun pg-test-clone-connection (con)
+  (let* ((con/new (pg-clone-connection con))
+         (r1 (pg-exec con/new "SELECT 420"))
+         (r2 (pg-exec con/new "SELECT '420'")))
+    (should (eql 420 (cl-first (pg-result r1 :tuple 0))))
+    (should (string= "420" (cl-first (pg-result r2 :tuple 0))))
+    (let* ((res/orig (pg-exec con "SELECT version()"))
+           (res/new (pg-exec con/new "SELECT version()"))
+           (v/orig (cl-first (pg-result res/orig :tuple 0)))
+           (v/new (cl-first (pg-result res/new :tuple 0))))
+      (should (string= v/orig v/new)))
+    (pg-disconnect con/new)
+    ;; Check that the original connection is still up and running
+    (let ((res (pg-exec con "SELECT 666")))
+      (should (eql 666 (cl-first (pg-result res :tuple 0)))))))
+
+
 (defun pg-test-createdb (con)
   (when (member "pgeltestextra" (pg-databases con))
     (pg-exec con "DROP DATABASE pgeltestextra"))
