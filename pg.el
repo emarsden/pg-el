@@ -3963,7 +3963,8 @@ TABLE can be a string or a schema-qualified name. Uses database connection CON."
 
 (defun pg-table-acl (con table)
   "Return the access control list for TABLE. Uses database connection CON.
-Return nil if no ACL is defined, or if the pg_get_acl query function is not defined."
+Return nil if no ACL is defined, or if the pg_get_acl query function is not
+defined."
   ;; the pg_get_acl() function was introduced in PostgreSQL 18
   (when (>= (pgcon-server-version-major con) 18)
     (let* ((default-schema (if (eq (pgcon-server-variant con) 'cratedb)
@@ -4026,6 +4027,7 @@ Uses database connection CON."
     ('arcadedb
      (let ((res (pg-exec con "SELECT FROM schema:database")))
        (apply #'append (pg-result res :tuples))))
+    ('picodata (list "picodata"))
     (_
      (let ((res (pg-exec con "SELECT datname FROM pg_catalog.pg_database")))
        (apply #'append (pg-result res :tuples))))))
