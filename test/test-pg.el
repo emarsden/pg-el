@@ -345,6 +345,7 @@
       (unless (member (pgcon-server-variant con) '(clickhouse risingwave stoolap arcadedb pgsqlite picodata))
         (pg-vector-setup con))
       (pgtest-add #'pg-test-basic)
+      (pgtest-add #'pg-test-extended)
       (pgtest-add #'pg-test-insert)
       (pgtest-add #'pg-test-edge-cases)
       (pgtest-add #'pg-test-procedures
@@ -433,7 +434,7 @@
                   :skip-variants '(xata cratedb cockroachdb risingwave materialize octodb vertica))
       (pgtest-add #'pg-test-geometric
                   :skip-variants '(xata cratedb cockroachdb risingwave questdb materialize spanner octodb vertica cedardb
-                                        yellowbrick datafusion picodata))
+                                        yellowbrick datafusion picodata greptimedb))
       (pgtest-add #'pg-test-gis
                   :skip-variants '(xata cratedb cockroachdb risingwave materialize octodb datafusion))
       (pgtest-add #'pg-test-copy
@@ -883,6 +884,108 @@
             (should (eql (pgcon-server-version-major con)
                          (/ version-num 10000)))
           (message "This PostgreSQL server doesn't support current_setting('server_version_num')"))))))
+
+
+;; Tests for the extended query protocol
+(defun pg-test-extended (con)
+  (cl-labels ((row (sql args) (pg-result (pg-exec-prepared con sql args) :tuple 0))
+              (scalar (sql args) (cl-first (pg-result (pg-exec-prepared con sql args) :tuple 0))))
+    (should (equal (list 42) (row "SELECT $1" '((42 . "int2")))))
+    (should (equal (list 42) (row "SELECT $1" '((42 . "int4")))))
+    (should (equal (list 42) (row "SELECT $1" '((42 . "int8")))))
+    (should (equal (list t) (row "SELECT $1::boolean" '((t . "boolean")))))
+    (should (equal (list -33 "ZZ" 9999) (row "SELECT $1, $2, $3"
+                                             '((-33 . "int4") ("ZZ" . "text") (9999 . "int8")))))
+    (should (eql -1 (scalar "SELECT $1" '((-1 . "integer")))))
+    (should (eql -66 (scalar "SELECT $1" '((-66 . "int2")))))
+    (should (eql 12345 (scalar "SELECT $1" '((12345 . "int8")))))
+    (should (eql 100 (scalar "SELECT CAST ($1 AS INTEGER)" '((100 . "integer")))))
+    (should (eql nil (scalar "SELECT $1::boolean" '(("0" . "text")))))
+    (should (eql -6 (scalar "SELECT -($1)" '((6 . "integer")))))
+    (should (eql ?Z (scalar "SELECT $1::char" '((?Z . "char")))))
+    (should (eql ?@ (scalar "SELECT $1::char(1)" '((?@ . "char")))))
+    (should (eql 97 (scalar "SELECT ascii('a')" nil)))
+    (should (eql 0 (scalar "SELECT ascii('')" nil)))
+    (should (string= "Z" (scalar "SELECT $1::varchar" '(("Z" . "text")))))
+    (should (string= "É" (scalar "SELECT $1::varchar(1)" '(("É" . "text")))))
+    (should (string= "AB" (scalar "SELECT $1::char(2)" '(("AB" . "_char")))))
+    (should (string= "ÁÔ" (scalar "SELECT $1::char(2)" '(("ÁÔ" . "_char")))))
+    (should (string= "ÁÔ" (scalar "SELECT $1::varchar(2)" '(("ÁÔ" . "_char")))))
+    (should (string= "3" (scalar "SELECT CAST ($1 AS text)" '((3 . "integer")))))
+    (should (string= "3" (scalar "SELECT CAST ($1 AS varchar)" '((3 . "integer")))))
+    (should (string= "3" (scalar "SELECT CAST ($1 AS varchar(10))" '((3 . "integer")))))
+    (unless (member (pgcon-server-variant con) '(cratedb cockroachdb cedardb spanner))
+      (should (string= "12" (scalar "SELECT $1::bpchar(2)" '(("12" . "text"))))))
+    (should (string= "£Öí" (scalar "SELECT $1::text" '(("£Öí" . "text")))))
+    (should (string= "Albert" (scalar "SELECT $1::name" '(("Albert" . "text")))))
+    (should (string= "AB" (scalar "SELECT $1::varchar(4)" '(("AB" . "text")))))
+    ;; The string is stored internally with space padding. Note that PostgreSQL will automatically
+    ;; strip the space padding upon server-side conversion to TEXT or VARCHAR; for example SELECT
+    ;; '{' || 'A'::character(10) || '}' only returns a TEXT string of length 3, rather than of
+    ;; length 12.
+    (should (string= "AB   " (scalar "SELECT $1::character(5)" '(("AB" . "text")))))
+    (unless (member (pgcon-server-variant con) '(cratedb cockroachdb cedardb spanner))
+      (should (string= "AB    " (scalar "SELECT $1::bpchar(6)" '(("AB" . "text"))))))
+    (should (equal (list "hey" "Jude") (row "SELECT $1, $2" '(("hey" . "text") ("Jude" . "text")))))
+    (should (eql pg-null-marker (scalar "SELECT NULL" nil)))
+    (unless (member (pgcon-server-variant con) '(cratedb risingwave yugabyte xata))
+      (when (> (pgcon-server-version-major con) 15)
+        (should (eql #x1eeeffff (scalar "SELECT int8 '0x1EEE_FFFF'" nil)))))
+    (should (eql t (scalar "SELECT 42 = $1" '((42 . "integer")))))
+    (should (eql nil (scalar "SELECT 53 = 33" nil)))
+    (should (eql 42 (scalar "SELECT /* FREE PALESTINE */ $1 " '((42 . "integer")))))
+    (should (equal (list 1 pg-null-marker "all") (row "SELECT $1,NULL,'all'" '((1 . "integer")))))
+    (unless (member (pgcon-server-variant con) '(questdb spanner))
+      (should (string= "Z" (scalar "SELECT chr($1)" '((90 . "integer"))))))
+    (should (eql 12 (scalar "SELECT length($1)" '(("(╯°□°)╯︵ ┻━┻" . "text")))))
+    (should (eql 37 (scalar "SELECT length($1)" '(("Text Line إلا بسم الله 🥝 𒐫  a⃰⃰⃰⃰⃰⃰⃰ " . "text")))))
+    (should (string= "::!!::" (scalar "SELECT $1::varchar" '(("::!!::" . "text")))))
+    (should (string= "éàç⟶∪" (scalar "SELECT $1" '(("éàç⟶∪" . "text")))))
+    ;; Note that we need to escape the ?\ character in an elisp string by repeating it.
+    ;; CrateDB does not support the BYTEA type.
+    (unless (member (pgcon-server-variant con) '(cratedb))
+      (should (eql 3 (length (scalar "SELECT '\\x123456'::bytea" nil))))
+      (should (string= (string #x12 #x34 #x56) (scalar "SELECT '\\x123456'::bytea" nil))))
+     (unless (member (pgcon-server-variant con) '(spanner))
+       (should (eql nil (row " SELECT 3 WHERE 1=$1" '((0 . "integer"))))))
+     (should (eql 4 (scalar "SELECT ((2 * 2))" nil)))
+     (should (string= "abcdef" (scalar "SELECT $1 || $2" '(("abc" . "text") ("def" . "text")))))
+     (should (equal pg-null-marker (scalar "SELECT NULL || NULL" nil)))
+     (should (string= "abc" (scalar "SELECT concat($1, NULL)" '(("abc" . "text")))))
+     (should (string= "foo69" (scalar "SELECT concat($1, $2)" '(("foo" . "text") (69 . "integer")))))
+     (should (string= "howdy" (scalar "SELECT $1::text" '(("howdy" . "text")))))
+     (should (eql t (scalar "SELECT $1 LIKE 'a%'" '(("abc" . "text")))))
+     (should (string= "banana" (scalar "SELECT split_part($1, ',', 2)" '(("apple,banana,cherry" . "text")))))
+     ;; RisingWave does not support the VARCHAR(N) syntax.
+     (unless (eq 'risingwave (pgcon-server-variant con))
+       (should (string= "gday" (scalar "SELECT $1::varchar(20)" '(("gday" . "text"))))))
+     (should (equal pg-null-marker (scalar "SELECT SUM(null::numeric) FROM generate_series(1,3)" nil)))
+     ;; CrateDB: Cannot cast `'NaN'` of type `text` to type `numeric`
+     (unless (member (pgcon-server-variant con) '(cratedb))
+       (should (eql 0.0e+NaN (scalar "SELECT SUM($1::numeric) FROM generate_series(1,3)" '(("NaN" . "text"))))))
+     ;; CockroachDB is returning these byteas in a non-BYTEA format so they are twice as long as
+     ;; expected. CrateDB does not implement the sha256 and sha512 functions.
+     ;;
+     ;; Could use digest('foobles', 'sha1') if we loaded the pgcrypto extension.
+     (unless (member (pgcon-server-variant con) '(cratedb cockroachdb))
+       (should (eql 32 (length (scalar "SELECT sha256($1)" '(("foobles" . "text"))))))
+       (should (eql 64 (length (scalar "SELECT sha512($1)" '(("foobles" . "text")))))))
+    ;; The MD5 function is not implemented by the Spanner variant. Note that it is also disabled in
+    ;; some PostgreSQL builds which compile OpenSSL in a FIPS-compatible mode, but in that case the
+    ;; function triggers a runtime error (and it doesn't seem to be possible to check at runtime
+    ;; whether the function is correctly implemented or not).
+    (when (pg-function-p con "md5")
+      (should (string= (md5 "foobles") (scalar "SELECT md5($1)" '(("foobles" . "text"))))))
+    (let* ((res (pg-exec con "SELECT 11 as bizzle, $1 as bazzle" '((15 . "integer"))))
+           (attr (pg-result res :attributes))
+           (col1 (cl-first attr))
+           (col2 (cl-second attr))
+           (row (pg-result res :tuple 0)))
+      (should (eql 1 (length (pg-result res :tuples))))
+      (should (eql 11 (cl-first row)))
+      (should (eql 15 (cl-second row)))
+      (should (string= "bizzle" (cl-first col1)))
+      (should (string= "bazzle" (cl-first col2))))))
 
 
 (defun pg-test-edge-cases (con)
