@@ -134,7 +134,7 @@ The following PostgreSQL-compatible databases or extensions have been tested:
 
 - The [RisingWave](https://github.com/risingwavelabs/risingwave) event streaming database (Apache
   license) is mostly working. It does not support `GENERATED ALWAYS AS IDENTITY` or `SERIAL`
-  columns, nor `VACUUM ANALYZE`. Last tested 2026-03 with v2.8.1.
+  columns, nor `VACUUM ANALYZE`. Last tested 2026-04 with v2.8.1.
 
 - The [CrateDB](https://crate.io/) distributed database (Apache licence). CrateDB does not support
   rows (e.g. `SELECT (1,2)`), does not support the `time`, `varbit`, `bytea`, `jsonb` and `hstore`
@@ -142,7 +142,7 @@ The following PostgreSQL-compatible databases or extensions have been tested:
   PostgreSQL functions such as `factorial`, does not return a correct type OID for text columns in
   rows returned from a prepared statement, doesn't support Unicode identifiers, doesn't support the
   `COPY` protocol, doesn't support `TRUNCATE TABLE`. It works with these limitations with pg-el
-  (last tested 2026-03 with version 6.3.0).
+  (last tested 2026-04 with version 6.4.0).
 
 - The [CockroachDB](https://github.com/cockroachdb/cockroach) distributed database (source-available
   but non-free software licence). Note that this database does not implement the large object
@@ -154,7 +154,7 @@ The following PostgreSQL-compatible databases or extensions have been tested:
 - The [YDB by Yandex](https://ydb.tech/docs/en/postgresql/docker-connect) distributed database
   (Apache licence). Has very limited PostgreSQL compatibility. For example, an empty query string
   leads to a hung connection, and the `bit` type is returned as a string with the wrong oid. Last
-  tested 2026-03 with version 23-4.
+  tested 2026-04 with version 23-4.
 
 - The [Apache Datafusion](https://datafusion.apache.org/) query engine, designed primarily for
   incremental processing applications (“streaming”), has quite good PostgreSQL compatibility (using
@@ -169,11 +169,11 @@ The following PostgreSQL-compatible databases or extensions have been tested:
 - The [Materialize](https://materialize.com/) operational database (a proprietary differential
   dataflow database) has many limitations in its PostgreSQL compatibility: no support for primary
   keys, unique constraints, check constraints, for the `bit` type for example. It works with these
-  limitations with pg-el (last tested 2026-03 with Materialize v26.17).
+  limitations with pg-el (last tested 2026-04 with Materialize v26.18).
 
 - The [CedarDB](https://cedardb.com/) database spun off from the Umbra research database developed
   at the University of Munich is fairly PostgreSQL compatible and works well with pg-el. Last tested
-  2026-03 with CedarDB version v2026-03-19.
+  2026-04 with CedarDB version v2026-04-02.
 
 - The [QuestDB](https://questdb.io/) time series database (Apache licensed) has very limited
   PostgreSQL support, and does not support the `integer` type for example. Last tested 2026-03 with
@@ -211,7 +211,7 @@ The following PostgreSQL-compatible databases or extensions have been tested:
   `pg_catalog.pg_types` table are not the same as those used by PostgreSQL (e.g. `Int64` instead of
   `int8`), so our parsing machinery does not work. This database also has more restrictions on the
   use of identifiers than PostgreSQL (for example, `id` is not accepted as a column name, nor are
-  identifiers containing Unicode characters). Last tested v1.0.0-rc1 in 2026-02.
+  identifiers containing Unicode characters). Last tested v1.0.0-rc2 in 2026-04.
 
 - Hosted PostgreSQL services that have been tested: as of 2025-06 render.com is running a Debian
   build of PostgreSQL 16.8 and works fine (requires TLS connection), as of 2024-12
