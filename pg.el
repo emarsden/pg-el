@@ -3838,6 +3838,14 @@ Uses database connection CON."
                     `((,table-name . "text"))))
             (res (pg-exec-prepared con sql args)))
        (cl-first (pg-result res :tuple 0))))
+    ('picodata
+     (let* ((sql "SELECT pu.name from _pico_user pu JOIN _pico_table pt ON pu.id = pt.owner WHERE pt.name = $1")
+            (table-name (if (pg-qualified-name-p table)
+                            (pg-qualified-name-name table)
+                          table))
+            (args `((,table-name . "text")))
+            (res (pg-exec-prepared con sql args)))
+       (cl-first (pg-result res :tuple 0))))
     (_
      (let* ((schema (when (pg-qualified-name-p table)
                       (pg-qualified-name-schema table)))
