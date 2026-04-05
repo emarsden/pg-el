@@ -883,6 +883,8 @@ Uses database DBNAME, user USER and password PASSWORD."
             (setf (pgcon-server-variant con) 'thenile))
           (when (string-prefix-p "ivorysql." key)
             (setf (pgcon-server-variant con) 'ivorydb))
+          (when (string-prefix-p "duckdb." key)
+            (setf (pgcon-server-variant con) 'pgduckdb))
           (dolist (handler pg-parameter-change-functions)
             (funcall handler con key val)))))
 
