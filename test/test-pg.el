@@ -20,7 +20,7 @@
 (require 'ert)
 
 
-(defvar pgtest--enable-query-log nil)
+(defvar pgtest--enable-query-log t)
 (setq debug-on-error t)
 (setq pg-use-auth-source nil)
 
@@ -354,28 +354,28 @@
       ;; RisingWave is not able to parse a TZ value of "UTC-01:00" (POSIX format). QuestDB does not
       ;; support the timestamptz type. CedarDB des not support the timetz data type.
       (pgtest-add #'pg-test-date
-                  :skip-variants '(cratedb risingwave materialize ydb questdb cedardb clickhouse picodata)
+                  :skip-variants '(cratedb risingwave materialize ydb questdb cedardb clickhouse picodata serenedb)
                   :need-emacs "29.1")
       ;; QuestDB does not support the timestamptz column type.
       (pgtest-add #'pg-run-tz-tests
-                  :skip-variants '(risingwave materialize ydb clickhouse spanner questdb readyset picodata))
+                  :skip-variants '(risingwave materialize ydb clickhouse spanner questdb readyset picodata serenedb))
       ;; Vertica does not implement types like int2
       (pgtest-add #'pg-test-numeric
-                  :skip-variants '(vertica picodata))
+                  :skip-variants '(vertica picodata serenedb))
       (pgtest-add #'pg-test-numeric-range
                   :skip-variants '(xata cratedb cockroachdb ydb risingwave questdb clickhouse greptimedb spanner octodb
                                         vertica cedardb datafusion immudb stoolap pgsqlite serenedb picodata))
       (pgtest-add #'pg-test-prepared
-                  :skip-variants '(ydb cratedb picodata)
+                  :skip-variants '(ydb cratedb picodata serenedb)
                   :need-emacs "28")
       ;; Risingwave v2.2.0 panics on this test
       ;; (https://github.com/risingwavelabs/risingwave/issues/20367). Vertica does not implement
       ;; generate_series()
       (pgtest-add #'pg-test-prepared/multifetch
-                  :skip-variants '(risingwave ydb vertica)
+                  :skip-variants '(risingwave ydb vertica serenedb)
                   :need-emacs "28")
       (pgtest-add #'pg-test-insert/prepared
-                  :skip-variants '(ydb)
+                  :skip-variants '(ydb serenedb)
                   :need-emacs "28")
       ;; Risingwave v2.2.0 raises a spurious error "Duplicated portal name" here
       (pgtest-add #'pg-test-ensure-prepared
@@ -388,7 +388,8 @@
                   :skip-variants '(xata ydb cockroachdb yugabyte clickhouse alloydb vertica opengauss
                                         datafusion picodata))
       (pgtest-add #'pg-test-uuid
-                  :skip-variants '(cratedb risingwave ydb clickhouse greptimedb spanner octodb vertica yellowbrick datafusion))
+                  :skip-variants '(cratedb risingwave ydb clickhouse greptimedb spanner octodb vertica
+                                           yellowbrick datafusion serenedb))
       ;; Risingwave doesn't support VARCHAR(N) type. YDB and Vertica don't support SELECT generate_series().
       (pgtest-add #'pg-test-result
                   :skip-variants  '(risingwave ydb spanner clickhouse vertica))
@@ -407,9 +408,9 @@
                   :skip-variants '(cratedb risingwave questdb materialize clickhouse octodb))
       (pgtest-add #'pg-test-enums
                   :skip-variants '(cratedb risingwave questdb greptimedb ydb materialize spanner octodb clickhouse
-                                           vertica cedardb yellowbrick datafusion immudb picodata))
+                                           vertica cedardb yellowbrick datafusion immudb picodata serenedb))
       (pgtest-add #'pg-test-server-prepare
-                  :skip-variants '(cratedb risingwave questdb greptimedb ydb octodb datafusion picodata))
+                  :skip-variants '(cratedb risingwave questdb greptimedb ydb octodb datafusion picodata serenedb))
       (pgtest-add #'pg-test-comments
                    :skip-variants '(ydb cratedb spanner questdb thenile cedardb datafusion))
       (pgtest-add #'pg-test-metadata
@@ -418,7 +419,7 @@
       ;; CrateDB doesn't support the JSONB type. CockroachDB doesn't support casting to JSON.
       (pgtest-add #'pg-test-json
                   :skip-variants '(xata cratedb risingwave questdb greptimedb ydb materialize spanner octodb
-                                        vertica cedardb datafusion immudb picodata))
+                                        vertica cedardb datafusion immudb picodata serenedb))
       (pgtest-add #'pg-test-schemas
                   :skip-variants '(xata cratedb risingwave questdb ydb materialize yellowbrick))
       (pgtest-add #'pg-test-hstore
@@ -426,23 +427,23 @@
       ;; Xata doesn't support extensions, but doesn't signal an SQL error when we attempt to load the
       ;; pgvector extension, so our test fails despite being intended to be robust.
       (pgtest-add #'pg-test-vector
-                  :skip-variants '(xata cratedb materialize octodb vertica picodata))
+                  :skip-variants '(xata cratedb materialize octodb vertica picodata serenedb))
       (pgtest-add #'pg-test-tsvector
                   :skip-variants '(xata cratedb cockroachdb risingwave questdb greptimedb ydb materialize spanner
-                                        octodb vertica cedardb yellowbrick datafusion picodata))
+                                        octodb vertica cedardb yellowbrick datafusion picodata serenedb))
       (pgtest-add #'pg-test-bm25
                   :skip-variants '(xata cratedb cockroachdb risingwave materialize octodb vertica))
       (pgtest-add #'pg-test-geometric
                   :skip-variants '(xata cratedb cockroachdb risingwave questdb materialize spanner octodb vertica cedardb
-                                        yellowbrick datafusion picodata greptimedb))
+                                        yellowbrick datafusion picodata greptimedb serenedb))
       (pgtest-add #'pg-test-gis
                   :skip-variants '(xata cratedb cockroachdb risingwave materialize octodb datafusion))
       (pgtest-add #'pg-test-copy
                   :skip-variants '(spanner ydb cratedb risingwave materialize questdb xata vertica yellowbrick
-                                           datafusion picodata))
+                                           datafusion picodata serenedb))
       ;; QuestDB fails due to lack of support for the NUMERIC type
       (pgtest-add #'pg-test-copy-large
-                  :skip-variants '(spanner ydb cratedb risingwave questdb materialize datafusion))
+                  :skip-variants '(spanner ydb cratedb risingwave questdb materialize datafusion serenedb))
       (pgtest-add #'pg-test-clone-connection)
       ;; Apparently Xata does not support CREATE DATABASE
       (pgtest-add #'pg-test-createdb
@@ -464,13 +465,13 @@
                   :skip-variants '(cratedb risingwave))
       ;; As of 2025-08, CedarDB does not implement DO.
       (pgtest-add #'pg-test-notice
-                  :skip-variants '(cedardb datafusion picodata))
+                  :skip-variants '(cedardb datafusion picodata serenedb))
       (pgtest-add #'pg-test-notify
                   :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb ydb questdb spanner vertica cedardb
-                                           yellowbrick opengauss datafusion picodata))
+                                           yellowbrick opengauss datafusion picodata serenedb))
       (pgtest-add #'pg-test-lo
                   :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb ydb questdb spanner vertica greenplum
-                                           cedardb yellowbrick opengauss datafusion picodata))
+                                           cedardb yellowbrick opengauss datafusion picodata serenedb))
       (dolist (test (reverse tests))
         (message "== Running test %s" test)
         (condition-case err
