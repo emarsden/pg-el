@@ -20,7 +20,7 @@
 (require 'ert)
 
 
-(defvar pgtest--enable-query-log t)
+(defvar pgtest--enable-query-log nil)
 (setq debug-on-error t)
 (setq pg-use-auth-source nil)
 
@@ -63,6 +63,7 @@
                   ('questdb "UUID NOT NULL DEFAULT gen_random_uuid()")
                   ('materialize nil)
                   ('yellowbrick nil)
+                  ('serenedb "UUID NOT NULL DEFAULT gen_random_uuid()")
                   (_ "SERIAL")))
         (pk (pcase (pgcon-server-variant con)
               ('materialize "")
@@ -331,6 +332,7 @@
         (let* ((res (pg-exec con "SHOW ssl"))
                (row (pg-result res :tuple 0)))
           (message "PostgreSQL connection TLS: %s" (cl-first row))))
+      (message "Databases available: %s" (pg-databases con))
       (message "Current schema: %s" (pg-current-schema con))
       (message "List of schemas in db: %s" (pg-schemas con))
       (message "List of tables in db: %s" (pg-tables con))
@@ -386,7 +388,7 @@
                                         datafusion immudb picodata))
       (pgtest-add #'pg-test-xml
                   :skip-variants '(xata ydb cockroachdb yugabyte clickhouse alloydb vertica opengauss
-                                        datafusion picodata))
+                                        datafusion picodata serenedb))
       (pgtest-add #'pg-test-uuid
                   :skip-variants '(cratedb risingwave ydb clickhouse greptimedb spanner octodb vertica
                                            yellowbrick datafusion serenedb))
@@ -423,7 +425,7 @@
       (pgtest-add #'pg-test-schemas
                   :skip-variants '(xata cratedb risingwave questdb ydb materialize yellowbrick))
       (pgtest-add #'pg-test-hstore
-                  :skip-variants '(risingwave materialize octodb readyset vertica cockroachdb datafusion))
+                  :skip-variants '(risingwave materialize octodb readyset vertica cockroachdb datafusion serenedb))
       ;; Xata doesn't support extensions, but doesn't signal an SQL error when we attempt to load the
       ;; pgvector extension, so our test fails despite being intended to be robust.
       (pgtest-add #'pg-test-vector
@@ -1918,7 +1920,7 @@ bar$$"))))
 ;; Test functionality related to "COMMENT ON TABLE" and "COMMENT ON COLUMN"
 (defun pg-test-comments (con)
   (pg-exec con "DROP TABLE IF EXISTS comment_test")
-  (pg-exec con "CREATE TABLE comment_test(cola INTEGER, colb VARCHAR)")
+  (pg-exec con "CREATE TABLE comment_test(cola INTEGER PRIMARY KEY, colb VARCHAR)")
   (should (null (pg-table-comment con "comment_test")))
   (dolist (cmt (list "Easy" "+++---" "éàÖ🫎"))
     (setf (pg-table-comment con "comment_test") cmt)
