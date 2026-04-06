@@ -4028,6 +4028,11 @@ Uses database connection CON."
      (let ((res (pg-exec con "SELECT FROM schema:database")))
        (apply #'append (pg-result res :tuples))))
     ('picodata (list "picodata"))
+    ('clickhouse
+     ;; https://clickhouse.com/docs/operations/system-tables/databases
+     (let* ((sql "SELECT name FROM system.databases")
+            (res (pg-exec con sql)))
+       (apply #'append (pg-result res :tuples))))
     (_
      (let ((res (pg-exec con "SELECT datname FROM pg_catalog.pg_database")))
        (apply #'append (pg-result res :tuples))))))
