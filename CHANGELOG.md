@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.65] - Unreleased
+
+- Implement `pg-table-owner` and `pg-databases` for PostgreSQL variant Picodata.
+
+- Recognize PostgreSQL variant PGDuckDB, for function `pgcon-server-variant`.
+
+- Tests: add tests for the extended query protocol.
+
+
 ## [0.64] - 2026-03-28
 
 - Save all connection info in the pgcon object, for possible later use by `pg-cancel`, rather than
