@@ -161,10 +161,16 @@ The following PostgreSQL-compatible databases or extensions have been tested:
   the pgwire library). It does not support the `timetz` datatype, nor `TRUNCATE TABLE`, nor
   `UPDATE`, nor `CREATE INDEX` statements. Last tested 2026-03 with version 52.4.
 
+- The [Picodata](https://git.picodata.io/core/picodata) distributed in-memory database engine (BSD
+  licence) has reasonably good PostgreSQL compatibility and works well with pg-el. Some SQL parsing
+  incompatibilities, tables must have a primary key, no VACCUM, no SERIAL, no arrays, no support for
+  the PostgreSQL system tables (pg-el includes workarounds for this). Last tested 2026-04 with
+  version 26.2.
+
 - The [Doltgres](https://github.com/dolthub/doltgresql) version-controlled database (Apache
   licensed) has rapidly improving PostgreSQL compatibility. It does not implement ownership-related
   system tables, nor int4range functions. It works well, with these limitations, with pg-el. Last
-  tested 2026-03 with a version that is reported as 15.5.
+  tested 2026-04 with a version that is reported as 15.5.
 
 - The [Materialize](https://materialize.com/) operational database (a proprietary differential
   dataflow database) has many limitations in its PostgreSQL compatibility: no support for primary
