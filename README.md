@@ -167,6 +167,12 @@ The following PostgreSQL-compatible databases or extensions have been tested:
   the PostgreSQL system tables (pg-el includes workarounds for this). Last tested 2026-04 with
   version 26.2.
 
+- The [SereneDB](https://github.com/serenedb/serenedb) distributed real-time search-oriented
+  database has fairly good PostgreSQL compatibility (Apache licence). It uses the PostgreSQL SQL
+  parser, but a fully reimplemented backend. No support for the `char` type, no SERIAL, no support
+  for `DROP SEQUENCE`, no hstore, no XML functionality, some SQL incompatibilities. Last tested
+  2026-04 with version 26.04.
+
 - The [Doltgres](https://github.com/dolthub/doltgresql) version-controlled database (Apache
   licensed) has rapidly improving PostgreSQL compatibility. It does not implement ownership-related
   system tables, nor int4range functions. It works well, with these limitations, with pg-el. Last
