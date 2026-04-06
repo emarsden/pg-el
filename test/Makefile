@@ -933,7 +933,8 @@ test-readyset: test-pg.el
 # identifiers.
 #
 # CrateDB is fantastically slow on some CREATE TABLE statements that include a VARCHAR(n) column,
-# which is why we set the read_timeout to a high value.
+# which is why we set the read_timeout to a high value. For some reason, the database does not
+# respond to network requests if we only --publish the psql port; it requires host network access.
 #
 # https://hub.docker.com/_/crate/
 # https://github.com/crate/docker-crate/blob/master/Dockerfile
@@ -960,7 +961,7 @@ test-cratedb: test-pg.el
 test-cockroach: test-pg.el
 	${DOCKER} run --rm --name cockroachdb \
           --pull=newer \
-          --publish 26257:26257 \
+          --publish 127.0.0.1:26257:26257 \
           -e COCKROACH_DATABASE=pgeltestdb \
           -e COCKROACH_USER=pgeltestuser \
           -e COCKROACH_PASSWORD=pgeltest \
@@ -1483,7 +1484,7 @@ test-seafowl: test-pg.el
 # https://github.com/datafusion-contrib/datafusion-postgres
 #
 # This database does not implement primay keys, nor cursors, nor CREATE INDEX, nor insert-returning,
-# nor SQL types TIMETZ, BIT. BPCHAR.
+# nor SQL types TIMETZ, BIT, BPCHAR.
 test-datafusion: test-pg.el
 	$(eval TMPBDIR := $(shell mktemp -d -t datafusion-buildXXXX))
 	(cd ${TMPBDIR} && \
@@ -1632,6 +1633,7 @@ test-stoolap-old: test-pg.el
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5401/stoolap $(MAKE) test
 	rm -rf /tmp/stoolap-pgserver ${TMPBDIR}
 
+
 # https://stoolap.io/
 # https://github.com/stoolap/stoolap
 #
@@ -1650,7 +1652,8 @@ test-stoolap: test-pg.el
 
 
 # A Pgwire adaptor for GlueSQL. More an SQL engine than really providing PostgreSQL compatibility;
-# basic functions like version() are not implemented.
+# basic functions like version() are not implemented. It's not currently possible to configure the
+# listening port.
 #
 # https://github.com/gluesql/gluesql
 # https://github.com/sunng87/pgwire/blob/master/examples/gluesql.rs
@@ -1658,9 +1661,9 @@ test-gluesql: test-pg.el
 	$(eval TMPBDIR := $(shell mktemp -d -t gluesql-buildXXXX))
 	(cd ${TMPBDIR} && \
          git clone --depth 1 https://github.com/sunng87/pgwire/ && \
-         cd pgwire && \
-         cargo run --example gluesql &)
-	sleep 2
+         cd pgwire && cargo build )
+	(cd ${TMPBDIR}/pgwire && cargo run --example gluesql &)
+	sleep 5
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1/pgwire $(MAKE) test
 	rm -rf ${TMPBDIR}
 
@@ -1692,15 +1695,17 @@ test-surrealdb: test-pg.el
 
 
 # https://github.com/serenedb/serenedb ("distributed real-time search analytics DB")
+# https://hub.docker.com/r/serenedb/serenedb/tags
+#
 # This should but does not work with --publish 127.0.0.1:7890:7890
 #
-# Limited PostgreSQL compatibility: no ALTER TABLE, no foreign keys, no privilege functions
-# https://docs.serenedb.com/compatibility/core-sql-compatibility
+# Limited PostgreSQL compatibility: no ALTER TABLE, no foreign keys, no privilege functions, no
+# SERIAL, no BIT, no TIME types. https://docs.serenedb.com/compatibility/core-sql-compatibility
 test-serenedb: test-pg.el
 	${DOCKER} run --rm --name serenedb \
           --pull=newer \
           --net=host \
-          -d docker.io/serenedb/serenedb:26.03.3
+          -d docker.io/serenedb/serenedb:26.04.4
 	sleep 5
 	PGURI=postgresql://postgres@127.0.0.1:7890/postgres $(MAKE) test
 	${DOCKER} stop serenedb
@@ -1732,8 +1737,9 @@ test-vaultgres: test-pg.el
 	(cd ${TMPBDIR} && \
          git clone --depth 1 https://github.com/neoalienson/Vaultgres.git && \
          cd Vaultgres && \
-         cargo build && cargo run & )
-	sleep 3
+         cargo build)
+	(cd ${TMPBDIR/Vaultgres && cargo run & )
+	sleep 5
 	PGURI=postgresql://postgres@127.0.0.1:5433/testdb $(MAKE) test
 	${DOCKER} stop vaultgres
 
@@ -1748,7 +1754,8 @@ test-risinglight: test-pg.el
 	(cd ${TMPBDIR} && \
          git clone --depth 1 https://github.com/risinglightdb/risinglight && \
          cd risinglight && \
-         cargo build && cargo run -- --server --port 5367 & )
+         cargo build )
+	(cd ${TMPBDIR}/risinglight && cargo run -- --server --port 5367 & )
 	sleep 3
 	PGURI=postgresql://postgres@localhost:5367/postgres $(MAKE) test
 	rm -rf ${TMPBDIR}
