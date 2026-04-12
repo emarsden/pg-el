@@ -518,7 +518,7 @@ Uses PostgreSQL connection CON.")
 
 (cl-defmethod pg-do-variant-specific-setup ((con pgcon) (variant t))
   ;; This statement fails on ClickHouse (and the database immediately closes the connection!).
-  (unless (member variant '(clickhouse datafusion stoolap))
+  (unless (member variant '(clickhouse datafusion stoolap pgwire))
     (pg-exec con "SET datestyle = 'ISO'")))
 
 (defun pg-detect-server-variant (con)
