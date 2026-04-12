@@ -3901,27 +3901,6 @@ TABLE can be a string or a schema-qualified name. Uses database connection CON."
     ('ydb nil)
     ;; As of 2025-08, CedarDB returns "Setting comments in not implemented yet" (sic).
     ('cedardb nil)
-    ;; Our query below using PostgreSQL system tables triggers an internal exception in CockroachDB,
-    ;; so we use their non-standard "SHOW TABLES" query. The SHOW TABLES command does not accept a
-    ;; WHERE clause.
-    ('cockroachdb
-     (let* ((table-name (if (pg-qualified-name-p table) (pg-qualified-name-name table) table))
-            (schema-name (when (pg-qualified-name-p table) (pg-qualified-name-schema table)))
-            (res (pg-exec con "SHOW TABLES WITH COMMENT"))
-            (tuples (pg-result res :tuples))
-            (column-names (mapcar #'cl-first (pg-result res :attributes)))
-            (table-name-pos (or (cl-position "table_name" column-names :test #'string=)
-                                (error "Expecting table_name in SHOW TABLES output")))
-            (table-schema-pos (or (cl-position "schema_name" column-names :test #'string=)
-                                  (error "Expecting schema_name in SHOW TABLES output")))
-            (comment-pos (or (cl-position "comment" column-names :test #'string=)
-                             (error "Expecting comment in SHOW TABLES output"))))
-       (cl-loop
-        for tuple in tuples
-        when (and (string= table-name (nth table-name-pos tuple))
-                  (or (not schema-name)
-                      (string= schema-name (nth table-schema-pos tuple))))
-        return (nth comment-pos tuple))))
     ('risingwave
      ;; RisingWave implements the obj_description() function, but annoyingly returns empty values
      ;; even when comments are defined. Comment data is available in the rw_description table.
