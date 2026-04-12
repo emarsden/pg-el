@@ -4376,8 +4376,12 @@ COLUMN is in TABLE. Uses connection to PostgreSQL CON."
   "Return version and operating environment of PostgreSQL backend.
 Concerns the backend that we are connected to over connection CON.
 PostgreSQL returns the version as a string. CrateDB returns it as an integer."
-  (let ((res (pg-exec con "SELECT version()")))
-    (cl-first (pg-result res :tuple 0))))
+  (pcase (pgcon-server-variant con)
+    ;; 202604 pgwire does not implement function version()
+    ('pgwire "unknown")
+    (_
+     (let ((res (pg-exec con "SELECT version()")))
+       (cl-first (pg-result res :tuple 0))))))
 
 
 ;; support routines ============================================================
