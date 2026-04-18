@@ -121,20 +121,21 @@ The following PostgreSQL-compatible databases or extensions have been tested:
 - [openGauss](https://opengauss.org/en/) is an open source (Mulan PSL v2) fork of PostgreSQL
   maintained by Huawei. It works fine with pg-el (last tested 2025-12 with version 7.0.0-RC2).
 
-- [Xata](https://xata.io/) “serverless PostgreSQL” has many limitations including lack of support
-  for `CREATE DATABASE`, `CREATE COLLATION`, for XML processing, for temporary tables, for cursors,
-  for `EXPLAIN`, for `CREATE EXTENSION`, for `DROP FUNCTION`, for functions such as `pg_notify`.
-  Last tested 2025-10 with a version that reports itself as 15.12.
+- [Xata](https://github.com/xataio/xata) “serverless PostgreSQL with CoW branching” (Apache license)
+  has many limitations including lack of support for `CREATE DATABASE`, `CREATE COLLATION`, for XML
+  processing, for temporary tables, for cursors, for `EXPLAIN`, for `CREATE EXTENSION`, for `DROP
+  FUNCTION`, for functions such as `pg_notify`. Last tested 2025-10 with a version that reports
+  itself as 15.12.
 
 - The [YugabyteDB](https://yugabyte.com/) distributed database (Apache licence). Mostly working
   though the `pg_sequences` table is not implemented so certain tests fail. YugabyteDB does not have
   full compatibility with PostgreSQL SQL, and for example `GENERATED ALWAYS AS` columns are not
   supported, and `LISTEN` and `NOTIFY` are not supported. It does support certain extensions such as
-  pgvector, however. Last tested on 2026-03 against version 2025.2.2.
+  pgvector, however. Last tested on 2026-04 against version 2025.2.2.
 
 - The [RisingWave](https://github.com/risingwavelabs/risingwave) event streaming database (Apache
   license) is mostly working. It does not support `GENERATED ALWAYS AS IDENTITY` or `SERIAL`
-  columns, nor `VACUUM ANALYZE`. Last tested 2026-04 with v2.8.1.
+  columns, nor `VACUUM ANALYZE`. Last tested 2026-04 with v2.8.2.
 
 - The [CrateDB](https://crate.io/) distributed database (Apache licence). CrateDB does not support
   rows (e.g. `SELECT (1,2)`), does not support the `time`, `varbit`, `bytea`, `jsonb` and `hstore`
@@ -159,7 +160,7 @@ The following PostgreSQL-compatible databases or extensions have been tested:
 - The [Apache Datafusion](https://datafusion.apache.org/) query engine, designed primarily for
   incremental processing applications (“streaming”), has quite good PostgreSQL compatibility (using
   the pgwire library). It does not support the `timetz` datatype, nor `TRUNCATE TABLE`, nor
-  `UPDATE`, nor `CREATE INDEX` statements. Last tested 2026-03 with version 52.4.
+  `UPDATE`, nor `CREATE INDEX` statements. Last tested 2026-04 with version 53.0.
 
 - The [Picodata](https://git.picodata.io/core/picodata) distributed in-memory database engine (BSD
   licence) has reasonably good PostgreSQL compatibility and works well with pg-el. Some SQL parsing
@@ -181,15 +182,15 @@ The following PostgreSQL-compatible databases or extensions have been tested:
 - The [Materialize](https://materialize.com/) operational database (a proprietary differential
   dataflow database) has many limitations in its PostgreSQL compatibility: no support for primary
   keys, unique constraints, check constraints, for the `bit` type for example. It works with these
-  limitations with pg-el (last tested 2026-04 with Materialize v26.18).
+  limitations with pg-el (last tested 2026-04 with Materialize v26.20).
 
 - The [CedarDB](https://cedardb.com/) database spun off from the Umbra research database developed
   at the University of Munich is fairly PostgreSQL compatible and works well with pg-el. Last tested
   2026-04 with CedarDB version v2026-04-02.
 
 - The [QuestDB](https://questdb.io/) time series database (Apache licensed) has very limited
-  PostgreSQL support, and does not support the `integer` type for example. Last tested 2026-03 with
-  version 9.3.3.
+  PostgreSQL support, and does not support the `integer` type for example. Last tested 2026-04 with
+  version 9.3.4.
 
 - The proprietary [Yellowbrick](https://yellowbrick.com/) distributed database does not implement
   `SERIAL` columns, nor datatypes such as `text`, `bit` and `timetz`, nor collation, nor enums, nor
@@ -218,12 +219,11 @@ The following PostgreSQL-compatible databases or extensions have been tested:
   vectors, tsvector, numeric ranges, geometric types. It works with these limitations with pg-el
   (last tested 2026-02 with YottaDB 2.0.2).
 
-- The [GreptimeDB](https://github.com/GrepTimeTeam/greptimedb) time series database (Apache license)
-  implements quite a lot of the PostgreSQL wire protocol, but the names it uses for types in the
-  `pg_catalog.pg_types` table are not the same as those used by PostgreSQL (e.g. `Int64` instead of
-  `int8`), so our parsing machinery does not work. This database also has more restrictions on the
-  use of identifiers than PostgreSQL (for example, `id` is not accepted as a column name, nor are
-  identifiers containing Unicode characters). Last tested v1.0.0-rc2 in 2026-04.
+- The [GreptimeDB](https://github.com/GrepTimeTeam/greptimedb) time series database built on the
+  DataFusion query engine (Apache license) implements quite a lot of the PostgreSQL wire protocol,
+  but has more restrictions on the use of identifiers than PostgreSQL (for example, `id` is not
+  accepted as a column name) and does not support data types such as `bit`. Last tested v1.0.0-rc2
+  in 2026-04.
 
 - Hosted PostgreSQL services that have been tested: as of 2025-06 render.com is running a Debian
   build of PostgreSQL 16.8 and works fine (requires TLS connection), as of 2024-12
@@ -232,18 +232,18 @@ The following PostgreSQL-compatible databases or extensions have been tested:
   works fine. [TheNile](https://thenile.dev/) is running a modified version of PostgreSQL 15, and
   has several limitations (for example, comments on tables and comments don't work, you can't create
   functions or procedures). As of 2025-10, the free tier of the Timescale instance hosted by Tiger
-  Data works fine. As of 2025-11, the free tier of Supabase works fine (you will probably have to
+  Data works fine. As of 2026-04, the free tier of Supabase works fine (you will probably have to
   increase the read timeout using the `read_timeout` URL parameter).
 
 - Untested but likely to work: different [PostgreSQL-derived
   forks](https://wiki.postgresql.org/wiki/PostgreSQL_derived_databases), such as Amazon RDS, Google
-  Cloud SQL, Azure Database for PostgreSQL, Azure HorizonDB, Amazon Aurora, CrunchyData Warehouse.
+  Cloud SQL, Azure Database for PostgreSQL, Azure HorizonDB, Amazon Aurora, CrunchyData Warehouse, db9.
   You may however encounter difficulties with TLS connections, as noted above. Reports on success or
   problems encountered with these databases are welcome.
 
 PostgreSQL variants or proxies that **don't work** with pg-el:
 
-- The ClickHouse database, whose PostgreSQL support is too limited. As of version 26.3 in 2026-03,
+- The ClickHouse database, whose PostgreSQL support is too limited. As of version 26.3 in 2026-04,
   there is no implementation of the `pg_types` system table, no support for basic PostgreSQL-flavoured
   SQL commands such as `SET`, no support for the extended query mechanism.
   
