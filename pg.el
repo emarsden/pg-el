@@ -518,7 +518,7 @@ Uses PostgreSQL connection CON.")
 
 (cl-defmethod pg-do-variant-specific-setup ((con pgcon) (variant t))
   ;; This statement fails on ClickHouse (and the database immediately closes the connection!).
-  (unless (member variant '(clickhouse datafusion stoolap pgwire))
+  (unless (member variant '(clickhouse datafusion stoolap pgwire pgmicro))
     (pg-exec con "SET datestyle = 'ISO'")))
 
 (defun pg-detect-server-variant (con)
@@ -871,7 +871,7 @@ Uses database DBNAME, user USER and password PASSWORD."
                    (setf (pgcon-server-variant con) 'readyset))
                   ((cl-search "(Stoolap)" val)
                    (setf (pgcon-server-variant con) 'stoolap))
-                  ;; 202604 this is an ugly hack, need to suggest they include name in version() string.
+                  ;; 202604 this is an ugly hack, pending their inclusion of brand in version() string.
                   ((string= "150000" val)
                    (setf (pgcon-server-variant con) 'motherduck))
                   ((cl-search "-pgwire-" val)
