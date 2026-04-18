@@ -24,20 +24,19 @@ leave it as a string (it can be parsed using PostGIS functions such as `ST_AsTex
 sudo apt install geos-bin
 ```
 
-
-~~~admonish example title="Using PostGIS datatypes"
-```lisp
-ELISP> (require 'pg-gis)
-ELISP> (pg-setup-postgis *pg*)
-ELISP> (pg-result (pg-exec *pg* "SELECT 'POINT(4 5)'::geometry") :tuple 0)
-("POINT (4 5)")
-ELISP> (pg-result (pg-exec *pg* "SELECT Box2D(ST_GeomFromText('LINESTRING(1 2, 3 4, 5 6)'))") :tuple 0)
-("BOX(1 2,5 6)")
-ELISP> (pg-result (pg-exec *pg* "SELECT 'MULTILINESTRING((-118.584 38.374 20,-118.583 38.5 30),(-71.05957 42.3589 75, -71.061 43 90))'::geometry") :tuple 0)
-("MULTILINESTRING Z ((-118.584 38.374 20, -118.583 38.5 30), (-71.05957 42.3589 75, -71.061 43 90))")
-ELISP> (pg-result (pg-exec *pg* "SELECT 'SPHEROID[\"GRS_1980\",6378137,298.2572]'::spheroid") :tuple 0)
-("SPHEROID(\"GRS_1980\",6378137,298.2572)")
-```
-
-~~~
-
+> [!NOTE]
+>
+> **Using PostGIS datatypes**
+>
+> ```lisp
+> ELISP> (require 'pg-gis)
+> ELISP> (pg-setup-postgis *pg*)
+> ELISP> (pg-result (pg-exec *pg* "SELECT 'POINT(4 5)'::geometry") :tuple 0)
+> ("POINT (4 5)")
+> ELISP> (pg-result (pg-exec *pg* "SELECT Box2D(ST_GeomFromText('LINESTRING(1 2, 3 4, 5 6)'))") :tuple 0)
+> ("BOX(1 2,5 6)")
+> ELISP> (pg-result (pg-exec *pg* "SELECT 'MULTILINESTRING((-118.584 38.374 20,-118.583 38.5 30),(-71.05957 42.3589 75, -71.061 43 90))'::geometry") :tuple 0)
+> ("MULTILINESTRING Z ((-118.584 38.374 20, -118.583 38.5 30), (-71.05957 42.3589 75, -71.061 43 90))")
+> ELISP> (pg-result (pg-exec *pg* "SELECT 'SPHEROID[\"GRS_1980\",6378137,298.2572]'::spheroid") :tuple 0)
+> ("SPHEROID(\"GRS_1980\",6378137,298.2572)")
+> ```

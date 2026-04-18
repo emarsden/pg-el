@@ -48,13 +48,13 @@ Write the contents of the elisp string `buf` to the large object described by `f
 Seek to position `offset` in the large object designated by `fd`. `whence` can be `pg-SEEK_SET`
 (seek from object start), `pg-SEEK_CUR` (seek from current position), or `pg-SEEK_END` (seek from
 object end). `offset` may be a large integer (`int8` type in PostgreSQL; this function calls the
-PostgreSQL backend function `lo_lseek64`). This function works in the same was as `lseek(2)` in Unix.
+PostgreSQL backend function `lo_lseek64`). This function works in the same way as `lseek(2)` in Unix.
 
 
     (pg-lo-tell con fd)
     
 Return the current file position in the large object designated by `fd`. This function works in the
-same was as `ftell(3)` in Unix.
+same way as `ftell(3)` in Unix.
 
 
     (pg-lo-truncate con fd len)

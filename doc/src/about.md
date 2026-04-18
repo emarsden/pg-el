@@ -16,31 +16,34 @@ Emacs-based browser/editor for PostgreSQL, you may be interested in
 PostgreSQL or a compatible database.
 
 
-~~~admonish note title="Supported features"
+> [!NOTE]
+>
+> 
+> **Supported features**
+> 
+> - SCRAM-SHA-256 authentication (the default method since PostgreSQL version 14) as well as MD5 and
+>  password authentication.
+>
+> - Encrypted (TLS) connections between Emacs and the PostgreSQL backend. This includes support for
+>   client certificates.
+>
+> - **Prepared statements** using PostgreSQL's extended query message flow, that allows for 
+>   parameterized queries to protect from SQL injection issues.
+>
+> - The PostgreSQL **COPY protocol** to copy preformatted data to PostgreSQL from an Emacs buffer.
+>
+> - Asynchronous handling of LISTEN/NOTIFY notification messages from PostgreSQL, allowing the
+>   implementation of publish-subscribe type architectures (PostgreSQL as an “event broker” or
+>   “message bus” and Emacs as event publisher and consumer).
+>
+> - Parsing various PostgreSQL types including integers, floats, array types, numerical ranges, 
+>   JSON and JSONB objects into their native Emacs Lisp equivalents. The parsing support is
+>   user-extensible. Support for the HSTORE, pgvector and PostGIS extensions.
+>
+> - Connections over TCP or (on Unix machines) a local Unix socket.
 
-- SCRAM-SHA-256 authentication (the default method since PostgreSQL version 14) as well as MD5 and
-  password authentication.
 
-- Encrypted (TLS) connections between Emacs and the PostgreSQL backend. This includes support for
-  client certificates.
-
-- **Prepared statements** using PostgreSQL's extended query message flow, that allows for 
-  parameterized queries to protect from SQL injection issues.
-
-- The PostgreSQL **COPY protocol** to copy preformatted data to PostgreSQL from an Emacs buffer.
-
-- Asynchronous handling of LISTEN/NOTIFY notification messages from PostgreSQL, allowing the
-  implementation of publish-subscribe type architectures (PostgreSQL as an “event broker” or
-  “message bus” and Emacs as event publisher and consumer).
-
-- Parsing various PostgreSQL types including integers, floats, array types, numerical ranges, 
-  JSON and JSONB objects into their native Emacs Lisp equivalents. The parsing support is
-  user-extensible. Support for the HSTORE, pgvector and PostGIS extensions.
-
-- Connections over TCP or (on Unix machines) a local Unix socket.
-~~~
-
-The code has been tested with **PostgreSQL versions** 17.5, 16.4, 15.4, 13.8, 11.17, and 10.22 on
+The code has been tested with **PostgreSQL versions** 18.3, 17.6, 16.4, 15.4, 13.8, 11.17, and 10.22 on
 Linux. It is also tested via GitHub actions on MacOS and Microsoft Windows. This library also works,
 to a variable extent, against other databases that implement the PostgreSQL wire protocol; please
 see our [README](https://github.com/emarsden/pg-el/blob/main/README.md) for the up to date list.
@@ -50,8 +53,8 @@ for a particular semi-compatible PostgreSQL variant. You can specialize it on th
 variant, currently one of `postgresql`, `alloydb`, `cratedb`, `cockroachdb`, `yugabyte`, `questdb`,
 `greptimedb`, `risingwave`, `immudb`, `timescaledb`, `ydb`, `orioledb`, `xata`, `spanner`,
 `ivorydb`, `readyset`, `materialize`, `greenplum`, `clickhouse`, `octodb`, `vertica`, `arcadedb`,
-`polardb`, `agensgraph`. As an example, the following specializer is already defined to run for
-AlloyDB variants:
+`polardb`, `agensgraph`, `datafusion`. As an example, the following specializer is already defined
+to run for AlloyDB variants:
 
 ```lisp
 ;; Register the OIDs associated with these OmniDB-specific types, so that their types appear in
@@ -71,8 +74,7 @@ AlloyDB variants:
 
 
 
-
-Tested with **Emacs versions** 31 pre-release, 30.1 and 29.4. Emacs versions older than 26.1 will
+Tested with **Emacs versions** 31 pre-release, 30.2 and 29.4. Emacs versions older than 26.1 will
 not work against a recent PostgreSQL version (whose default configuration requires SCRAM-SHA-256
 authentication), because they don’t include the GnuTLS support which we use to calculate HMACs. They
 may however work against a database set up to allow unauthenticated local connections. Emacs
@@ -81,7 +83,8 @@ required. We mostly test with Emacs on Linux, but the library also works fine on
 and MacOS.
 
 You may be interested in an alternative library [emacs-libpq](https://github.com/anse1/emacs-libpq)
-that enables access to PostgreSQL from Emacs by binding to the libpq library.
+that enables access to PostgreSQL from Emacs by binding to the libpq library (it's an Emacs module,
+which requires a C toolchain to build).
 
 
 

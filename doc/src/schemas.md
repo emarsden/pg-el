@@ -34,30 +34,30 @@ characters using `pg-print-qualified-name`. The `pg-tables` function will return
 for tables in the `public` namespace, and `pg-qualified-name` objects for tables in other namespaces.
 
 
-
-~~~admonish example title="Using schema-qualified names"
-```lisp
-ELISP> (let ((res (pg-exec *pg* "SHOW search_path")))
-         (pg-result res :tuple 0))
-("\"$user\", public")
-ELISP> (let ((res (pg-exec *pg* "CREATE SCHEMA custom")))
-         (pg-result res :status))
-"CREATE SCHEMA"
-ELISP> (let* ((qn (make-pg-qualified-name :schema "custom" :name "mytable"))
-              (sql (format "CREATE TABLE IF NOT EXISTS %s(id INTEGER)"
-                           (pg-print-qualified-name qn)))
-              (res (pg-exec *pg* sql)))
-         (pg-result res :status))
-"CREATE TABLE"
-ELISP> (pg-tables *pg*)
-("purchases" "customers" #s(pg-qualified-name :schema "custom" :name "mytable"))
-;; We can use schema-qualified names as parameters for a prepared query.
-ELISP> (let* ((qn (make-pg-qualified-name :schema "custom" :name "mytable"))
-              (pqn (pg-print-qualified-name qn))
-              (sql "SELECT pg_total_relation_size($1)")
-              (res (pg-exec-prepared *pg* sql `((,pqn . "text")))))
-         (pg-result res :tuple 0))
-(0)
-```
-
-~~~
+> [!NOTE]
+>
+> **Using schema-qualified names**
+>
+> ```lisp
+> ELISP> (let ((res (pg-exec *pg* "SHOW search_path")))
+>          (pg-result res :tuple 0))
+> ("\"$user\", public")
+> ELISP> (let ((res (pg-exec *pg* "CREATE SCHEMA custom")))
+>          (pg-result res :status))
+> "CREATE SCHEMA"
+> ELISP> (let* ((qn (make-pg-qualified-name :schema "custom" :name "mytable"))
+>               (sql (format "CREATE TABLE IF NOT EXISTS %s(id INTEGER)"
+>                            (pg-print-qualified-name qn)))
+>               (res (pg-exec *pg* sql)))
+>          (pg-result res :status))
+> "CREATE TABLE"
+> ELISP> (pg-tables *pg*)
+> ("purchases" "customers" #s(pg-qualified-name :schema "custom" :name "mytable"))
+> ;; We can use schema-qualified names as parameters for a prepared query.
+> ELISP> (let* ((qn (make-pg-qualified-name :schema "custom" :name "mytable"))
+>               (pqn (pg-print-qualified-name qn))
+>               (sql "SELECT pg_total_relation_size($1)")
+>               (res (pg-exec-prepared *pg* sql `((,pqn . "text")))))
+>          (pg-result res :tuple 0))
+> (0)
+> ```

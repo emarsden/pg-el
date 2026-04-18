@@ -3,20 +3,23 @@
 Errors signaled by PostgreSQL will be converted into an Emacs Lisp error that subclasses `pg-error`.
 You can handle these errors as usual in Emacs Lisp, as shown in the example below. 
 
-~~~admonish example title="Basic error handling"
-```lisp
-ELISP> (ignore-errors (pg-exec *pg* "SELECT ###"))
-nil
-ELISP> (condition-case nil
-           (pg-exec *pg* "SELECT ###")
-         (pg-error 42))
-42 (#o52, #x2a, ?*)
-```
-~~~
+> [!NOTE]
+>
+> **Basic error handling**
+>
+> ```lisp
+> ELISP> (ignore-errors (pg-exec *pg* "SELECT ###"))
+> nil
+> ELISP> (condition-case nil
+>            (pg-exec *pg* "SELECT ###")
+>          (pg-error 42))
+> 42 (#o52, #x2a, ?*)
+> ```
+
 
 Some errors are converted into specific subclasses of `pg-error`, as listed below. We can
 discriminate the error category thanks to [PostgreSQL's SQLSTATE support](See
-https://www.postgresql.org/docs/17/errcodes-appendix.html).
+https://www.postgresql.org/docs/18/errcodes-appendix.html).
 
 | Error class                       | Meaning                                                                         |
 |-----------------------------------|---------------------------------------------------------------------------------|
@@ -58,16 +61,19 @@ https://www.postgresql.org/docs/17/errcodes-appendix.html).
 
 You can undertake error handling for specific error categories as shown in the example below:
 
-~~~admonish example title="Differentiated error handling"
-```lisp
-ELISP> (condition-case nil
-           (pg-exec *pg* "SELECT 2147483649::int4")
-         (pg-numeric-value-out-of-range (message "Numeric overflow"))
-	 (pg-syntax-error (message "Syntax error"))
-	 (pg-error (message "Generic error")))
-"Numeric overflow"
-```
-~~~
+> [!NOTE]
+>
+> **Differentiated error handling**
+>
+> ```lisp
+> ELISP> (condition-case nil
+>            (pg-exec *pg* "SELECT 2147483649::int4")
+>          (pg-numeric-value-out-of-range (message "Numeric overflow"))
+> 	 (pg-syntax-error (message "Syntax error"))
+> 	 (pg-error (message "Generic error")))
+> "Numeric overflow"
+> ```
+
 
 
 Please note that some semi-compatible PostgreSQL variants do not implement fine-grained SQLSTATE
