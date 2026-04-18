@@ -4042,6 +4042,7 @@ Uses database connection CON."
     ('stoolap nil)
     ('immudb nil)
     ('picodata nil)
+    ('pgmicro nil)
     (_
      (let* ((res (pg-exec con "SELECT current_schema()"))
             (tuple (pg-result res :tuple 0))
@@ -4060,6 +4061,7 @@ Uses database connection CON."
     ('stoolap nil)
     ('immudb nil)
     ('picodata nil)
+    ('pgmicro nil)
     ('serenedb
      (let ((res (pg-exec con "SELECT DISTINCT nspname FROM pg_namespace")))
        (apply #'append (pg-result res :tuples))))
@@ -4204,6 +4206,8 @@ Only tables to which the current user has access are listed."
            (pg--tables-legacy con))
           ((eq (pgcon-server-variant con) 'serenedb)
            (pg--tables-legacy con))
+          ((eq (pgcon-server-variant con) 'pgmicro)
+           (list))
           ((> (pgcon-server-version-major con) 11)
            (pg--tables-information-schema con))
           (t
@@ -4387,7 +4391,8 @@ Concerns the backend that we are connected to over connection CON.
 PostgreSQL returns the version as a string. CrateDB returns it as an integer."
   (pcase (pgcon-server-variant con)
     ;; 202604 pgwire does not implement function version()
-    ('pgwire "unknown")
+    ('pgwire "pgwire-unknown")
+    ('pgmicro "pgmicro-unknown")
     (_
      (let ((res (pg-exec con "SELECT version()")))
        (cl-first (pg-result res :tuple 0))))))
