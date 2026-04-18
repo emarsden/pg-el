@@ -1,0 +1,44 @@
+name: test-pgv18
+on: push
+
+jobs:
+  runner-job:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      # Label used to access the service container
+      postgres:
+        # Docker Hub image
+        image: postgres:18
+        env:
+          TZ: UTC-01:00
+          POSTGRES_DB: pgeltestdb
+          POSTGRES_USER: pgeltestuser
+          POSTGRES_PASSWORD: pgeltest
+        # Set health checks to wait until postgres has started
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          # Maps tcp port 5432 on service container to the host
+          - 5432:5432
+        volumes:
+          - /var/run/postgresql:/var/run/postgresql
+
+    steps:
+      - name: Install Emacs
+        uses: purcell/setup-emacs@master
+        with:
+           version: 30.2
+
+      - name: Check out repository code
+        uses: actions/checkout@v6
+
+      - name: Run tests over TCP socket
+        run: make -C test test
+
+      - name: Run tests over local Unix socket
+        run: make -C test test-local
