@@ -864,12 +864,22 @@ test-gatewayd: test-pg.el
 # --config /opt/gatewayd.yaml --plugins-config /opt/gatewayd_plugins.yaml
 
 
-# to test: Heimdall Data: An intelligent proxy for caching, failover, and query routing in PostgreSQL setups.
-
-# to test: ShardingSphere-Proxy: Apache ShardingSphere's proxy for distributed PostgreSQL setups, handling sharding and scaling.
-
 # to test: Hoop.dev security-scanning proxy, https://github.com/hoophq/hoop
 
+
+
+# ShardingSphere-Proxy: Apache ShardingSphere's proxy for distributed PostgreSQL setups, handling
+# sharding and scaling.
+#
+# https://hub.docker.com/r/apache/shardingsphere-proxy
+# https://shardingsphere.apache.org/
+test-shardingsphere: test-pg.el
+	${DOCKER} run --rm --name shardingsphere --pull=newer \
+           --net=host \
+           -v $(shell pwd)/shardingsphere-server.yaml:/opt/shardingsphere-proxy/conf/global.yaml \
+           -v $(shell pwd)/shardingsphere-sharding.yaml:/opt/shardingsphere-proxy/conf/database-pgeltestdb.yaml \
+           docker.io/apache/shardingsphere-proxy:latest 5902
+	sleep 5
 
 
 # https://github.com/multigres/multigres
