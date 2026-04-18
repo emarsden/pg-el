@@ -3912,10 +3912,19 @@ TABLE can be a string or a schema-qualified name. Uses database connection CON."
        (if (equal maybe-comment pg-null-marker) nil maybe-comment)))
     ;; TODO: possibly some other PostgreSQL variants use the syntax "COMMENT ON TABLE tname" to
     ;; query the comment.
-    (_ (let* ((t-id (pg-escape-identifier table))
-              ;; TODO: use an SQL query that avoids escaping the table identifier.
-              (sql "SELECT obj_description($1::regclass::oid, 'pg_class')")
-              (res (pg-exec-prepared con sql `((,t-id . "text"))))
+    (_ (let* ((default-schema (if (eq (pgcon-server-variant con) 'cratedb)
+                                  "postgres"
+                                "public"))
+              (schema (if (pg-qualified-name-p table)
+                          (pg-qualified-name-schema table)
+                        default-schema))
+              (tname (if (pg-qualified-name-p table)
+                         (pg-qualified-name-name table)
+                       table))
+              (sql "SELECT obj_description(c.oid, 'pg_class') FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = $1 AND c.relname = $2")
+              (res (pg-exec-prepared con sql `((,schema . "text") (,tname . "text"))))
               (tuple (pg-result res :tuple 0))
               (maybe-comment (cl-first tuple)))
          (if (equal maybe-comment pg-null-marker) nil maybe-comment)))))
