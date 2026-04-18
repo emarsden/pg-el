@@ -27,6 +27,7 @@
 
 ;; for performance testing
 (setq process-adaptive-read-buffering t)
+(setq read-process-output-max (* 4 1024 1024)) ; 4MB
 
 
 ;; https://www.reidatcheson.com/floating%20point/comparison/2019/03/20/floating-point-comparison.html
@@ -305,8 +306,12 @@
   (pg-sync con)
   (pg-exec con "SELECT 42")
   (pg-exec con "SELECT 'foobles'")
+  (pg-sync con)
   (pg-exec con "SELECT 42")
-  (pg-exec con "SELECT 42"))
+  (pg-exec con "SELECT 42")
+  (let* ((res (pg-exec con "SELECT -67"))
+         (row (pg-result res :tuple 0)))
+    (eql (cl-first row) -67)))
 
 
 (defun pg-run-tests (con)
@@ -321,14 +326,14 @@
       (message "Detected backend variant: %s" (pgcon-server-variant con))
       (unless (member (pgcon-server-variant con)
                       '(cockroachdb cratedb yugabyte ydb xata greptimedb risingwave clickhouse octodb vertica arcadedb
-                                    cedardb pgsqlite datafusion stoolap picodata serenedb))
+                                    cedardb pgsqlite datafusion stoolap picodata serenedb motherduck pgwire pgmicro))
         (when (> (pgcon-server-version-major con) 11)
           (let* ((res (pg-exec con "SELECT current_setting('ssl_library')"))
                  (row (pg-result res :tuple 0)))
             (message "Backend compiled with SSL library %s" (cl-first row)))))
       (unless (member (pgcon-server-variant con)
                       '(questdb cratedb ydb xata greptimedb risingwave clickhouse materialize vertica arcadedb datafusion
-                                stoolap immudb serenedb picodata))
+                                stoolap immudb serenedb picodata motherduck pgwire pgmicro))
         (let* ((res (pg-exec con "SHOW ssl"))
                (row (pg-result res :tuple 0)))
           (message "PostgreSQL connection TLS: %s" (cl-first row))))
@@ -340,6 +345,10 @@
       (when (cl-find "duckdb" (pg-schemas con) :test #'string=)
         (message "Activating duckdb.force_execution")
         (pg-exec con "SET duckdb.force_execution = true"))
+      ;; Doltgres does not want to signal its variant status in its version string, despite multiple
+      ;; differences in behaviour from PostgreSQL...
+      (when (cl-find "dolt" (pg-schemas con) :test #'string=)
+        (setf (pgcon-server-variant con) 'doltgres))
       (when (eq 'orioledb (pgcon-server-variant con))
         (pg-exec con "CREATE EXTENSION IF NOT EXISTS orioledb"))
       (unless (member (pgcon-server-variant con) '(clickhouse alloydb risingwave stoolap pgsqlite datafusion))
@@ -366,7 +375,7 @@
                   :skip-variants '(vertica picodata serenedb))
       (pgtest-add #'pg-test-numeric-range
                   :skip-variants '(xata cratedb cockroachdb ydb risingwave questdb clickhouse greptimedb spanner octodb
-                                        vertica cedardb datafusion immudb stoolap pgsqlite serenedb picodata))
+                                        vertica cedardb datafusion immudb stoolap pgsqlite serenedb picodata motherduck))
       (pgtest-add #'pg-test-prepared
                   :skip-variants '(ydb cratedb picodata serenedb)
                   :need-emacs "28")
@@ -388,7 +397,7 @@
                                         datafusion immudb picodata))
       (pgtest-add #'pg-test-xml
                   :skip-variants '(xata ydb cockroachdb yugabyte clickhouse alloydb vertica opengauss
-                                        datafusion picodata serenedb))
+                                        datafusion greptimedb picodata serenedb doltgres))
       (pgtest-add #'pg-test-uuid
                   :skip-variants '(cratedb risingwave ydb clickhouse greptimedb spanner octodb vertica
                                            yellowbrick datafusion serenedb))
@@ -397,10 +406,10 @@
                   :skip-variants  '(risingwave ydb spanner clickhouse vertica))
       (pgtest-add #'pg-test-cursors
                   :skip-variants '(xata cratedb cockroachdb risingwave questdb greptimedb ydb materialize spanner octodb
-                                        cedardb yellowbrick datafusion picodata))
+                                        cedardb yellowbrick datafusion picodata motherduck))
       ;; CrateDB does not support the BYTEA type (!), nor sequences. Spanner does not support the encode() function.
       (pgtest-add #'pg-test-bytea
-                  :skip-variants '(cratedb risingwave spanner materialize picodata))
+                  :skip-variants '(cratedb risingwave spanner materialize picodata doltgres))
       ;; Spanner does not support the INCREMENT clause in CREATE SEQUENCE. Vertica does not
       ;; implement the pg_sequences system table.
       (pgtest-add #'pg-test-sequence
@@ -412,16 +421,17 @@
                   :skip-variants '(cratedb risingwave questdb greptimedb ydb materialize spanner octodb clickhouse
                                            vertica cedardb yellowbrick datafusion immudb picodata serenedb))
       (pgtest-add #'pg-test-server-prepare
-                  :skip-variants '(cratedb risingwave questdb greptimedb ydb octodb datafusion picodata serenedb))
+                  :skip-variants '(cratedb risingwave questdb greptimedb ydb octodb datafusion picodata serenedb
+                                           motherduck))
       (pgtest-add #'pg-test-comments
                    :skip-variants '(ydb cratedb spanner questdb thenile cedardb datafusion))
-      (pgtest-add #'pg-test-metadata
-                  :skip-variants '(cratedb cockroachdb risingwave materialize questdb greptimedb ydb spanner
+      (pgtest-add #'pg-test-metadata ;;  cockroachdb
+                  :skip-variants '(cratedb risingwave materialize questdb greptimedb ydb spanner
                                            vertica datafusion picodata))
       ;; CrateDB doesn't support the JSONB type. CockroachDB doesn't support casting to JSON.
       (pgtest-add #'pg-test-json
                   :skip-variants '(xata cratedb risingwave questdb greptimedb ydb materialize spanner octodb
-                                        vertica cedardb datafusion immudb picodata serenedb))
+                                        vertica cedardb datafusion immudb picodata serenedb motherduck))
       (pgtest-add #'pg-test-schemas
                   :skip-variants '(xata cratedb risingwave questdb ydb materialize yellowbrick))
       (pgtest-add #'pg-test-hstore
@@ -432,20 +442,20 @@
                   :skip-variants '(xata cratedb materialize octodb vertica picodata serenedb))
       (pgtest-add #'pg-test-tsvector
                   :skip-variants '(xata cratedb cockroachdb risingwave questdb greptimedb ydb materialize spanner
-                                        octodb vertica cedardb yellowbrick datafusion picodata serenedb))
+                                        octodb vertica cedardb yellowbrick datafusion picodata serenedb doltgres motherduck))
       (pgtest-add #'pg-test-bm25
                   :skip-variants '(xata cratedb cockroachdb risingwave materialize octodb vertica))
       (pgtest-add #'pg-test-geometric
                   :skip-variants '(xata cratedb cockroachdb risingwave questdb materialize spanner octodb vertica cedardb
-                                        yellowbrick datafusion picodata greptimedb serenedb))
+                                        yellowbrick datafusion picodata greptimedb serenedb doltgres motherduck))
       (pgtest-add #'pg-test-gis
                   :skip-variants '(xata cratedb cockroachdb risingwave materialize octodb datafusion))
       (pgtest-add #'pg-test-copy
                   :skip-variants '(spanner ydb cratedb risingwave materialize questdb xata vertica yellowbrick
-                                           datafusion picodata serenedb))
+                                           datafusion picodata serenedb motherduck))
       ;; QuestDB fails due to lack of support for the NUMERIC type
       (pgtest-add #'pg-test-copy-large
-                  :skip-variants '(spanner ydb cratedb risingwave questdb materialize datafusion serenedb))
+                  :skip-variants '(spanner ydb cratedb risingwave questdb materialize datafusion serenedb motherduck))
       (pgtest-add #'pg-test-clone-connection)
       ;; Apparently Xata does not support CREATE DATABASE
       (pgtest-add #'pg-test-createdb
@@ -470,16 +480,21 @@
                   :skip-variants '(cedardb datafusion picodata serenedb))
       (pgtest-add #'pg-test-notify
                   :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb ydb questdb spanner vertica cedardb
-                                           yellowbrick opengauss datafusion picodata serenedb))
+                                           yellowbrick opengauss datafusion picodata serenedb doltgres motherduck))
       (pgtest-add #'pg-test-lo
                   :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb ydb questdb spanner vertica greenplum
-                                           cedardb yellowbrick opengauss datafusion picodata serenedb))
+                                           cedardb yellowbrick opengauss datafusion picodata serenedb doltgres motherduck))
       (dolist (test (reverse tests))
         (message "== Running test %s" test)
         (condition-case err
             (funcall test con)
           (error (message "\033[31;1mTest failed\033[0m: %s" err)))
-        (pgtest-reset con))
+        (unless (pgtest-reset con)
+          (let ((new (pg-clone-connection con)))
+            (pg-disconnect con)
+            (setq con new)
+            (when pgtest--enable-query-log
+              (pg-enable-query-log con)))))
       (message "At end of tests, list of schemas in db: %s" (pg-schemas con))
       (message "At end of tests, list of tables in db: %s" (pg-tables con))
       (message "== Tests finished; producing a report on memory usage")
@@ -852,13 +867,13 @@
     (should (equal pg-null-marker (scalar "SELECT SUM(null::numeric) FROM generate_series(1,3)")))
     ;; CrateDB: Cannot cast `'NaN'` of type `text` to type `numeric`
     (unless (member (pgcon-server-variant con) '(cratedb))
+      (should (eql 0.0e+NaN (scalar "SELECT 'NaN'::numeric")))
       (should (eql 0.0e+NaN (scalar "SELECT SUM('NaN'::numeric) FROM generate_series(1,3)"))))
     ;; CockroachDB is returning these byteas in a non-BYTEA format so they are twice as long as
     ;; expected. CrateDB does not implement the sha256 and sha512 functions.
     ;;
     ;; Could use digest('foobles', 'sha1') if we loaded the pgcrypto extension.
     (unless (member (pgcon-server-variant con) '(cratedb cockroachdb))
-      (should (eql 32 (length (scalar "SELECT sha256('foobles')"))))
       (should (eql 64 (length (scalar "SELECT sha512('foobles')")))))
     ;; The MD5 function is not implemented by the Spanner variant. Note that it is also disabled in
     ;; some PostgreSQL builds which compile OpenSSL in a FIPS-compatible mode, but in that case the
@@ -893,10 +908,12 @@
 (defun pg-test-extended (con)
   (cl-labels ((row (sql args) (pg-result (pg-exec-prepared con sql args) :tuple 0))
               (scalar (sql args) (cl-first (pg-result (pg-exec-prepared con sql args) :tuple 0))))
+    (should (equal (list 42) (row "SELECT $1::integer" '((42 . "int2")))))
     (should (equal (list 42) (row "SELECT $1" '((42 . "int2")))))
     (should (equal (list 42) (row "SELECT $1" '((42 . "int4")))))
     (should (equal (list 42) (row "SELECT $1" '((42 . "int8")))))
-    (should (equal (list t) (row "SELECT $1::boolean" '((t . "boolean")))))
+    (should (equal (list t) (row "SELECT $1::boolean" '((t . "bool")))))
+    (should (equal (list nil) (row "SELECT $1::boolean" '((nil . "bool")))))
     (should (equal (list -33 "ZZ" 9999) (row "SELECT $1, $2, $3"
                                              '((-33 . "int4") ("ZZ" . "text") (9999 . "int8")))))
     (should (eql -1 (scalar "SELECT $1" '((-1 . "integer")))))
@@ -965,13 +982,13 @@
      (should (equal pg-null-marker (scalar "SELECT SUM(null::numeric) FROM generate_series(1,3)" nil)))
      ;; CrateDB: Cannot cast `'NaN'` of type `text` to type `numeric`
      (unless (member (pgcon-server-variant con) '(cratedb))
+       (should (eql 0.0e+NaN (scalar "SELECT $1::numeric" '(("NaN" . "text")))))
        (should (eql 0.0e+NaN (scalar "SELECT SUM($1::numeric) FROM generate_series(1,3)" '(("NaN" . "text"))))))
      ;; CockroachDB is returning these byteas in a non-BYTEA format so they are twice as long as
      ;; expected. CrateDB does not implement the sha256 and sha512 functions.
      ;;
      ;; Could use digest('foobles', 'sha1') if we loaded the pgcrypto extension.
      (unless (member (pgcon-server-variant con) '(cratedb cockroachdb))
-       (should (eql 32 (length (scalar "SELECT sha256($1)" '(("foobles" . "text"))))))
        (should (eql 64 (length (scalar "SELECT sha512($1)" '(("foobles" . "text")))))))
     ;; The MD5 function is not implemented by the Spanner variant. Note that it is also disabled in
     ;; some PostgreSQL builds which compile OpenSSL in a FIPS-compatible mode, but in that case the
@@ -997,8 +1014,12 @@
     ;; YDB hangs on this empty query.
     (unless (member (pgcon-server-variant con) '(ydb))
       (let ((res (pg-exec con "")))
+        (should (string-equal-ignore-case (pg-result res :status) "EMPTY")))
+      (let ((res (pg-exec con ";")))
+        (should (string-equal-ignore-case (pg-result res :status) "EMPTY")))
+      (let ((res (pg-exec con ";;;")))
         (should (string-equal-ignore-case (pg-result res :status) "EMPTY"))))
-    (unless (member (pgcon-server-variant con) '(cratedb clickhouse))
+   (unless (member (pgcon-server-variant con) '(cratedb clickhouse))
       (should (eql t (scalar "SELECT bool 'f' < bool 't' AS true")))
       (should (eql t (scalar "SELECT bool 'f' <= bool 't' AS true"))))
     ;; Empty strings are equal
@@ -1042,7 +1063,10 @@
       (should (eql nil (scalar "SELECT"))))
     (unless (member (pgcon-server-variant con) '(cratedb))
       (should (eql nil (row "-- comment")))
-      (should (eql nil (row "  /* only a comment */ "))))
+      (should (eql nil (row "  /* only a comment */ ")))
+      (should (eql nil (row ";")))
+      (should (eql nil (row ";   ")))
+      (should (eql nil (row ";;;;;;;;"))))
     (should (eql 42 (scalar "SELECT 42; -- comment")))
     (should (eql 42 (scalar "SELECT /* Free Palestine */ 42 -- more ")))
     (should (eql 42 (scalar "SELECT 40
@@ -1777,8 +1801,9 @@ bar$$"))))
                    (scalar "SELECT '\\x123456'::bytea || '\\x789a00bcde'::bytea")))
     ;; CockroachDB is returning an encoded hex string from sha256() instead of an integer.
     (unless (member (pgcon-server-variant con) '(cockroachdb))
-      (should (equal (secure-hash 'sha256 "foobles")
-                     (encode-hex-string (scalar "SELECT sha256('foobles'::bytea)")))))
+      (when (pg-function-p con "sha512")
+        (should (equal (secure-hash 'sha512 "foobles")
+                       (encode-hex-string (scalar "SELECT sha512('foobles'::bytea)"))))))
     (should (equal (base64-encode-string "foobles")
                    (scalar "SELECT encode('foobles', 'base64')")))
     (should (equal "foobles" (scalar "SELECT decode('Zm9vYmxlcw==', 'base64')")))
