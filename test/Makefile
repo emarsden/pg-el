@@ -446,7 +446,7 @@ test-neon: test-pg.el
 test-neon-local: test-pg.el
 	${DOCKER} run --rm --name neon \
           --pull=newer \
-          --publish 5662:5432 \
+          --publish 127.0.0.1:5662:5432 \
           docker.io/neondatabase/neon
 	sleep 5
 	${DOCKER} stop neon
@@ -465,7 +465,7 @@ test-xata: test-pg.el
 test-timescaleha: test-pg.el
 	${DOCKER} run --rm --name timescale \
            --pull=newer \
-           --publish 5981:5981 \
+           --publish 127.0.0.1:5981:5981 \
            -e POSTGRES_DB=pgeltestdb \
            -e POSTGRES_USER=pgeltestuser \
            -e POSTGRES_PASSWORD=pgeltest \
@@ -478,7 +478,7 @@ test-timescaleha: test-pg.el
 test-timescale: test-pg.el
 	${DOCKER} run --rm --name timescale \
            --pull=newer \
-           --publish 5981:5981 \
+           --publish 127.0.0.1:5981:5981 \
            -e POSTGRES_DB=pgeltestdb \
            -e POSTGRES_USER=pgeltestuser \
            -e POSTGRES_PASSWORD=pgeltest \
@@ -578,7 +578,7 @@ test-ivorysql: test-pg.el
 test-paradedb: test-pg.el
 	${DOCKER} run --rm --name paradedb \
           --pull=newer \
-	  --publish 5441:5441 \
+	  --publish 127.0.0.1:5441:5441 \
           -e POSTGRES_DB=pgeltestdb \
           -e POSTGRESQL_PORT_NUMBER=5441 \
           -e PGPORT=5441 \
@@ -597,7 +597,7 @@ test-paradedb: test-pg.el
 test-vectorchord: test-pg.el
 	${DOCKER} run --rm --name vectorchord \
           --pull=newer \
-          --publish 5778:5432 \
+          --publish 127.0.0.1:5778:5432 \
           -e POSTGRES_DB=pgeltestdb \
           -e POSTGRES_USER=pgeltestuser \
           -e POSTGRES_PASSWORD=pgeltest \
@@ -611,7 +611,7 @@ test-vectorchord: test-pg.el
 test-hydra: test-pg.el
 	${DOCKER} run --rm --name hydra \
           --pull=newer \
-          --publish 5167:5167 \
+          --publish 127.0.0.1:5167:5167 \
           -e POSTGRES_DB=pgeltestdb \
           -e POSTGRESQL_PORT_NUMBER=5167 \
           -e PGPORT=5167 \
@@ -625,13 +625,30 @@ test-hydra: test-pg.el
 	${DOCKER} stop hydra
 
 
+# https://babelfishpg.org/
+# https://hub.docker.com/r/jonathanpotts/babelfishpg
+#
+# This behaves exactly like PostgreSQL (which it is forked from).
+test-babelfish: test-pg.el
+	${DOCKER} run --rm --name babelfish \
+          --pull=newer \
+          --publish 127.0.0.1:5410:5432 \
+          -e POSTGRES_USER=pgeltestuser \
+          -e POSTGRES_PASSWORD=pgeltest \
+          -e POSTGRES_DB=pgeltestdb \
+          -d docker.io/jonathanpotts/babelfishpg:latest
+	sleep 5
+	PGURI=postgresql://babelfish_user:12345678@127.0.0.1:5410/postgres $(MAKE) test
+	${DOCKER} stop babelfish
+
+
 # Apache AGE is a graph query extension for PostgreSQL.
 #
 # https://age.apache.org/getstarted/quickstart
 test-age: test-pg.el
 	${DOCKER} run --rm --name age \
           --pull=newer \
-          -p 5455:5432 \
+          -p 127.0.0.1:5455:5432 \
           -e POSTGRES_USER=pgeltestuser \
           -e POSTGRES_PASSWORD=pgeltest \
           -e POSTGRES_DB=pgeltestdb \
@@ -707,7 +724,7 @@ test-pgedge: test-pg.el
 test-documentdb: test-pg.el
 	${DOCKER} run --rm --name documentdb \
            --pull=newer \
-           --publish 5488:5488 \
+           --publish 127.0.0.1:5488:5488 \
            -e POSTGRES_PASSWORD=pgeltest \
            -e PGPORT=5488 \
            -d ghcr.io/ferretdb/postgres-documentdb:latest
