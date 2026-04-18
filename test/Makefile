@@ -1820,9 +1820,22 @@ test-pgsqlite: test-pg.el
          git clone --depth 1 https://github.com/erans/pgsqlite && \
          cd pgsqlite && \
          cargo build)
-	(cd ${TMPBDIR}/pgsqlite && PGSQLITE_AUDIT_LOG_QUERIES=false cargo run --bin pgsqlite -- --port 7778 --log-level info --in-memory & )
+	(cd ${TMPBDIR}/pgsqlite && env PGSQLITE_AUDIT_LOG_QUERIES=false PGSQLITE_AUDIT_ENABLED=false PGSQLITE_AUDIT_LOG_AUTH=false RUST_LOG=error cargo run --bin pgsqlite -- --port 7778 --log-level error --in-memory & )
 	sleep 2
 	PGURI=postgresql://pgeltestuser@127.0.0.1:7778/pgeltestdb $(MAKE) test
+	rm -rf ${TMPBDIR}
+
+
+# https://github.com/glommer/pgmicro
+test-pgmicro: test-pg.el
+	$(eval TMPBDIR := $(shell mktemp -d -t pgmicro-buildXXXX))
+	(cd ${TMPBDIR} && \
+         git clone --depth 1 https://github.com/glommer/pgmicro && \
+         cd pgmicro && \
+         cargo build)
+	(cd ${TMPBDIR}/pgmicro/pgmicro && cargo run ':memory:' --server 127.0.0.1:5916 & )
+	sleep 5
+	PGURI=postgresql://pgeltestuser@127.0.0.1:5916/pgeltestdb $(MAKE) test
 	rm -rf ${TMPBDIR}
 
 
