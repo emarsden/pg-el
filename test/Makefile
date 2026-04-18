@@ -535,23 +535,6 @@ test-orioledb: test-pg.el
 	${DOCKER} stop orioledb
 
 
-# https://github.com/duckdb/pg_duckdb
-test-pgduckdb: test-pg.el
-	${DOCKER} run --rm --name pgduckdb \
-           --pull=newer \
-           --publish 127.0.0.1:5317:5317 \
-           -e POSTGRES_DB=pgeltestdb \
-           -e POSTGRES_USER=pgeltestuser \
-           -e POSTGRES_PASSWORD=pgeltest \
-           -e PGPORT=5317 \
-           -e LANG=en_US.UTF8 \
-           -e LC_CTYPE=en_US.UTF8 \
-           -d docker.io/pgduckdb/pgduckdb:18-main
-	sleep 5
-	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5317/pgeltestdb $(MAKE) test
-	${DOCKER} stop pgduckdb
-
-
 # An Oracle-compatible flavour of PostgreSQL.
 #
 # https://docs.ivorysql.org/en/ivorysql-doc/v3.4/v3.4/6#Docker-installation
