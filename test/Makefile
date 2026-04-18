@@ -386,13 +386,31 @@ test-certificates: test-pg.el install-deps
 	${DOCKER} volume rm pgcerts
 
 
+# A "hardened" container image by Redhat project Hummingbird
+#
+# https://quay.io/repository/hummingbird/postgresql
+test-hummingbird: test-pg.el
+	${DOCKER} run --rm --name hummingbird --pull=newer \
+           --publish 127.0.0.1:5317:5317 \
+           -e LANG=en_US.UTF8 \
+           -e LC_CTYPE=en_US.UTF8 \
+           -e POSTGRES_DB=pgeltestdb \
+           -e POSTGRES_USER=pgeltestuser \
+           -e POSTGRES_PASSWORD=pgeltest \
+           -e PGPORT=5317 \
+           -d quay.io/hummingbird/postgresql:latest
+	sleep 5
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5317/pgeltestdb $(MAKE) test
+	${DOCKER} stop hummingbird
+
+
 # https://hub.docker.com/r/stagex/user-postgresql
 #
 # This image is buggy: crun: executable file `/bin/sh` not found
 test-stagex: test-pg.el
 	${DOCKER} run --rm --name pgsql \
            --pull=newer \
-           --publish 5317:5317 \
+           --publish 127.0.0.1:5317:5317 \
            -e TZ=UTC-7:00 \
            -e LANG=en_US.UTF8 \
            -e LC_CTYPE=en_US.UTF8 \
