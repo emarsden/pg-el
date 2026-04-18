@@ -128,7 +128,7 @@ test-emacs25: test-pg.el
 # builtin assumptions that a username was a least 4 chars in length).
 test-shortnames: test-pg.el
 	${DOCKER} run --rm --name pgsql \
-	   --publish 5926:5926 \
+	   --publish 127.0.0.1:5926:5926 \
 	   -e POSTGRES_DB=d \
 	   -e POSTGRES_USER=u \
 	   -e POSTGRES_PASSWORD=~ \
@@ -171,7 +171,7 @@ test-postgresql18tls: test-pg.el
 	${DOCKER} run --rm --name pgsql \
            --pull=newer \
            -v pgcerts:/certs:U \
-           --publish 5418:5418 \
+           --publish 127.0.0.1:5418:5418 \
            -e POSTGRES_DB=pgeltestdb \
            -e POSTGRES_USER=pgeltestuser \
            -e POSTGRES_PASSWORD=pgeltest \
@@ -192,7 +192,7 @@ test-postgresql18tls: test-pg.el
 test-postgresql18: test-pg.el
 	${DOCKER} run --rm --name pgsql \
            --pull=newer \
-           --publish 5418:5418 \
+           --publish 127.0.0.1:5418:5418 \
            -e POSTGRES_DB=pgeltestdb \
            -e POSTGRES_USER=pgeltestuser \
            -e POSTGRES_PASSWORD=pgeltest \
@@ -206,7 +206,7 @@ test-postgresql18: test-pg.el
 test-postgresql17: test-pg.el
 	${DOCKER} run --rm --name pgsql \
            --pull=newer \
-	   --publish 5426:5426 \
+	   --publish 127.0.0.1:5426:5426 \
 	   -e POSTGRES_DB=pgeltestdb \
 	   -e POSTGRES_USER=pgeltestuser \
 	   -e POSTGRES_PASSWORD=pgeltest \
@@ -220,7 +220,7 @@ test-postgresql17: test-pg.el
 test-postgresql16: test-pg.el
 	${DOCKER} run --rm --name pgsql \
            --pull=newer \
-	   --publish 5416:5416 \
+	   --publish 127.0.0.1:5416:5416 \
 	   -e POSTGRES_DB=pgeltestdb \
 	   -e POSTGRES_USER=pgeltestuser \
 	   -e POSTGRES_PASSWORD=pgeltest \
@@ -234,7 +234,7 @@ test-postgresql16: test-pg.el
 test-postgresql15: test-pg.el
 	${DOCKER} run --rm --name pgsql \
            --pull=newer \
-	   --publish 5116:5116 \
+	   --publish 127.0.0.1:5116:5116 \
 	   -e POSTGRES_DB=pgeltestdb \
 	   -e POSTGRES_USER=pgeltestuser \
 	   -e POSTGRES_PASSWORD=pgeltest \
@@ -247,7 +247,7 @@ test-postgresql15: test-pg.el
 test-postgresql14: test-pg.el
 	${DOCKER} run --rm --name pgsql \
            --pull=newer \
-	   --publish 5439:5439 \
+	   --publish 127.0.0.1:5439:5439 \
 	   -e POSTGRES_DB=pgeltestdb \
 	   -e POSTGRES_USER=pgeltestuser \
 	   -e POSTGRES_PASSWORD=pgeltest \
@@ -259,7 +259,7 @@ test-postgresql14: test-pg.el
 
 test-postgresql13: test-pg.el
 	${DOCKER} run --rm --name pgsql \
-	   --publish 5439:5439 \
+	   --publish 127.0.0.1:5439:5439 \
 	   -e POSTGRES_DB=pgeltestdb \
 	   -e POSTGRES_USER=pgeltestuser \
 	   -e POSTGRES_PASSWORD=pgeltest \
@@ -271,7 +271,7 @@ test-postgresql13: test-pg.el
 
 test-postgresql12: test-pg.el
 	${DOCKER} run --rm --name pgsql \
-	   --publish 5439:5439 \
+	   --publish 127.0.0.1:5439:5439 \
 	   -e POSTGRES_DB=pgeltestdb \
 	   -e POSTGRES_USER=pgeltestuser \
 	   -e POSTGRES_PASSWORD=pgeltest \
@@ -283,7 +283,7 @@ test-postgresql12: test-pg.el
 
 test-postgresql11: test-pg.el
 	${DOCKER} run --rm --name pgsql \
-	   --publish 5437:5437 \
+	   --publish 127.0.0.1:5437:5437 \
 	   -e POSTGRES_DB=pgeltestdb \
 	   -e POSTGRES_USER=pgeltestuser \
 	   -e POSTGRES_PASSWORD=pgeltest \
@@ -301,7 +301,7 @@ test-postgresql11: test-pg.el
 test-enterprisedb: test-pg.el
 	${DOCKER} run --rm --name edb \
            --pull=newer \
-	   --publish 5366:5366 \
+	   --publish 127.0.0.1:5366:5366 \
 	   -e TZ=UTC-7:00 \
 	   -e LANG=en_US.UTF8 \
 	   -e LC_CTYPE=en_US.UTF8 \
@@ -367,7 +367,7 @@ test-certificates: test-pg.el install-deps
 	${DOCKER} volume import pgcerts ${WORKDIR}/certs.tar
 	${DOCKER} run --rm --name pgsqltls \
 	   -v pgcerts:/certs:U \
-	   --publish 5488:5488 \
+	   --publish 127.0.0.1:5488:5488 \
 	   -e POSTGRESQL_PORT_NUMBER=5488 \
 	   -e POSTGRESQL_DATABASE=pgeltestdb \
 	   -e POSTGRESQL_USERNAME=pgeltestuser \
