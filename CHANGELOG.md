@@ -1,12 +1,12 @@
 # Changelog
 
-## [0.65] - Unreleased
+## [0.65] - 2026-04-18
 
 - Implement `pg-table-owner` and `pg-databases` for PostgreSQL variant Picodata.
 
 - Implement `pg-databases` for PostgreSQL variant Clickhouse.
 
-- Recognize PostgreSQL variant PGDuckDB, for function `pgcon-server-variant`.
+- Add code to detect PostgreSQL variant PGDuckDB, for function `pgcon-server-variant`.
 
 - Tests: add tests for the extended query protocol.
 
