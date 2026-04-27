@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+- Expose the latest `ReadyForQuery` transaction status on connections via
+  `pgcon-transaction-status`.
+
+
 ## [0.65] - 2026-04-18
 
 - Implement `pg-table-owner` and `pg-databases` for PostgreSQL variant Picodata.
