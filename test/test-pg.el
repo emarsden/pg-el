@@ -356,6 +356,7 @@
       (unless (member (pgcon-server-variant con) '(clickhouse risingwave stoolap arcadedb pgsqlite picodata))
         (pg-vector-setup con))
       (pgtest-add #'pg-test-basic)
+      (pgtest-add #'pg-test-transaction-status)
       (pgtest-add #'pg-test-extended)
       (pgtest-add #'pg-test-insert)
       (pgtest-add #'pg-test-edge-cases)
@@ -782,6 +783,21 @@
 ;; https://github.com/postgres/postgres/blob/master/src/test/regress/sql/insert.sql
 ;;
 ;; https://github.com/denodrivers/postgres/blob/main/tests/data_types_test.ts
+(defun pg-test-transaction-status (con)
+  (should (eql ?I (pgcon-transaction-status con)))
+  (pg-exec con "SELECT 1")
+  (should (eql ?I (pgcon-transaction-status con)))
+  (when (eq 'postgresql (pgcon-server-variant con))
+    (unwind-protect
+        (progn
+          (pg-exec con "BEGIN")
+          (should (eql ?T (pgcon-transaction-status con)))
+          (should-error (pg-exec con "SELECT 1/0") :type 'pg-error)
+          (should (eql ?E (pgcon-transaction-status con))))
+      (ignore-errors (pg-exec con "ROLLBACK")))
+    (should (eql ?I (pgcon-transaction-status con)))))
+
+
 (defun pg-test-basic (con)
   (cl-labels ((row (sql) (pg-result (pg-exec con sql) :tuple 0))
               (scalar (sql) (cl-first (pg-result (pg-exec con sql) :tuple 0))))

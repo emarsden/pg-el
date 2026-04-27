@@ -298,7 +298,10 @@ SQL queries. To avoid this overhead on establishing a connection, remove
     :accessor pgcon-connect-info)
    (connect-plist
     :initform nil
-    :accessor pgcon-connect-plist)))
+    :accessor pgcon-connect-plist)
+   (transaction-status
+    :initform nil
+    :accessor pgcon-transaction-status)))
 
 (defun make-pgcon (&rest args)
   (apply #'make-instance (cons 'pgcon args)))
@@ -329,6 +332,14 @@ SQL queries. To avoid this overhead on establishing a connection, remove
 (defun pg-connection-busy-p (con)
   (with-current-buffer (process-buffer (pgcon-process con))
     pgcon--busy))
+
+(defun pg--set-transaction-status (con status)
+  "Store the latest ReadyForQuery transaction STATUS for CON.
+STATUS is one of ?I, ?T or ?E, as defined by the PostgreSQL wire
+protocol."
+  (setf (pgcon-transaction-status con) status)
+  (when (eql ?E status)
+    (message "PostgreSQL ReadyForQuery message with error status")))
 
 (defun pg-enable-query-log (con)
   "Enable logging of PostgreSQL queries on connection CON.
@@ -634,10 +645,12 @@ presented to the user."
       (let ((c (pg--read-char con)))
         (unless (member c '(?Z ?E))
           (message "Unexpected message type after ErrorMsg (error was %s): %s" e c)
-          (pg--unread-char con)))
-      ;; Read message length then status, which we discard.
-      (pg--read-net-int con 4)
-      (pg--read-char con))
+          (pg--unread-char con))
+        ;; Read message length then status.
+        (pg--read-net-int con 4)
+        (let ((status (pg--read-char con)))
+          (when (eql ?Z c)
+            (pg--set-transaction-status con status)))))
     (let ((msg (format "%s%s: %s (%s)"
                        (pgerror-severity e)
                        (if context (concat " " context) "")
@@ -788,8 +801,7 @@ Uses database DBNAME, user USER and password PASSWORD."
       (let ((_msglen (pg--read-net-int con 4))
             (status (pg--read-char con)))
         ;; status is 'I' or 'T' or 'E', Idle or InTransaction or Error
-        (when (eql ?E status)
-          (message "PostgreSQL ReadyForQuery message with error status"))
+        (pg--set-transaction-status con status)
         (and (not pg-disable-type-coercion)
              (zerop (hash-table-count (pgcon-parser-by-oid con)))
              (pg-initialize-parsers con))
@@ -1705,8 +1717,7 @@ Return a result structure which can be decoded using `pg-result'."
              (let ((_msglen (pg--read-net-int con 4))
                    (status (pg--read-char con)))
                ;; status is 'I' or 'T' or 'E', Idle or InTransaction or Error
-               (when (eql ?E status)
-                 (message "PostgreSQL ReadyForQuery message with error status"))
+               (pg--set-transaction-status con status)
                (setf (pgresult-tuples result) (nreverse tuples))
                (setf (pgresult-attributes result) attributes)
                (pg-connection-set-busy con nil)
@@ -2090,8 +2101,7 @@ Returns a pgresult structure (see function `pg-result')."
         (let ((_msglen (pg--read-net-int con 4))
               (status (pg--read-char con)))
           ;; status is 'I' or 'T' or 'E', Idle or InTransaction or Error
-          (when (eql ?E status)
-            (message "PostgreSQL ReadyForQuery message with error status"))
+          (pg--set-transaction-status con status)
           (setf (pgresult-tuples result) (nreverse tuples))
           (pg-connection-set-busy con nil)
           (cl-return-from pg-fetch result)))
@@ -2210,8 +2220,7 @@ Uses PostgreSQL connection CON."
         (let ((_msglen (pg--read-net-int con 4))
               (status (pg--read-char con)))
           ;; status is 'I' or 'T' or 'E'
-          (when (eql ?E status)
-            (message "PostgreSQL ReadyForQuery message with error status"))
+          (pg--set-transaction-status con status)
           (cl-return-from pg-close-portal nil)))
 
        (t
@@ -2350,8 +2359,7 @@ can be decoded using `pg-result'."
        (?Z
         (let ((_msglen (pg--read-net-int con 4))
               (status (pg--read-char con)))
-          (when (eql ?E status)
-            (message "PostgreSQL ReadyForQuery message with error status"))
+          (pg--set-transaction-status con status)
           (pg--trim-connection-buffers con)
           (pg-connection-set-busy con nil)
           (cl-return-from pg-copy-from-buffer result)))
@@ -2476,8 +2484,7 @@ can be decoded using `pg-result', but with data in BUF."
          (?Z
           (let ((_msglen (pg--read-net-int con 4))
                 (status (pg--read-char con)))
-            (when (eql ?E status)
-              (message "PostgreSQL ReadyForQuery message with error status"))
+            (pg--set-transaction-status con status)
             (pg--trim-connection-buffers con)
             (pg-connection-set-busy con nil)
             (cl-return-from pg-copy-to-buffer result)))
@@ -2542,8 +2549,7 @@ can be decoded using `pg-result', but with data in BUF."
      (?Z
       (let ((_msglen (pg--read-net-int con 4))
             (status (pg--read-char con)))
-        (when (eql ?E status)
-          (message "PostgreSQL ReadyForQuery message with error status"))
+        (pg--set-transaction-status con status)
         (pg-connection-set-busy con nil)
         (cl-return-from pg-sync nil)))
 
