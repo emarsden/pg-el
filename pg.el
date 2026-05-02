@@ -2704,7 +2704,12 @@ PostgreSQL and Emacs. CON should no longer be used."
             (pcase (pgcon-server-variant con)
               ('stoolap "pg_type")
               (_ "pg_catalog.pg_type")))
-           (sql (format "SELECT typname,oid FROM %s WHERE typname IN (%s)"
+           ;; We order by reverse typnamespace to ensure that PostgreSQL builtin types are listed
+           ;; last, and therefore override any user-defined types with the same name in our
+           ;; oid-by-typname hashtable. PostgreSQL makes it possible to define a rowtype
+           ;; (user-defined composite type) with the name 'text', for example, which could otherwise
+           ;; interfere with our type serialization functions.
+           (sql (format "SELECT typname,oid FROM %s WHERE typname IN (%s) ORDER BY typnamespace DESC"
                         pg-type (string-join qnames ",")))
            (res (ignore-errors (pg-exec con sql)))
            (pgtypes (and res (pg-result res :tuples)))
