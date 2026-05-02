@@ -446,7 +446,8 @@ tag called pg-finished."
     (unless pgcon--busy
       (when (and (eql ?A (aref data 0))
                  (eql 0 (aref data 1)))
-        (let ((msglen 0))
+        (let ((msglen 0)
+              (data-length (string-bytes data)))
           ;; read a net int in 4 octets representing the message length
           (setq msglen (+ (* 256 msglen) (aref data 1)))
           (setq msglen (+ (* 256 msglen) (aref data 2)))
@@ -454,10 +455,10 @@ tag called pg-finished."
           (setq msglen (+ (* 256 msglen) (aref data 4)))
           ;; We parse the channel and payload if we received a full NotificationResponse. msglen is one
           ;; less than the size of data due to the ?A message tag.
-          (when (eql (1+ msglen) (length data))
+          (when (eql (1+ msglen) data-length)
             ;; ignore a net int in 4 octets representing notifying backend PID
-            (let* ((channel-end-pos (cl-position 0 data :start 9 :end (length data)))
-                   (payload-end-pos (cl-position 0 data :start (1+ channel-end-pos) :end (length data)))
+            (let* ((channel-end-pos (cl-position 0 data :start 9 :end data-length))
+                   (payload-end-pos (cl-position 0 data :start (1+ channel-end-pos) :end data-length))
                    (channel (cl-subseq data 9 channel-end-pos))
                    (payload (cl-subseq data (1+ channel-end-pos) payload-end-pos)))
               (dolist (handler pgcon--notification-handlers)
@@ -717,14 +718,14 @@ Uses database DBNAME, user USER and password PASSWORD."
   ;; send the StartupMessage, as per https://www.postgresql.org/docs/current/protocol-message-formats.html
   (pg-connection-set-busy con t)
   (let ((packet-octets (+ 4 2 2
-                          (1+ (length "user"))
-                          (1+ (length user))
-                          (1+ (length "database"))
-                          (1+ (length dbname))
-                          (1+ (length "application_name"))
-                          (1+ (length pg-application-name))
-                          (1+ (length "client_encoding"))
-                          (1+ (length "UTF8"))
+                          (1+ (string-bytes "user"))
+                          (1+ (string-bytes user))
+                          (1+ (string-bytes "database"))
+                          (1+ (string-bytes dbname))
+                          (1+ (string-bytes "application_name"))
+                          (1+ (string-bytes pg-application-name))
+                          (1+ (string-bytes "client_encoding"))
+                          (1+ (string-bytes "UTF8"))
                           1)))
     (pg--send-uint con packet-octets 4)
     (pg--send-uint con 3 2)              ; Protocol major version = 3
@@ -822,7 +823,7 @@ Uses database DBNAME, user USER and password PASSWORD."
           (3
            ;; send a PasswordMessage
            (pg--send-char con ?p)
-           (pg--send-uint con (+ 5 (length password)) 4)
+           (pg--send-uint con (+ 5 (string-bytes password)) 4)
            (pg--send-string con password)
            (pg-flush con))
 
@@ -851,7 +852,7 @@ Uses database DBNAME, user USER and password PASSWORD."
              (val (cl-second items)))
         ;; ParameterStatus items sent by the backend include application_name,
         ;; DateStyle, in_hot_standby, integer_datetimes
-        (when (> (length key) 0)
+        (when (> (string-bytes key) 0)
           (when (string= "server_version" key)
             ;; We need to accept a version string of the form "17beta1" as well as "16.1"
             (let* ((major (cl-first (split-string val "\\.")))
@@ -1234,7 +1235,7 @@ keywords are `host', `hostaddr', `port', `dbname', `user', `password',
          (params (cl-loop
                   for c in components
                   for param-val = (split-string c "=" t "\s")
-                  unless (eql 2 (length param-val))
+                  unless (eql 2 (string-bytes param-val))
                   do (signal 'pg-user-error (list (message "Invalid connection string component %s" c)))
                   collect (cons (cl-first param-val) (cl-second param-val))))
          (host (or (cdr (assoc "host" params))
@@ -1467,7 +1468,7 @@ paramspec keywords are `sslmode' (partial support), `connect_timeout',
            (options (or (cadr (assoc "options" params))
                         (getenv "PGOPTIONS"))))
       ;; If the host is empty or looks like an absolute pathname, connect over Unix-domain socket.
-      (let ((con (if (or (zerop (length host))
+      (let ((con (if (or (zerop (string-bytes host))
                          (eq ?/ (aref host 0)))
                      (pg-connect-local host dbname user password)
                    (pg-connect-plist dbname user
@@ -1577,7 +1578,7 @@ Return a result structure which can be decoded using `pg-result'."
       (when noninteractive
         (message "SQL:> %s" sql)))
     (pg--trim-connection-buffers con)
-    (let ((len (length encoded)))
+    (let ((len (string-bytes encoded)))
       (when (> len (- (expt 2 32) 5))
         (signal 'pg-user-error (list "Query is too large")))
       (pg--send-char con ?Q)
@@ -1662,7 +1663,7 @@ Return a result structure which can be decoded using `pg-result'."
                     (items (split-string msg (unibyte-string 0))))
                ;; ParameterStatus items sent by the backend include application_name,
                ;; DateStyle, TimeZone, in_hot_standby, integer_datetimes
-               (when (> (length (cl-first items)) 0)
+               (when (> (string-bytes (cl-first items)) 0)
                  (dolist (handler pg-parameter-change-functions)
                    (funcall handler con (cl-first items) (cl-second items))))))
 
@@ -1867,7 +1868,7 @@ Returns the prepared statement name (a string)."
     (let* ((ce (pgcon-client-encoding con))
            (query/enc (if ce (encode-coding-string query ce t) query))
            (oids (mapcar #'oid-for argument-types))
-           (len (+ 4 (1+ (length name)) (1+ (length query/enc)) 2 (* 4 (length oids)))))
+           (len (+ 4 (1+ (string-bytes name)) (1+ (string-bytes query/enc)) 2 (* 4 (length oids)))))
       ;; send a Parse message
       (pg-connection-set-busy con t)
       (pg--send-char con ?P)
@@ -1905,12 +1906,12 @@ Uses PostgreSQL connection CON."
                                  (encoded (if ce (encode-coding-string raw ce t) raw)))
                             (cons encoded 0))))))
          (len (+ 4
-                 (1+ (length portal))
-                 (1+ (length statement-name))
+                 (1+ (string-bytes portal))
+                 (1+ (string-bytes statement-name))
                  2
                  (* 2 (length argument-types))
                  2
-                 (cl-loop for v in (mapcar #'car serialized-values) sum (+ 4 (length v)))
+                 (cl-loop for v in (mapcar #'car serialized-values) sum (+ 4 (string-bytes v)))
                  2)))
     (when (> len (expt 2 32))
       (signal 'pg-user-error (list "Field is too large")))
@@ -1929,7 +1930,7 @@ Uses PostgreSQL connection CON."
      do (if (null v)
             ;; for a null value, send -1 followed by zero octets for the value
             (pg--send-uint con -1 4)
-          (let ((len (length v)))
+          (let ((len (string-bytes v)))
             (when (> len (expt 2 32))
               (signal 'pg-user-error (list "Field is too large")))
             (pg--send-uint con len 4)
@@ -1952,7 +1953,7 @@ Uses PostgreSQL connection CON."
 (cl-defun pg-execute (con portal &key (max-rows 0))
   (let* ((ce (pgcon-client-encoding con))
          (pn/encoded (if ce (encode-coding-string portal ce t) portal))
-         (len (+ 4 (1+ (length pn/encoded)) 4)))
+         (len (+ 4 (1+ (string-bytes pn/encoded)) 4)))
     ;; send an Execute message
     (pg--send-char con ?E)
     (pg--send-uint con len 4)
@@ -2019,7 +2020,7 @@ Returns a pgresult structure (see function `pg-result')."
                (val (cl-second items)))
           ;; ParameterStatus items sent by the backend include application_name,
           ;; DateStyle, in_hot_standby, integer_datetimes
-          (when (> (length key) 0)
+          (when (> (string-bytes key) 0)
             (dolist (handler pg-parameter-change-functions)
               (funcall handler con key val)))))
 
@@ -2170,7 +2171,7 @@ the query plan."
 (cl-defun pg-close-portal (con portal)
   "Close the portal named PORTAL that was opened by `pg-exec-prepared'.
 Uses PostgreSQL connection CON."
-  (let ((len (+ 4 1 (1+ (length portal)))))
+  (let ((len (+ 4 1 (1+ (string-bytes portal)))))
     ;; send a Close message
     (pg--send-char con ?C)
     (pg--send-uint con len 4)
@@ -2229,7 +2230,7 @@ can be decoded using `pg-result'."
   (pg-connection-set-busy con t)
   (let ((result (make-pgresult :connection con))
         (ce (pgcon-client-encoding con))
-        (len (length query)))
+        (len (string-bytes query)))
     (when (> len (expt 2 32))
       (signal 'pg-user-error (list "Query is too large")))
     (pg--send-char con ?Q)
@@ -2279,7 +2280,7 @@ can be decoded using `pg-result'."
              (let* ((msglen (pg--read-net-int con 4))
                     (msg (pg--read-chars con (- msglen 4)))
                     (items (split-string msg (unibyte-string 0))))
-               (when (> (length (cl-first items)) 0)
+               (when (> (string-bytes (cl-first items)) 0)
                  (dolist (handler pg-parameter-change-functions)
                    (funcall handler con (cl-first items) (cl-second items))))))
 
@@ -2300,7 +2301,7 @@ can be decoded using `pg-result'."
                  (encoded (if ce (encode-coding-string data ce t) data)))
             ;; a CopyData message with the encoded data
             (pg--send-char con ?d)
-            (pg--send-uint con (+ 4 (length encoded)) 4)
+            (pg--send-uint con (+ 4 (string-bytes encoded)) 4)
             (pg--send-octets con encoded)
             (pg-flush con)))))
     ;; send a CopyDone message
@@ -2373,7 +2374,7 @@ can be decoded using `pg-result', but with data in BUF."
   (pg-connection-set-busy con t)
   (let ((result (make-pgresult :connection con)))
     (pg--send-char con ?Q)
-    (pg--send-uint con (+ 4 (length query) 1) 4)
+    (pg--send-uint con (+ 4 (string-bytes query) 1) 4)
     (pg--send-string con query)
     (pg-flush con)
     (let ((more-pending t))
@@ -2416,7 +2417,7 @@ can be decoded using `pg-result', but with data in BUF."
              (let* ((msglen (pg--read-net-int con 4))
                     (msg (pg--read-chars con (- msglen 4)))
                     (items (split-string msg (unibyte-string 0))))
-               (when (> (length (cl-first items)) 0)
+               (when (> (string-bytes (cl-first items)) 0)
                  (dolist (handler pg-parameter-change-functions)
                    (funcall handler con (cl-first items) (cl-second items))))))
 
@@ -2616,25 +2617,26 @@ The cancellation request concerns the command requested over connection CON."
 This command should be used when you have finished with the database.
 It will release memory used to buffer the data transfered between
 PostgreSQL and Emacs. CON should no longer be used."
-  ;; send a Terminate message
-  (pg-connection-set-busy con t)
-  ;; If we use the immediate-output mode of sending data to PostgreSQL (instead of the buffer-output
-  ;; mode), PostgreSQL can close the network connection before we have finished flushing the output.
-  ;; This triggers an Emacs error, which we don't want to propagate to the caller here.
-  (ignore-errors
-    (pg--send-char con ?X)
-    (pg--send-uint con 4 4)
-    (pg-flush con))
   (let ((process (pgcon-process con)))
-    (delete-process process)
-    (kill-buffer (process-buffer process))
-    (kill-buffer (pgcon-output-buffer con)))
-  (when (pgcon-query-log con)
-    (kill-buffer (pgcon-query-log con)))
-  (clrhash (pgcon-parser-by-oid con))
-  (clrhash (pgcon-typname-by-oid con))
-  (clrhash (pgcon-oid-by-typname con))
-  nil)
+    (when (process-live-p process)
+      (pg-connection-set-busy con t)
+      ;; If we use the immediate-output mode of sending data to PostgreSQL (instead of the buffer-output
+      ;; mode), PostgreSQL can close the network connection before we have finished flushing the output.
+      ;; This triggers an Emacs error, which we don't want to propagate to the caller here.
+      (ignore-errors
+        ;; send a Terminate message
+        (pg--send-char con ?X)
+        (pg--send-uint con 4 4)
+        (pg-flush con))
+      (delete-process process)
+      (kill-buffer (pgcon-output-buffer con))
+      (kill-buffer (process-buffer process))
+      (when (pgcon-query-log con)
+        (kill-buffer (pgcon-query-log con)))
+      (clrhash (pgcon-parser-by-oid con))
+      (clrhash (pgcon-typname-by-oid con))
+      (clrhash (pgcon-oid-by-typname con))
+      nil)))
 
 
 
@@ -2901,7 +2903,7 @@ the PostgreSQL connection CON."
   (declare (speed 3))
   (if (string= "NULL" str)
       pg-null-marker
-    (let* ((len (length str))
+    (let* ((len (string-bytes str))
            (bv (make-bool-vector len t)))
       (dotimes (i len)
         (setf (aref bv i) (eql ?1 (aref str i))))
@@ -2922,7 +2924,7 @@ the PostgreSQL connection CON."
 ;; character(n) datatype specifier, which is fixed-length and blank-padded. Note that we return
 ;; either a single character or a string.
 (defun pg-char-parser (str encoding)
-  (let ((len (length str)))
+  (let ((len (string-bytes str)))
     (cond ((zerop len)
            (signal 'pg-protocol-error (list "Unexpected zero-length char data")))
           ((eql 1 len)
@@ -3019,9 +3021,9 @@ Return nil if the extension could not be loaded."
                 (if (string= "NULL" v)
                     nil
                   (unless (and (eql ?\" (aref v 0))
-                               (eql ?\" (aref v (1- (length v)))))
+                               (eql ?\" (aref v (1- (string-bytes v)))))
                     (signal 'pg-protocol-error '("Unexpected format for HSTORE content")))
-                  (pg-text-parser (substring v 1 (1- (length v))) encoding))))
+                  (pg-text-parser (substring v 1 (1- (string-bytes v))) encoding))))
       (let ((hstore (make-hash-table :test #'equal)))
         (dolist (segment (split-string str "," t "\s+"))
           (let* ((kv (split-string segment "=>" t "\s+")))
@@ -3073,12 +3075,12 @@ Return nil if the extension could not be loaded."
               (if (string= "NULL" str)
                   pg-null-marker
                 (cl-parse-integer str))))
-    (let ((len (length str)))
+    (let ((len (string-bytes str)))
       (unless (and (eql (aref str 0) ?{)
                    (eql (aref str (1- len)) ?}))
         (signal 'pg-protocol-error (list "Unexpected format for int array")))
       (let ((maybe-items (cl-subseq str 1 (- len 1))))
-        (if (zerop (length maybe-items))
+        (if (zerop (string-bytes maybe-items))
             (vector)
           (let ((items (split-string maybe-items ",")))
             (apply #'vector (mapcar #'parse-int items))))))))
@@ -3090,12 +3092,12 @@ Return nil if the extension could not be loaded."
 
 (defun pg-floatarray-parser (str _encoding)
   "Parse PostgreSQL value STR as an array of floats."
-  (let ((len (length str)))
+  (let ((len (string-bytes str)))
     (unless (and (eql (aref str 0) ?{)
                  (eql (aref str (1- len)) ?}))
       (signal 'pg-protocol-error (list "Unexpected format for float array")))
     (let ((maybe-items (cl-subseq str 1 (- len 1))))
-      (if (zerop (length maybe-items))
+      (if (zerop (string-bytes maybe-items))
           (vector)
         (let ((items (split-string maybe-items ",")))
           (apply #'vector (mapcar (lambda (x) (pg-float-parser x nil)) items)))))))
@@ -3106,12 +3108,12 @@ Return nil if the extension could not be loaded."
 
 (defun pg-boolarray-parser (str _encoding)
   "Parse PostgreSQL value STR as an array of boolean values."
-  (let ((len (length str)))
+  (let ((len (string-bytes str)))
     (unless (and (eql (aref str 0) ?{)
                  (eql (aref str (1- len)) ?}))
       (signal 'pg-protocol-error (list "Unexpected format for bool array")))
     (let ((maybe-items (cl-subseq str 1 (- len 1))))
-      (if (zerop (length maybe-items))
+      (if (zerop (string-bytes maybe-items))
           (vector)
         (let ((items (split-string maybe-items ",")))
           (apply #'vector (mapcar (lambda (x) (pg-bool-parser x nil)) items)))))))
@@ -3120,12 +3122,12 @@ Return nil if the extension could not be loaded."
 
 (defun pg-chararray-parser (str encoding)
   "Parse PostgreSQL value STR as an array of characters using ENCODING."
-  (let ((len (length str)))
+  (let ((len (string-bytes str)))
     (unless (and (eql (aref str 0) ?{)
                  (eql (aref str (1- len)) ?}))
       (signal 'pg-protocol-error (list "Unexpected format for char array")))
     (let ((maybe-items (cl-subseq str 1 (- len 1))))
-      (if (zerop (length maybe-items))
+      (if (zerop (string-bytes maybe-items))
           (vector)
         (let ((items (split-string maybe-items ",")))
           (apply #'vector (mapcar (lambda (x) (pg-char-parser x encoding)) items)))))))
@@ -3136,12 +3138,12 @@ Return nil if the extension could not be loaded."
 (defun pg-textarray-parser (str encoding)
   "Parse PostgreSQL value STR as an array of TEXT values.
 Uses text encoding ENCODING."
-  (let ((len (length str)))
+  (let ((len (string-bytes str)))
     (unless (and (eql (aref str 0) ?{)
                  (eql (aref str (1- len)) ?}))
       (signal 'pg-protocol-error (list "Unexpected format for text array")))
     (let ((maybe-items (cl-subseq str 1 (- len 1))))
-      (if (zerop (length maybe-items))
+      (if (zerop (string-bytes maybe-items))
           (vector)
         (let ((items (split-string maybe-items ",")))
           (apply #'vector (mapcar (lambda (x) (pg-text-parser x encoding)) items)))))))
@@ -3166,7 +3168,7 @@ Uses text encoding ENCODING."
   "Parse PostgreSQL value STR as a numerical range."
   (if (string= "empty" str)
       (list :range)
-    (let* ((len (length str))
+    (let* ((len (string-bytes str))
            (lower-type (aref str 0))
            (upper-type (aref str (1- len))))
       (unless (and (cl-find lower-type "[(")
@@ -3176,8 +3178,8 @@ Uses text encoding ENCODING."
              (lower-str (nth 0 segments))
              (upper-str (nth 1 segments))
              ;; if the number is empty, that's a NULL lower or upper bound
-             (lower (if (zerop (length lower-str)) nil (string-to-number lower-str)))
-             (upper (if (zerop (length upper-str)) nil (string-to-number upper-str))))
+             (lower (if (zerop (string-bytes lower-str)) nil (string-to-number lower-str)))
+             (upper (if (zerop (string-bytes upper-str)) nil (string-to-number upper-str))))
         (unless (eql 2 (length segments))
           (signal 'pg-protocol-error '("Unexpected number of elements in numerical range")))
         (list :range lower-type lower upper-type upper)))))
@@ -3191,12 +3193,12 @@ Uses text encoding ENCODING."
 (defun pg-uuidarray-parser (str encoding)
   "Parse PostgreSQL value STR as an array of UUID values.
 Uses text encoding ENCODING."
-  (let ((len (length str)))
+  (let ((len (string-bytes str)))
     (unless (and (eql (aref str 0) ?{)
                  (eql (aref str (1- len)) ?}))
       (signal 'pg-protocol-error (list "Unexpected format for UUID array")))
     (let ((maybe-items (cl-subseq str 1 (- len 1))))
-      (if (zerop (length maybe-items))
+      (if (zerop (string-bytes maybe-items))
           (vector)
         (let ((items (split-string maybe-items ",")))
           (apply #'vector (mapcar (lambda (x) (pg-text-parser x encoding)) items)))))))
@@ -3217,12 +3219,12 @@ Uses text encoding ENCODING."
 
 (defun pg-datearr-parser (str _encoding)
   "Parse PostgreSQL value STR as an array of date values."
-  (let ((len (length str)))
+  (let ((len (string-bytes str)))
     (unless (and (eql (aref str 0) ?{)
                  (eql (aref str (1- len)) ?}))
       (signal 'pg-protocol-error (list "Unexpected format for array")))
     (let ((maybe-items (cl-subseq str 1 (- len 1))))
-      (if (zerop (length maybe-items))
+      (if (zerop (string-bytes maybe-items))
           (vector)
         (let ((items (split-string maybe-items ",")))
           (apply #'vector (mapcar (lambda (x) (pg-date-parser x nil)) items)))))))
@@ -3285,12 +3287,12 @@ Uses text encoding ENCODING."
 ;; This is usable for time, timespan etc. types that we currently parse as strings.
 (defun pg-timearr-parser (str _encoding)
   "Parse PostgreSQL value STR as an array of time or date values."
-  (let ((len (length str)))
+  (let ((len (string-bytes str)))
     (unless (and (eql (aref str 0) ?{)
                  (eql (aref str (1- len)) ?}))
       (signal 'pg-protocol-error (list "Unexpected format for array")))
     (let ((maybe-items (cl-subseq str 1 (- len 1))))
-      (if (zerop (length maybe-items))
+      (if (zerop (string-bytes maybe-items))
           (vector)
         (let ((items (split-string maybe-items ",")))
           (apply #'vector (mapcar (lambda (x) (pg-text-parser x nil)) items)))))))
@@ -3379,7 +3381,7 @@ Return nil if the extension could not be set up."
 ;; 0.039211094, 0.02235647]"
 (pg-register-parser "vector"
   (lambda (s _e)
-    (let ((len (length s)))
+    (let ((len (string-bytes s)))
       (unless (and (eql (aref s 0) ?\[)
                    (eql (aref s (1- len)) ?\]))
         (signal 'pg-protocol-error (list "Unexpected format for VECTOR embedding")))
@@ -3634,7 +3636,7 @@ zero-argument function that returns a string."
          (pwdhash (md5 (concat password-string user)))
          (hash (concat "md5" (md5 (concat pwdhash salt)))))
     (pg--send-char con ?p)
-    (pg--send-uint con (+ 5 (length hash)) 4)
+    (pg--send-uint con (+ 5 (string-bytes hash)) 4)
     (pg--send-string con hash)
     (pg-flush con)))
 
@@ -3647,8 +3649,8 @@ zero-argument function that returns a string."
 (defun pg-logxor-string (s1 s2)
   "Elementwise XOR of each character of strings S1 and S2."
   (declare (speed 3))
-  (let ((len (length s1)))
-    (cl-assert (eql len (length s2)))
+  (let ((len (string-bytes s1)))
+    (cl-assert (eql len (string-bytes s2)))
     (let ((out (make-string len 0 nil)))
       (dotimes (i len)
         (setf (aref out i) (logxor (aref s1 i) (aref s2 i))))
@@ -3709,9 +3711,9 @@ Authenticate as USER with PASSWORD, a string."
          (client-nonce (or pg--*force-client-nonce*
                            (apply #'string (cl-loop for i below 32 collect (+ ?A (random 25))))))
          (client-first (format "n,,n=%s,r=%s" user client-nonce))
-         (len-cf (length client-first))
+         (len-cf (string-bytes client-first))
          ;; packet length doesn't include the initial ?p message type indicator
-         (len-packet (+ 4 (1+ (length mechanism)) 4 len-cf)))
+         (len-packet (+ 4 (1+ (string-bytes mechanism)) 4 len-cf)))
     ;; send the SASLInitialResponse message
     (pg--send-char con ?p)
     (pg--send-uint con len-packet 4)
@@ -3756,12 +3758,12 @@ Authenticate as USER with PASSWORD, a string."
              (when (zerop iterations)
                (let ((msg (format "SCRAM-SHA-256: server supplied invalid iteration count %s" i=)))
                  (signal 'pg-protocol-error (list msg))))
-             (unless (string= client-nonce (substring r 0 (length client-nonce)))
+             (unless (string= client-nonce (substring r 0 (string-bytes client-nonce)))
                (signal 'pg-protocol-error
                        (list "SASL response doesn't include correct client nonce")))
              ;; we send a SASLResponse message with SCRAM client-final-message as content
              (pg--send-char con ?p)
-             (pg--send-uint con (+ 4 (length client-final-msg)) 4)
+             (pg--send-uint con (+ 4 (string-bytes client-final-msg)) 4)
              (pg--send-octets con client-final-msg)
              (pg-flush con)
              (let ((c (pg--read-char con)))
@@ -3806,7 +3808,7 @@ zero-argument function that returns a string."
         (mechanisms (list)))
     ;; read server's list of preferered authentication mechanisms
     (cl-loop for mech = (pg--read-string con 4096)
-             while (not (zerop (length mech)))
+             while (not (zerop (string-bytes mech)))
              do (push mech mechanisms))
     (if (member "SCRAM-SHA-256" mechanisms)
         (pg-do-scram-sha256-authentication con user password-string)
@@ -4656,8 +4658,8 @@ that will be read."
 
 (defun pg--send (con str &optional bytes)
   (declare (speed 3))
-  (let ((padding (if (and (numberp bytes) (> bytes (length str)))
-                     (make-string (- bytes (length str)) 0)
+  (let ((padding (if (and (numberp bytes) (> bytes (string-bytes str)))
+                     (make-string (- bytes (string-bytes str)) 0)
                    (make-string 0 0 nil))))
     (pg--buffered-send con (concat str padding))))
 
