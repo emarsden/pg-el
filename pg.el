@@ -3986,9 +3986,6 @@ WHERE n.nspname = $1 AND c.relname = $2")
   "Return non-null when a function with NAME is defined in PostgreSQL.
 Uses database connection CON."
   (pcase (pgcon-server-variant con)
-    ;; The pg_proc table exists, but is empty.
-    ('risingwave
-     (signal 'pg-user-error (list "pg-function-p not implemented for Risingwave")))
     ;; QuestDB does not implement the pg_proc table.
     ('questdb
      (let* ((sql "SELECT name FROM functions() WHERE name=$1")
@@ -3996,6 +3993,12 @@ Uses database connection CON."
             (rows (pg-result res :tuples)))
        (not (null rows))))
        ;; (cl-position name rows :key #'cl-first :test #'string=)))
+    ;; Unfortunately this only includes user-defined functions, not builtins
+    ('risingwave
+     (let* ((sql "SELECT name FROM rw_catalog.rw_functions WHERE name=$1")
+            (res (pg-exec-prepared con sql `((,name . "text"))))
+            (rows (pg-result res :tuples)))
+       (not (null rows))))
     ('vertica
      ;; Vertica provides the v_catalog.user_functions and v_catalog.user_procedures tables that list
      ;; all user-defined functions and procedures, but current versions do not have any information
