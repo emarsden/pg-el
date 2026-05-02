@@ -3,7 +3,7 @@
 ;; Copyright: (C) 1999-2002, 2022-2026  Eric Marsden
 
 ;; Author: Eric Marsden <eric.marsden@risk-engineering.org>
-;; Version: 0.65
+;; Version: 0.66
 ;; Keywords: data comm database postgresql
 ;; URL: https://github.com/emarsden/pg-el
 ;; Package-Requires: ((emacs "28.1") (peg "1.0.1"))
@@ -3517,6 +3517,8 @@ Return nil if the extension could not be set up."
 ;;
 ;; https://lists.gnu.org/archive/html/help-gnu-emacs/2002-10/msg00724.html
 ;; https://www.emacswiki.org/emacs/read-float.el
+;;
+;; Alternatively, could use the bitpack library, https://github.com/skeeto/bitpack/
 (defun pg--serialize-float (number _encoding)
   "Serialize floating point NUMBER to PostgreSQL wire-level text format for floats.
 Respects floating-point infinities and NaN."

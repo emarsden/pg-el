@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.66] - 2026-05-02
+
+- Fix a bug in our type serialization support. PostgreSQL makes it possible to define a rowtype
+  (user-defined composite type) with the name as a builtin type, so we make sure that system-defined
+  types are chosen over user-defined types when serializing objects.
+
+- Implement `pg-function-p` for the Risingwave variant. Unfortunately this implementation only
+  recognizes user-defined functions, and not builtin functions.
+
+
 ## [0.65] - 2026-04-18
 
 - Implement `pg-table-owner` and `pg-databases` for PostgreSQL variant Picodata.
