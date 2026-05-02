@@ -360,7 +360,7 @@
       (pgtest-add #'pg-test-insert)
       (pgtest-add #'pg-test-edge-cases)
       (pgtest-add #'pg-test-procedures
-                  :skip-variants '(cratedb spanner risingwave materialize ydb xata questdb thenile vertica
+                  :skip-variants '(cratedb spanner materialize ydb xata questdb thenile vertica
                                            greptimedb datafusion picodata))
       ;; RisingWave is not able to parse a TZ value of "UTC-01:00" (POSIX format). QuestDB does not
       ;; support the timestamptz type. CedarDB des not support the timetz data type.
@@ -420,11 +420,13 @@
       (pgtest-add #'pg-test-enums
                   :skip-variants '(cratedb risingwave questdb greptimedb ydb materialize spanner octodb clickhouse
                                            vertica cedardb yellowbrick datafusion immudb picodata serenedb))
+      (pgtest-add #'pg-test-rowtype
+                  :skip-variants '(cratedb ydb cedardb spanner serenedb greptimedb))
       (pgtest-add #'pg-test-server-prepare
                   :skip-variants '(cratedb risingwave questdb greptimedb ydb octodb datafusion picodata serenedb
                                            motherduck))
       (pgtest-add #'pg-test-comments
-                   :skip-variants '(ydb cratedb spanner questdb thenile cedardb datafusion))
+                   :skip-variants '(ydb cratedb questdb thenile cedardb datafusion))
       (pgtest-add #'pg-test-metadata ;;  cockroachdb
                   :skip-variants '(cratedb risingwave materialize questdb greptimedb ydb spanner
                                            vertica datafusion picodata))
@@ -465,7 +467,7 @@
                   :skip-variants '(cratedb cockroachdb ydb risingwave materialize spanner greptimedb questdb xata
                                            vertica datafusion picodata))
       (pgtest-add #'pg-test-unicode-names
-                  :skip-variants '(xata cratedb cockroachdb risingwave questdb ydb spanner vertica immudb))
+                  :skip-variants '(xata cratedb risingwave questdb ydb spanner vertica immudb))
       (pgtest-add #'pg-test-returning
                   :skip-variants '(risingwave questdb datafusion immudb picodata))
       (pgtest-add #'pg-test-parameter-change-handlers
@@ -627,7 +629,8 @@
     (should (eql 42 (scalar "SELECT $1 + 142" '((-100 . "smallint")))))
     (should (eql 42 (scalar "SELECT $1 + 142" '((-100 . "integer")))))
     (should (eql 42 (scalar "SELECT $1 + 142" '((-100 . "bigint")))))
-    (should (eql 100 (scalar "SELECT $1" '((100 . "oid")))))
+    (unless (member (pgcon-server-variant con) '(risingwave))
+      (should (eql 100 (scalar "SELECT $1" '((100 . "oid"))))))
     (should (pgtest-approx= -55.0 (scalar "SELECT $1" '((-55.0 . "float4")))))
     (should (pgtest-approx= -55.0 (scalar "SELECT $1" '((-55.0 . "float8")))))
     (should (pgtest-approx= 42.0 (scalar "SELECT $1 + 1" '((41.0 . "float4")))))
@@ -849,7 +852,7 @@
     ;; Note that we need to escape the ?\ character in an elisp string by repeating it.
     ;; CrateDB does not support the BYTEA type.
     (unless (member (pgcon-server-variant con) '(cratedb))
-      (should (eql 3 (length (scalar "SELECT '\\x123456'::bytea"))))
+      (should (eql 3 (string-bytes (scalar "SELECT '\\x123456'::bytea"))))
       (should (string= (string #x12 #x34 #x56) (scalar "SELECT '\\x123456'::bytea"))))
     (unless (member (pgcon-server-variant con) '(spanner))
       (should (eql nil (row " SELECT 3 WHERE 1=0"))))
@@ -874,7 +877,7 @@
     ;;
     ;; Could use digest('foobles', 'sha1') if we loaded the pgcrypto extension.
     (unless (member (pgcon-server-variant con) '(cratedb cockroachdb))
-      (should (eql 64 (length (scalar "SELECT sha512('foobles')")))))
+      (should (eql 64 (string-bytes (scalar "SELECT sha512('\\x3344FFAA'::bytea)")))))
     ;; The MD5 function is not implemented by the Spanner variant. Note that it is also disabled in
     ;; some PostgreSQL builds which compile OpenSSL in a FIPS-compatible mode, but in that case the
     ;; function triggers a runtime error (and it doesn't seem to be possible to check at runtime
@@ -964,7 +967,7 @@
     ;; Note that we need to escape the ?\ character in an elisp string by repeating it.
     ;; CrateDB does not support the BYTEA type.
     (unless (member (pgcon-server-variant con) '(cratedb))
-      (should (eql 3 (length (scalar "SELECT '\\x123456'::bytea" nil))))
+      (should (eql 3 (string-bytes (scalar "SELECT '\\x123456'::bytea" nil))))
       (should (string= (string #x12 #x34 #x56) (scalar "SELECT '\\x123456'::bytea" nil))))
      (unless (member (pgcon-server-variant con) '(spanner))
        (should (eql nil (row " SELECT 3 WHERE 1=$1" '((0 . "integer"))))))
@@ -989,14 +992,14 @@
      ;;
      ;; Could use digest('foobles', 'sha1') if we loaded the pgcrypto extension.
      (unless (member (pgcon-server-variant con) '(cratedb cockroachdb))
-       (should (eql 64 (length (scalar "SELECT sha512($1)" '(("foobles" . "text")))))))
+       (should (eql 64 (string-bytes (scalar "SELECT sha512($1)" `((,(decode-hex-string "DEADBEEF") . "bytea")))))))
     ;; The MD5 function is not implemented by the Spanner variant. Note that it is also disabled in
     ;; some PostgreSQL builds which compile OpenSSL in a FIPS-compatible mode, but in that case the
     ;; function triggers a runtime error (and it doesn't seem to be possible to check at runtime
     ;; whether the function is correctly implemented or not).
     (when (pg-function-p con "md5")
       (should (string= (md5 "foobles") (scalar "SELECT md5($1)" '(("foobles" . "text"))))))
-    (let* ((res (pg-exec con "SELECT 11 as bizzle, $1 as bazzle" '((15 . "integer"))))
+    (let* ((res (pg-exec-prepared con "SELECT 11 as bizzle, $1 as bazzle" '((15 . "integer"))))
            (attr (pg-result res :attributes))
            (col1 (cl-first attr))
            (col2 (cl-second attr))
@@ -1408,11 +1411,10 @@ bar$$"))))
   (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0))))
     (should (pg-function-p con "version"))
     (scalar "DROP FUNCTION IF EXISTS pgtest_difference")
+    ;; Don't include "RETURNS NULL ON NULL INPUT" as it isn't supported by all variants
     (let* ((sql "CREATE FUNCTION pgtest_difference(integer, integer) RETURNS integer
-                 AS 'select $1 - $2;'
-                 LANGUAGE SQL
-                 IMMUTABLE
-                 RETURNS NULL ON NULL INPUT")
+                 LANGUAGE SQL AS 'select $1 - $2;'
+                 IMMUTABLE")
            (res (pg-exec con sql)))
       (should (string-prefix-p "CREATE" (pg-result res :status)))
       (should (pg-function-p con "pgtest_difference"))
@@ -1420,17 +1422,15 @@ bar$$"))))
       ;; Redefining an existing function should trigger an error.
       (should (eql 'ok (condition-case nil
                            (pg-exec con "CREATE FUNCTION pgtest_difference(integer, integer) RETURNS integer
-                                         AS 'select - ($2 - $1);'
                                          LANGUAGE SQL
-                                         IMMUTABLE
-                                         RETURNS NULL ON NULL INPUT")
+                                         AS 'select - ($2 - $1);'
+                                         IMMUTABLE")
                          (pg-programming-error 'ok))))
       (pg-exec con "DROP FUNCTION pgtest_difference")
       (should (not (pg-function-p con "pgtest_difference"))))
     (scalar "DROP FUNCTION IF EXISTS pgtest_increment")
-    (let* ((sql "CREATE FUNCTION pgtest_increment(val integer) RETURNS integer AS $$
-                 BEGIN RETURN val + 1; END; $$
-                 LANGUAGE PLPGSQL")
+    (let* ((sql "CREATE FUNCTION pgtest_increment(val integer) RETURNS integer LANGUAGE PLPGSQL
+                 AS $$ BEGIN RETURN val + 1; END; $$")
            (res (pg-exec con sql)))
       (should (string-prefix-p "CREATE" (pg-result res :status)))
       (should (pg-function-p con "pgtest_increment"))
@@ -2156,6 +2156,23 @@ bar$$"))))
     (message "Rating plusgood is %s" (scalar "SELECT 'plusgood'::rating"))
     (pg-exec con "DROP TABLE act")
     (pg-exec con "DROP TYPE rating")))
+
+
+;; https://www.postgresql.org/docs/current/rowtypes.html
+(defun pg-test-rowtype (con)
+  (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0))))
+    (pg-exec con "DROP TYPE IF EXISTS pgel_complex")
+    (pg-exec con "DROP TABLE IF EXISTS pgeltest_rowtype")
+    (pg-exec con "CREATE TYPE pgel_complex AS (r DOUBLE PRECISION, i DOUBLE PRECISION)")
+    (pg-exec con "CREATE TABLE pgeltest_rowtype(item TEXT, price pgel_complex)")
+    (pg-exec con "INSERT INTO pgeltest_rowtype VALUES('one', ROW(1.2,2.3))")
+    (pg-exec con "INSERT INTO pgeltest_rowtype VALUES('two', ROW(-55,-66))")
+    (let* ((res (pg-exec con "SELECT item FROM pgeltest_rowtype WHERE (price).i > 0"))
+           (rows (pg-result res :tuples)))
+      (should (eql 1 (length rows)))
+      (should (string= "one" (caar rows))))
+    (pg-exec con "DROP TABLE pgeltest_rowtype")
+    (pg-exec con "DROP TYPE pgel_complex CASCADE")))
 
 
 ;; https://www.postgresql.org/docs/15/functions-json.html
