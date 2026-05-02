@@ -547,7 +547,7 @@ test-ivorysql: test-pg.el
 	  -e IVORYSQL_DB=pgeltestdb \
 	  -e IVORYSQL_USER=pgeltestuser \
 	  -e IVORYSQL_PASSWORD=pgeltest \
-	  -d docker.io/ivorysql/ivorysql:5.1-ubi8
+	  -d docker.io/ivorysql/ivorysql:5.3-ubi8
 	sleep 5
 	PGEL_PORT=5437 $(MAKE) test
 	${DOCKER} stop ivorydb
@@ -589,7 +589,9 @@ test-vectorchord: test-pg.el
 	${DOCKER} stop vectorchord
 
 # Hydra Columnar database
-# https://github.com/hydradatabase/columnar?tab=readme-ov-file
+# https://github.com/hydradatabase/columnar
+#
+# This seems to have been abandoned for the past 2 years, with the developers moving to pg_duckdb.
 test-hydra: test-pg.el
 	${DOCKER} run --rm --name hydra \
           --pull=newer \
@@ -659,8 +661,7 @@ test-agensgraph: test-pg.el
 
 # https://github.com/duckdb/pg_duckdb
 test-pgduckdb: test-pg.el
-	${DOCKER} run --rm --name pgduckdb \
-           --pull=newer \
+	${DOCKER} run --rm --name pgduckdb --pull=newer \
            --publish 127.0.0.1:5317:5317 \
            -e POSTGRES_DB=pgeltestdb \
            -e POSTGRES_USER=pgeltestuser \
@@ -676,8 +677,7 @@ test-pgduckdb: test-pg.el
 
 # https://cedardb.com/docs/
 test-cedardb: test-pg.el
-	${DOCKER} run --rm --name cedardb \
-           --pull=newer \
+	${DOCKER} run --rm --name cedardb --pull=newer \
            --publish 127.0.0.1:6778:5432 \
            -e CEDAR_USER=pgeltestuser \
            -e CEDAR_PASSWORD=pgeltest \
@@ -735,25 +735,6 @@ test-documentdb: test-pg.el
 # Test pgbouncer proxying to our local PostgreSQL (in session pooling mode, so that functionality
 # such as LISTEN works).
 #
-# https://github.com/edoburu/docker-pgbouncer
-#
-# TODO: need to move away from the unmaintained bitnami Docker images, perhaps to ghcr.io/icoretech/pgbouncer-docker
-test-pgbouncer-old: test-pg.el
-	${DOCKER} run --rm --name pgbouncer \
-          --pull=newer \
-	  --net host \
-	  -e PGBOUNCER_PORT=6432 \
-	  -e PGBOUNCER_DATABASE=pgeltestdb \
-	  -e POSTGRESQL_USERNAME=pgeltestuser \
-	  -e POSTGRESQL_PASSWORD=pgeltest \
-	  -e POSTGRESQL_HOST=localhost \
-	  -e POSTGRESQL_PORT=5432 \
-	  -d docker.io/bitnami/pgbouncer:latest
-	sleep 5
-	PGEL_PORT=6432 $(MAKE) test
-	${DOCKER} stop pgbouncer
-
-
 # https://github.com/icoretech/pgbouncer-docker/pkgs/container/pgbouncer-docker
 test-pgbouncer: test-pg.el
 	${DOCKER} run --rm --name pgbouncer \
@@ -986,8 +967,7 @@ test-cratedb: test-pg.el
 #
 # https://hub.docker.com/r/cockroachdb/cockroach/
 test-cockroach: test-pg.el
-	${DOCKER} run --rm --name cockroachdb \
-          --pull=newer \
+	${DOCKER} run --rm --name cockroachdb --pull=newer \
           --publish 127.0.0.1:26257:26257 \
           -e COCKROACH_DATABASE=pgeltestdb \
           -e COCKROACH_USER=pgeltestuser \
@@ -1046,8 +1026,7 @@ test-geldata: test-pg.el
 #
 # https://materialize.com/blog/postgres-compatibility/
 test-materialize: test-pg.el
-	${DOCKER} run --rm --name materialize \
-          --pull=newer \
+	${DOCKER} run --rm --name materialize --pull=newer \
           --publish 127.0.0.1:6875:6875 \
           -d docker.io/materialize/materialized:latest
 	sleep 10
@@ -1137,8 +1116,6 @@ test-greenplum: test-pg.el
 
 # https://github.com/woblerr/docker-greenplum
 #
-# This is failing with Podman in user mode with "/usr/bin/ping6: raw socket: Operation not permitted"
-#
 # TODO: perhaps try also https://hub.docker.com/r/qpod/greenplum
 test-greenplum2: test-pg.el
 	${DOCKER} run --rm --name greenplum \
@@ -1224,8 +1201,7 @@ test-cloudberry: test-pg.el
 #
 # Extremely limited PostgreSQL support. Basic types such as int2 are not supported.
 test-spanner: test-pg.el
-	${DOCKER} run --rm --name spanner \
-          --pull=newer \
+	${DOCKER} run --rm --name spanner --pull=newer \
           --publish 127.0.0.1:5499:5432 \
           -d gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:latest -d pgeltestdb
 	sleep 2
@@ -1326,7 +1302,7 @@ test-opengauss: test-pg.el
            -e GS_PASSWORD="PGelt44^" \
            -e GS_USERNAME=pgeltestuser \
            -e GS_PORT=5488 \
-           -d docker.io/opengauss/opengauss:7.0.0-RC2.B015
+           docker.io/opengauss/opengauss:7.0.0-RC3.B016
 	sleep 20
 	PGURI=postgresql://pgeltestuser:PGelt44^@127.0.0.1:5488/postgres $(MAKE) test
 	${DOCKER} stop opengauss
@@ -1430,8 +1406,7 @@ test-greptimedb: test-pg.el
 # The "root" user is set explicitly in risingwave/src/cmd_all/src/standalone.rs and there does not
 # seem to be a mechanism to change it; likewise for the "dev" database name.
 test-risingwave: test-pg.el
-	${DOCKER} run --rm --name risingwave \
-	  --pull=newer \
+	${DOCKER} run --rm --name risingwave --pull=newer \
 	  -e ENABLE_TELEMETRY=false \
 	  --publish 127.0.0.1:4566:4566 \
 	  -d docker.io/risingwavelabs/risingwave:latest single_node
@@ -1473,6 +1448,33 @@ test-doltgres: test-pg.el
            -d docker.io/dolthub/doltgresql:latest
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5489/pgeltestdb $(MAKE) test
 	${DOCKER} stop doltgres
+
+
+# https://github.com/cybergarage/go-postgresql
+test-gopg: test-pg.el
+	${DOCKER} run --rm --name gopg --pull=newer \
+           --publish 127.0.0.1:5411:5432 \
+           -e POSTGRES_USER=pgeltestuser \
+           -e POSTGRES_PASSWORD=pgeltest \
+           -d docker.io/cybergarage/go-postgresqld:latest
+	sleep 5
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5411/pgeltestdb $(MAKE) test
+	${DOCKER} stop gopg
+
+
+# https://github.com/cybergarage/go-postgresql
+#
+# Bizarrely fails with "JOIN query () is not supported" on any query
+test-puzzledb: test-pg.el
+	${DOCKER} run --rm --name puzzledb --pull=newer \
+           --publish 127.0.0.1:5411:5432 \
+           -e POSTGRES_USER=pgeltestuser \
+           -e POSTGRES_PASSWORD=pgeltest \
+           -d docker.io/cybergarage/puzzledb:latest
+	sleep 5
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5411/pgeltestdb $(MAKE) test
+	${DOCKER} stop puzzledb
+
 
 
 # CMU NoisePage, which seems to have been abandoned in 2023
