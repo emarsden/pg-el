@@ -1256,6 +1256,7 @@ test-yugabyte: test-pg.el
             --ysql_port=5499 \
             --base_dir=/tmp \
             --ysql_enable_auth=true \
+            --master_flags  ysql_yb_enable_listen_notify=true \
             --tserver_flags ysql_yb_enable_listen_notify=true \
             --background=false
 	sleep 30
