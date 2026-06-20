@@ -73,7 +73,7 @@ test-emacs-dev: test-pg.el
 	   -e PGEL_HOSTNAME=10.0.2.2 \
 	   --network slirp4netns:allow_host_loopback=true \
 	   docker.io/silex/emacs:master-alpine-ci \
-	   ${EMACS} -Q --batch /tmp/pg.el -l /tmp/install-deps.el -l /tmp/load-deps.el -l /tmp/pg.el -l ../tmp/pg-geometry.el -l /tmp/pg-gis.el -l /tmp/pg-bm25.el -l /tmp/test-pg.el -f pg-test
+	   emacs -Q --batch /tmp/pg.el -l /tmp/install-deps.el -l /tmp/load-deps.el -l /tmp/pg.el -l ../tmp/pg-geometry.el -l /tmp/pg-gis.el -l /tmp/pg-bm25.el -l /tmp/test-pg.el -f pg-test
 
 test-emacs28: test-pg.el
 	cp install-deps.el load-deps.el ../pg.el ../pg-geometry.el ../pg-gis.el ../pg-bm25.el test-pg.el ${WORKDIR}
@@ -83,7 +83,7 @@ test-emacs28: test-pg.el
 	   -e PGEL_HOSTNAME=10.0.2.2 \
 	   --network slirp4netns:allow_host_loopback=true \
 	   docker.io/silex/emacs:28.1 \
-	   ${EMACS} -Q --batch /tmp/pg.el -l /tmp/install-deps.el -l /tmp/load-deps.el -l /tmp/pg.el -l /tmp/pg-geometry.el -l /tmp/pg-gis.el -l /tmp/pg-bm25.el -l /tmp/test-pg.el -f pg-test
+	   emacs -Q --batch /tmp/pg.el -l /tmp/install-deps.el -l /tmp/load-deps.el -l /tmp/pg.el -l /tmp/pg-geometry.el -l /tmp/pg-gis.el -l /tmp/pg-bm25.el -l /tmp/test-pg.el -f pg-test
 
 # The peg.el library doesn't actually compile with Emacs 27 (void-function byte-run--set-speed), so
 # this doesn't work.
@@ -95,7 +95,7 @@ test-emacs27: test-pg.el
 	   -e PGEL_HOSTNAME=10.0.2.2 \
 	   --network slirp4netns:allow_host_loopback=true \
 	   docker.io/silex/emacs:27.2 \
-	   ${EMACS} -Q --batch /tmp/pg.el -l /tmp/install-deps.el -l /tmp/load-deps.el -l /tmp/pg.el -l /tmp/test-pg.el -f pg-test
+	   emacs -Q --batch /tmp/pg.el -l /tmp/install-deps.el -l /tmp/load-deps.el -l /tmp/pg.el -l /tmp/test-pg.el -f pg-test
 
 # The extended query support will not work in Emacs versions before 28.1, because functionality
 # provided by the bindat libary is needed. However, other functionality based on the simple query
@@ -108,7 +108,7 @@ test-emacs26: test-pg.el
 	   -e PGEL_HOSTNAME=10.0.2.2 \
 	   --network slirp4netns:allow_host_loopback=true  \
 	   docker.io/silex/emacs:26.3-alpine-ci \
-	   ${EMACS} -Q --batch /tmp/pg.el -l /tmp/install-deps.el -l /tmp/load-deps.el -l /tmp/pg.el -l /tmp/test-pg.el -f pg-test
+	   emacs -Q --batch /tmp/pg.el -l /tmp/install-deps.el -l /tmp/load-deps.el -l /tmp/pg.el -l /tmp/test-pg.el -f pg-test
 
 # Emacs versions older than 26.1 will not work against a recent PostgreSQL version (that is set up
 # to require SCRAM-SHA-256 authentication), because they don't include the GnuTLS support which we
@@ -122,7 +122,7 @@ test-emacs25: test-pg.el
 	   -e PGEL_HOSTNAME=10.0.2.2 \
 	   --network slirp4netns:allow_host_loopback=true \
 	   docker.io/silex/emacs:25.3 \
-	   ${EMACS} -Q --batch /tmp/pg.el -l /tmp/install-deps.el -l /tmp/load-deps.el -l /tmp/pg.el -l /tmp/test-pg.el -f pg-test
+	   emacs -Q --batch /tmp/pg.el -l /tmp/install-deps.el -l /tmp/load-deps.el -l /tmp/pg.el -l /tmp/test-pg.el -f pg-test
 
 # A special test for short usernames, database names, passwords and so on (we used to have some
 # builtin assumptions that a username was a least 4 chars in length).
