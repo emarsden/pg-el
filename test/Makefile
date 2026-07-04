@@ -189,6 +189,19 @@ test-postgresql18tls: test-pg.el
 	${DOCKER} volume rm pgcerts
 
 
+test-postgresql19: test-pg.el
+	${DOCKER} run --rm --name pgsql --pull=newer \
+           --publish 127.0.0.1:5418:5418 \
+           -e POSTGRES_DB=pgeltestdb \
+           -e POSTGRES_USER=pgeltestuser \
+           -e POSTGRES_PASSWORD=pgeltest \
+           -e PGPORT=5418 \
+           -e TZ=Asia/Tokyo \
+           -d docker.io/library/postgres:19beta1
+	sleep 5
+	PGEL_PORT=5418 $(MAKE) test
+	${DOCKER} stop pgsql
+
 test-postgresql18: test-pg.el
 	${DOCKER} run --rm --name pgsql --pull=newer \
            --publish 127.0.0.1:5418:5418 \
@@ -402,6 +415,19 @@ test-hummingbird: test-pg.el
 	${DOCKER} stop hummingbird
 
 
+# https://pigsty.io/docs/setup/docker/
+test-pigsty: test-pg.el
+	${DOCKER} run --rm --name pigsty --pull=newer \
+           --publish 127.0.0.1:5471:5432 \
+           -e POSTGRES_DB=pgeltestdb \
+           -e POSTGRES_USER=pgeltestuser \
+           -e POSTGRES_PASSWORD=pgeltest \
+           -e PIGSTY_PG_PORT=5471 \
+           -d docker.io/pgsty/pigsty:latest
+	sleep 5
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5471/pgeltestdb $(MAKE) test
+
+
 # Supabase (https://supabase.com) provide hosted PostgreSQL instances with convenient web
 # dashboards, management APIs and integrations with authentication libraries. They have a free tier.
 # As of 2026-04, they are running PostgreSQL 17.6 on Aarch64.
@@ -525,7 +551,7 @@ test-ivorysql: test-pg.el
 	  -e IVORYSQL_DB=pgeltestdb \
 	  -e IVORYSQL_USER=pgeltestuser \
 	  -e IVORYSQL_PASSWORD=pgeltest \
-	  -d docker.io/ivorysql/ivorysql:5.3-ubi8
+	  -d docker.io/ivorysql/ivorysql:5.4-ubi8
 	sleep 5
 	PGEL_PORT=5437 $(MAKE) test
 	${DOCKER} stop ivorydb
@@ -695,6 +721,7 @@ test-documentdb: test-pg.el
 # such as LISTEN works).
 #
 # https://github.com/icoretech/pgbouncer-docker/pkgs/container/pgbouncer-docker
+# (Could also try the mini.dev image, https://images.minimus.io/gallery/images/pgbouncer/quick-start)
 test-pgbouncer: test-pg.el
 	${DOCKER} run --rm --name pgbouncer \
           --pull=newer \
@@ -740,12 +767,11 @@ test-pgcat: test-pg.el
 # https://github.com/pgdogdev/pgdog
 test-pgdog: test-pg.el
 	cp pgdog-config.toml pgdog-users.toml /tmp
-	${DOCKER} run --rm --name pgdog \
-           --pull=newer \
-	   -v /tmp/pgdog-config.toml:/pgdog/pgdog.toml \
-	   -v /tmp/pgdog-users.toml:/pgdog/users.toml \
-	   --net host \
-	   -d ghcr.io/pgdogdev/pgdog:main
+	${DOCKER} run --rm --name pgdog --pull=newer \
+           -v /tmp/pgdog-config.toml:/pgdog/pgdog.toml \
+           -v /tmp/pgdog-users.toml:/pgdog/users.toml \
+           --net host \
+           -d ghcr.io/pgdogdev/pgdog:main
 	sleep 5
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5469/pgeltestdb $(MAKE) test
 	${DOCKER} stop pgdog
@@ -1286,8 +1312,7 @@ test-polardb: test-pg.el
 #
 # https://hub.docker.com/r/opengauss/opengauss
 test-opengauss: test-pg.el
-	${DOCKER} run --rm --name opengauss \
-           --pull=newer \
+	${DOCKER} run --rm --name opengauss --pull=newer \
            --publish 127.0.0.1:5488:5488 \
            -e TZ=UTC-7:00 \
            -e LANG=en_US.UTF8 \
@@ -1311,7 +1336,7 @@ test-antdb: test-pg.el
            -e ANTDB_USER=pgeltestuser \
            -e ANTDB_PASSWORD=pgeltest \
            -e ANTDB_LISTEN_ADDRESSES="*" \
-	   -d docker.io/falconia/antdb-ce:latest
+           -d docker.io/falconia/antdb-ce:latest
 	sleep 10
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5677/pgeltestdb $(MAKE) test
 	${DOCKER} stop antdb
@@ -1400,9 +1425,9 @@ test-greptimedb: test-pg.el
 # seem to be a mechanism to change it; likewise for the "dev" database name.
 test-risingwave: test-pg.el
 	${DOCKER} run --rm --name risingwave --pull=newer \
-	  -e ENABLE_TELEMETRY=false \
-	  --publish 127.0.0.1:4566:4566 \
-	  -d docker.io/risingwavelabs/risingwave:latest single_node
+          -e ENABLE_TELEMETRY=false \
+          --publish 127.0.0.1:4566:4566 \
+          -d docker.io/risingwavelabs/risingwave:latest single_node
 	sleep 5
 	PGURI=postgresql://postgres@127.0.0.1:4566/dev $(MAKE) test
 	${DOCKER} stop risingwave
@@ -1432,8 +1457,7 @@ test-alloydb: test-pg.el
 # https://github.com/dolthub/doltgresql
 # https://hub.docker.com/r/dolthub/doltgresql
 test-doltgres: test-pg.el
-	${DOCKER} run --rm --name doltgres \
-           --pull=newer \
+	${DOCKER} run --rm --name doltgres --pull=newer \
            --publish 127.0.0.1:5489:5432 \
            -e DOLTGRES_USER=pgeltestuser \
            -e DOLTGRES_PASSWORD=pgeltest \
@@ -1585,8 +1609,7 @@ test-kinetica: test-pg.el
 # Limited PostgreSQL compatibility: no ALTER TABLE, no foreign keys, no privilege functions, no
 # SERIAL, no BIT, no TIME types. https://docs.serenedb.com/compatibility/core-sql-compatibility
 test-serenedb: test-pg.el
-	${DOCKER} run --rm --name serenedb \
-          --pull=newer \
+	${DOCKER} run --rm --name serenedb --pull=newer \
           --net=host \
           -d docker.io/serenedb/serenedb:latest
 	sleep 5
