@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+- Parse one-dimensional array values that PostgreSQL returns with explicit
+  dimension bounds, such as `[-33:-31]={100,200,300}`.
+
+
 ## [0.67] - 2026-06-07
 
 - Implement support for PostgreSQL variant Datahike with pg-datahike adapter.

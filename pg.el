@@ -3101,21 +3101,29 @@ Return nil if the extension could not be loaded."
 ;; levels of {} marking the extra dimensions.
 ;; See https://www.postgresql.org/docs/current/arrays.html
 
+(defun pg--array-contents (str error-message)
+  "Return the contents of a PostgreSQL array value STR.
+ERROR-MESSAGE is used if STR does not have the expected array syntax."
+  (when (string-match "\\`\\(?:\\[[+-]?[0-9]+:[+-]?[0-9]+\\]\\)+=" str)
+    (setq str (substring str (match-end 0))))
+  (let ((len (string-bytes str)))
+    (unless (and (> len 1)
+                 (eql (aref str 0) ?{)
+                 (eql (aref str (1- len)) ?}))
+      (signal 'pg-protocol-error (list error-message)))
+    (cl-subseq str 1 (- len 1))))
+
 (defun pg-intarray-parser (str _encoding)
   "Parse PostgreSQL value STR as an array of integers."
   (cl-flet ((parse-int (str)
               (if (string= "NULL" str)
                   pg-null-marker
                 (cl-parse-integer str))))
-    (let ((len (string-bytes str)))
-      (unless (and (eql (aref str 0) ?{)
-                   (eql (aref str (1- len)) ?}))
-        (signal 'pg-protocol-error (list "Unexpected format for int array")))
-      (let ((maybe-items (cl-subseq str 1 (- len 1))))
-        (if (zerop (string-bytes maybe-items))
-            (vector)
-          (let ((items (split-string maybe-items ",")))
-            (apply #'vector (mapcar #'parse-int items))))))))
+    (let ((maybe-items (pg--array-contents str "Unexpected format for int array")))
+      (if (zerop (string-bytes maybe-items))
+          (vector)
+        (let ((items (split-string maybe-items ",")))
+          (apply #'vector (mapcar #'parse-int items)))))))
 
 (pg-register-parser "_int2" #'pg-intarray-parser)
 (pg-register-parser "_int2vector" #'pg-intarray-parser)
@@ -3124,15 +3132,11 @@ Return nil if the extension could not be loaded."
 
 (defun pg-floatarray-parser (str _encoding)
   "Parse PostgreSQL value STR as an array of floats."
-  (let ((len (string-bytes str)))
-    (unless (and (eql (aref str 0) ?{)
-                 (eql (aref str (1- len)) ?}))
-      (signal 'pg-protocol-error (list "Unexpected format for float array")))
-    (let ((maybe-items (cl-subseq str 1 (- len 1))))
-      (if (zerop (string-bytes maybe-items))
-          (vector)
-        (let ((items (split-string maybe-items ",")))
-          (apply #'vector (mapcar (lambda (x) (pg-float-parser x nil)) items)))))))
+  (let ((maybe-items (pg--array-contents str "Unexpected format for float array")))
+    (if (zerop (string-bytes maybe-items))
+        (vector)
+      (let ((items (split-string maybe-items ",")))
+        (apply #'vector (mapcar (lambda (x) (pg-float-parser x nil)) items))))))
 
 (pg-register-parser "_float4" #'pg-floatarray-parser)
 (pg-register-parser "_float8" #'pg-floatarray-parser)
@@ -3140,29 +3144,21 @@ Return nil if the extension could not be loaded."
 
 (defun pg-boolarray-parser (str _encoding)
   "Parse PostgreSQL value STR as an array of boolean values."
-  (let ((len (string-bytes str)))
-    (unless (and (eql (aref str 0) ?{)
-                 (eql (aref str (1- len)) ?}))
-      (signal 'pg-protocol-error (list "Unexpected format for bool array")))
-    (let ((maybe-items (cl-subseq str 1 (- len 1))))
-      (if (zerop (string-bytes maybe-items))
-          (vector)
-        (let ((items (split-string maybe-items ",")))
-          (apply #'vector (mapcar (lambda (x) (pg-bool-parser x nil)) items)))))))
+  (let ((maybe-items (pg--array-contents str "Unexpected format for bool array")))
+    (if (zerop (string-bytes maybe-items))
+        (vector)
+      (let ((items (split-string maybe-items ",")))
+        (apply #'vector (mapcar (lambda (x) (pg-bool-parser x nil)) items))))))
 
 (pg-register-parser "_bool" #'pg-boolarray-parser)
 
 (defun pg-chararray-parser (str encoding)
   "Parse PostgreSQL value STR as an array of characters using ENCODING."
-  (let ((len (string-bytes str)))
-    (unless (and (eql (aref str 0) ?{)
-                 (eql (aref str (1- len)) ?}))
-      (signal 'pg-protocol-error (list "Unexpected format for char array")))
-    (let ((maybe-items (cl-subseq str 1 (- len 1))))
-      (if (zerop (string-bytes maybe-items))
-          (vector)
-        (let ((items (split-string maybe-items ",")))
-          (apply #'vector (mapcar (lambda (x) (pg-char-parser x encoding)) items)))))))
+  (let ((maybe-items (pg--array-contents str "Unexpected format for char array")))
+    (if (zerop (string-bytes maybe-items))
+        (vector)
+      (let ((items (split-string maybe-items ",")))
+        (apply #'vector (mapcar (lambda (x) (pg-char-parser x encoding)) items))))))
 
 (pg-register-parser "_char" #'pg-chararray-parser)
 (pg-register-parser "_bpchar" #'pg-chararray-parser)
@@ -3170,15 +3166,11 @@ Return nil if the extension could not be loaded."
 (defun pg-textarray-parser (str encoding)
   "Parse PostgreSQL value STR as an array of TEXT values.
 Uses text encoding ENCODING."
-  (let ((len (string-bytes str)))
-    (unless (and (eql (aref str 0) ?{)
-                 (eql (aref str (1- len)) ?}))
-      (signal 'pg-protocol-error (list "Unexpected format for text array")))
-    (let ((maybe-items (cl-subseq str 1 (- len 1))))
-      (if (zerop (string-bytes maybe-items))
-          (vector)
-        (let ((items (split-string maybe-items ",")))
-          (apply #'vector (mapcar (lambda (x) (pg-text-parser x encoding)) items)))))))
+  (let ((maybe-items (pg--array-contents str "Unexpected format for text array")))
+    (if (zerop (string-bytes maybe-items))
+        (vector)
+      (let ((items (split-string maybe-items ",")))
+        (apply #'vector (mapcar (lambda (x) (pg-text-parser x encoding)) items))))))
 
 (pg-register-parser "_text" #'pg-textarray-parser)
 (pg-register-parser "_varchar" #'pg-textarray-parser)
@@ -3225,15 +3217,11 @@ Uses text encoding ENCODING."
 (defun pg-uuidarray-parser (str encoding)
   "Parse PostgreSQL value STR as an array of UUID values.
 Uses text encoding ENCODING."
-  (let ((len (string-bytes str)))
-    (unless (and (eql (aref str 0) ?{)
-                 (eql (aref str (1- len)) ?}))
-      (signal 'pg-protocol-error (list "Unexpected format for UUID array")))
-    (let ((maybe-items (cl-subseq str 1 (- len 1))))
-      (if (zerop (string-bytes maybe-items))
-          (vector)
-        (let ((items (split-string maybe-items ",")))
-          (apply #'vector (mapcar (lambda (x) (pg-text-parser x encoding)) items)))))))
+  (let ((maybe-items (pg--array-contents str "Unexpected format for UUID array")))
+    (if (zerop (string-bytes maybe-items))
+        (vector)
+      (let ((items (split-string maybe-items ",")))
+        (apply #'vector (mapcar (lambda (x) (pg-text-parser x encoding)) items))))))
 
 (pg-register-parser "_uuid" #'pg-uuidarray-parser)
 
@@ -3251,15 +3239,11 @@ Uses text encoding ENCODING."
 
 (defun pg-datearr-parser (str _encoding)
   "Parse PostgreSQL value STR as an array of date values."
-  (let ((len (string-bytes str)))
-    (unless (and (eql (aref str 0) ?{)
-                 (eql (aref str (1- len)) ?}))
-      (signal 'pg-protocol-error (list "Unexpected format for array")))
-    (let ((maybe-items (cl-subseq str 1 (- len 1))))
-      (if (zerop (string-bytes maybe-items))
-          (vector)
-        (let ((items (split-string maybe-items ",")))
-          (apply #'vector (mapcar (lambda (x) (pg-date-parser x nil)) items)))))))
+  (let ((maybe-items (pg--array-contents str "Unexpected format for array")))
+    (if (zerop (string-bytes maybe-items))
+        (vector)
+      (let ((items (split-string maybe-items ",")))
+        (apply #'vector (mapcar (lambda (x) (pg-date-parser x nil)) items))))))
 
 (pg-register-parser "_date" #'pg-datearr-parser)
 
@@ -3319,15 +3303,11 @@ Uses text encoding ENCODING."
 ;; This is usable for time, timespan etc. types that we currently parse as strings.
 (defun pg-timearr-parser (str _encoding)
   "Parse PostgreSQL value STR as an array of time or date values."
-  (let ((len (string-bytes str)))
-    (unless (and (eql (aref str 0) ?{)
-                 (eql (aref str (1- len)) ?}))
-      (signal 'pg-protocol-error (list "Unexpected format for array")))
-    (let ((maybe-items (cl-subseq str 1 (- len 1))))
-      (if (zerop (string-bytes maybe-items))
-          (vector)
-        (let ((items (split-string maybe-items ",")))
-          (apply #'vector (mapcar (lambda (x) (pg-text-parser x nil)) items)))))))
+  (let ((maybe-items (pg--array-contents str "Unexpected format for array")))
+    (if (zerop (string-bytes maybe-items))
+        (vector)
+      (let ((items (split-string maybe-items ",")))
+        (apply #'vector (mapcar (lambda (x) (pg-text-parser x nil)) items))))))
 
 (pg-register-parser "_time" #'pg-timearr-parser)
 (pg-register-parser "_timetz" 'pg-timearr-parser)
