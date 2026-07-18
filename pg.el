@@ -4123,7 +4123,7 @@ Uses database connection CON."
     ('immudb nil)
     ('picodata nil)
     ('pgmicro nil)
-    ('serenedb
+    ((or 'serenedb 'datahike)
      (let ((res (pg-exec con "SELECT DISTINCT nspname FROM pg_namespace")))
        (apply #'append (pg-result res :tuples))))
     ((or 'risingwave 'octodb 'pgsqlite)
