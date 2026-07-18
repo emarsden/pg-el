@@ -1,12 +1,25 @@
 # Changelog
 
-## [Unreleased]
+## [0.68] - Unreleased
 
-- Parse one-dimensional array values that PostgreSQL returns with explicit
-  dimension bounds, such as `[-33:-31]={100,200,300}`.
+- Parse one-dimensional array values that PostgreSQL returns with explicit dimension bounds, such as
+  `[-33:-31]={100,200,300}` (patch from @LuciusChen).
 
-- Expose the latest `ReadyForQuery` transaction status on connections via
-  `pgcon-transaction-status`.
+- Expose the latest `ReadyForQuery` transaction status on connections via `pgcon-transaction-status`
+  (patch from @LuciusChen).
+
+- New error types `pg-bad-copy-file-format` and `pg-protocol-violation`.
+
+- The SQLSTATE value supplied by PostgreSQL is reported when an error is signaled, to help the user
+  find documentation on the exact error type.
+
+- An empty implementation of `pg-table-comment` and its setf function are provided for the Picodata
+  variant.
+
+- Implement the function `pg-function-p` for the Picodata variant. This only works for user-defined
+  functions, and not for builtin functions.
+
+- An implementation of `pg-schemas` is provided for the Datahike variant.
 
 
 ## [0.67] - 2026-06-07
