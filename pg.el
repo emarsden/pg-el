@@ -173,11 +173,13 @@ SQL queries. To avoid this overhead on establishing a connection, remove
 (define-error 'pg-duplicate-table "Duplicate table or sequence" 'pg-programming-error)
 (define-error 'pg-reserved-name "PostgreSQL reserved name" 'pg-programming-error)
 (define-error 'pg-copy-failed "PostgreSQL COPY failed" 'pg-operational-error)
+(define-error 'pg-bad-copy-file-format "PostgreSQL bad copy file format" 'pg-operational-error)
 (define-error 'pg-connect-timeout "PostgreSQL connection attempt timed out" 'pg-operational-error)
 (define-error 'pg-timeout "PostgreSQL data transfer timed out" 'pg-operational-error)
 (define-error 'pg-type-error
               "Incorrect type in binding PostgreSQL prepared statement"
               'pg-user-error)
+(define-error 'pg-protocol-violation "PostgreSQL protocol violation" 'pg-protocol-error)
 (define-error 'pg-numeric-value-out-of-range "PostgreSQL numeric value out of range" 'pg-data-error)
 (define-error 'pg-division-by-zero "PostgreSQL division by zero" 'pg-data-error)
 (define-error 'pg-floating-point-exception "PostgreSQL floating point exception" 'pg-data-error)
