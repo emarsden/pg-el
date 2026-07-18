@@ -325,6 +325,20 @@ test-enterprisedb: test-pg.el
 	${DOCKER} stop edb
 
 
+# https://github.com/malisper/pgrust
+# This does not currently support the PGPORT environment variable
+test-pgrust: test-pg.el
+	${DOCKER} run --rm --name pgrust --pull=newer \
+	   --publish 127.0.0.1:5998:5432 \
+	   -e POSTGRES_DB=pgeltestdb \
+	   -e POSTGRES_USER=pgeltestuser \
+	   -e POSTGRES_PASSWORD=pgeltest \
+	   -d docker.io/malisper/pgrust:latest
+	sleep 5
+	PGEL_PORT=5998 $(MAKE) test
+	${DOCKER} stop pgrust
+
+
 # Tests with a PostgreSQL server configured to only accept clients that present a CA-signed certificate.
 #
 #   https://www.postgresql.org/docs/current/ssl-tcp.html
