@@ -4046,6 +4046,12 @@ Uses database connection CON."
             (res (pg-exec-prepared con sql `((,name . "text"))))
             (rows (pg-result res :tuples)))
        (not (null rows))))
+    ;; The _pico_routine table only includes user-defined functions, not builtins.
+    ('picodata
+     (let* ((sql "SELECT 1 FROM _pico_routine WHERE name=$1")
+            (res (pg-exec-prepared con sql `((,name . "text"))))
+            (rows (pg-result res :tuples)))
+       (not (null rows))))
     ('vertica
      ;; Vertica provides the v_catalog.user_functions and v_catalog.user_procedures tables that list
      ;; all user-defined functions and procedures, but current versions do not have any information
