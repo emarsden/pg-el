@@ -655,12 +655,12 @@ presented to the user."
       (let ((c (pg--read-char con)))
         (unless (member c '(?Z ?E))
           (message "Unexpected message type after ErrorMsg (error was %s): %s" e c)
-          (pg--unread-char con)))
-          ;; Read message length then status.
-          (pg--read-net-int con 4)
-          (let ((status (pg--read-char con)))
-            (when (eql ?Z c)
-              (pg--set-transaction-status con status)))))
+          (pg--unread-char con))
+        ;; Read message length then status.
+        (pg--read-net-int con 4)
+        (let ((status (pg--read-char con)))
+          (when (eql ?Z c)
+            (pg--set-transaction-status con status)))))
     (let ((msg (format "%s%s: %s (%s) SQLSTATE=%s"
                        (pgerror-severity e)
                        (if context (concat " " context) "")
