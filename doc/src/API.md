@@ -107,6 +107,14 @@ PostgreSQL (e.g. `keepalives_interval`). The supported paramspec keywords and th
 environment variables are the same as for pg-connect/string (see above).
 
 
+    (pgcon-transaction-status con) -> status
+
+Return the transaction status reported by the latest `ReadyForQuery` message on connection `CON`.
+The value is one of the raw PostgreSQL protocol status bytes: `?I` for idle, `?T` for in a
+transaction block, or `?E` for in a failed transaction block. The value is `nil` before the first
+`ReadyForQuery` message has been received.
+
+
     (pg-exec con &rest sql) -> pgresult
 
 Concatenate the SQL strings and send to the PostgreSQL backend over connection `CON`. Retrieve the
@@ -292,4 +300,3 @@ to disable the library's type coercion facility. Default is `t`.
 >
 >    You can omit the port argument if you chose 5432 as the local end of the tunnel, since pg.el
 >    defaults to this value.
-
