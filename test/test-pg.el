@@ -1973,7 +1973,11 @@ bar$$"))))
     (should (equal (vector) (scalar "SELECT (ARRAY[10,11,12])[5:42]")))
     (let* ((res (pg-exec con "SELECT generate_subscripts('[-33:-31]={100,200,300}'::int[], 1)"))
            (row (pg-result res :tuples)))
-      (should (equal row '((-33) (-32) (-31)))))))
+      (should (equal row '((-33) (-32) (-31)))))
+    (should (equal (vector 100 200 300)
+                   (scalar "SELECT '[-33:-31]={100,200,300}'::int[]")))
+    (should (equal (vector "foo" "bar")
+                   (scalar "SELECT '[0:1]={foo,bar}'::text[]")))))
 
 ;; TODO: we do not currently handle multidimension arrays correctly
 ;; (should (equal (vector (vector 4 5) (vector 6 7))
