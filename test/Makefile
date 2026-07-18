@@ -1719,6 +1719,18 @@ test-pgsqlite: test-pg.el
 	rm -rf ${TMPBDIR}
 
 
+# https://github.com/litesql/ha
+#
+# SQL is interpreted by MySQL; it doesn't implement basic functions like version() ...
+test-litesql: test-pg.el
+	${DOCKER} run --rm --name litesql --pull=newer \
+          --publish 127.0.0.1:5631:5432 \
+          -d ghcr.io/litesql/ha:latest
+	sleep 5
+	PGURI=postgresql://ha:ha@127.0.0.1:5631/ha $(MAKE) test
+	${DOCKER} stop litesql
+
+
 # https://github.com/glommer/pgmicro
 test-pgmicro: test-pg.el
 	$(eval TMPBDIR := $(shell mktemp -d -t pgmicro-buildXXXX))
