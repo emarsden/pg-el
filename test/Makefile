@@ -197,7 +197,7 @@ test-postgresql19: test-pg.el
            -e POSTGRES_PASSWORD=pgeltest \
            -e PGPORT=5418 \
            -e TZ=Asia/Tokyo \
-           -d docker.io/library/postgres:19beta1
+           -d docker.io/library/postgres:19beta2
 	sleep 5
 	PGEL_PORT=5418 $(MAKE) test
 	${DOCKER} stop pgsql
@@ -310,8 +310,7 @@ test-postgresql11: test-pg.el
 #
 # https://github.com/EnterpriseDB/docker-postgresql
 test-enterprisedb: test-pg.el
-	${DOCKER} run --rm --name edb \
-           --pull=newer \
+	${DOCKER} run --rm --name edb --pull=newer \
 	   --publish 127.0.0.1:5366:5366 \
 	   -e TZ=UTC-7:00 \
 	   -e LANG=en_US.UTF8 \
@@ -1262,6 +1261,7 @@ test-spanner: test-pg.el
 # Many supported functions, as per https://ydb.tech/docs/en/postgresql/functions
 #
 # There is apparently an environment variable YDB_PG_PORT but it seems to be ignored.
+# Update: PostgreSQL network protocol support was removed in 2026-07
 test-ydb: test-pg.el
 	${DOCKER} run --rm --name ydb --pull=newer \
           --publish 127.0.0.1:5119:5432 \
@@ -1421,8 +1421,7 @@ test-proton: test-pg.el
 # types in the pg_catalog.pg_types table are not the same as PostgreSQL, so our parsing machinery
 # does not work (we see 42 returned as "42").
 test-greptimedb: test-pg.el
-	${DOCKER} run --rm --name greptimedb \
-	  --pull=newer \
+	${DOCKER} run --rm --name greptimedb --pull=newer \
 	  --publish 127.0.0.1:4003:4003 \
 	  -d docker.io/greptime/greptimedb:latest standalone start \
 	  --http-addr 0.0.0.0:4000 \
@@ -1500,14 +1499,14 @@ test-h2: test-pg.el
 
 
 # https://datahike.io/notes/datahike-speaks-postgres/
-# https://github.com/replikativ/pg-datahike/releases
+# https://github.com/replikativ/pg-datahike/
 # Doesn't seem to be a public container image currently
 test-datahike: test-pg.el
 	$(eval TESTDIR := $(shell mktemp -d -t datahike-runXXXX))
 	cd ${TESTDIR}
-	curl -fLO https://github.com/replikativ/pg-datahike/releases/latest/download/pg-datahike-0.1.43-standalone.jar
-	java -jar pg-datahike-0.1.43-standalone.jar --port 6167 --db pgeltestdb --memory &
-	sleep 2
+	curl -fLO https://github.com/replikativ/pg-datahike/releases/latest/download/pg-datahike-0.1.46-standalone.jar
+	java -jar pg-datahike-0.1.46-standalone.jar --port 6167 --db pgeltestdb --memory &
+	sleep 5
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:6167/pgeltestdb $(MAKE) test
 
 
@@ -1670,7 +1669,6 @@ test-vaultgres: test-pg.el
 	(cd ${TMPBDIR}/Vaultgres && cargo run & )
 	sleep 5
 	PGURI=postgresql://postgres@127.0.0.1:5433/testdb $(MAKE) test
-	${DOCKER} stop vaultgres
 
 
 
@@ -1705,8 +1703,6 @@ test-chrondb: test-pg.el
 
 
 # https://github.com/erans/pgsqlite -- a PostgreSQL protocol adapter for SQLite databases
-#
-# Last tested 2025-12 with v0.0.19
 test-pgsqlite: test-pg.el
 	$(eval TMPBDIR := $(shell mktemp -d -t pgsqlite-buildXXXX))
 	(cd ${TMPBDIR} && \
