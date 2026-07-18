@@ -655,20 +655,22 @@ presented to the user."
       (let ((c (pg--read-char con)))
         (unless (member c '(?Z ?E))
           (message "Unexpected message type after ErrorMsg (error was %s): %s" e c)
-          (pg--unread-char con))
-        ;; Read message length then status.
-        (pg--read-net-int con 4)
-        (let ((status (pg--read-char con)))
-          (when (eql ?Z c)
-            (pg--set-transaction-status con status)))))
-    (let ((msg (format "%s%s: %s (%s)"
+          (pg--unread-char con)))
+          ;; Read message length then status.
+          (pg--read-net-int con 4)
+          (let ((status (pg--read-char con)))
+            (when (eql ?Z c)
+              (pg--set-transaction-status con status)))))
+    (let ((msg (format "%s%s: %s (%s) SQLSTATE=%s"
                        (pgerror-severity e)
                        (if context (concat " " context) "")
                        (pgerror-message e)
-                       (string-join extra ", ")))
+                       (string-join extra ", ")
+                       (pgerror-sqlstate e)))
           ;; https://www.postgresql.org/docs/current/errcodes-appendix.html
           (error-type (pcase (pgerror-sqlstate e)
                         ("0A000" 'pg-feature-not-supported)
+                        ("08P01" 'pg-protocol-violation)
                         ((pred (lambda (v) (string-prefix-p "08" v))) 'pg-connection-error)
                         ("28P01" 'pg-invalid-password)
                         ("28000" 'pg-invalid-password)
