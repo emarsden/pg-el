@@ -3933,6 +3933,7 @@ TABLE can be a string or a schema-qualified name. Uses database connection CON."
     ('ydb nil)
     ;; As of 2025-08, CedarDB returns "Setting comments in not implemented yet" (sic).
     ('cedardb nil)
+    ('picodata nil)
     ('h2
      (let* ((schema (if (pg-qualified-name-p table)
                         (pg-qualified-name-schema table)
@@ -3981,6 +3982,7 @@ WHERE n.nspname = $1 AND c.relname = $2")
      ('spanner nil)
      ('ydb nil)
      ('cedardb nil)
+     ('picodata nil)
      ;; TheNile raises an error "command tag COMMENT unhandled"
      ('thenile nil)
      (_
