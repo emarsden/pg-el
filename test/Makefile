@@ -796,13 +796,21 @@ test-pgdog: test-pg.el
 # https://github.com/yandex/odyssey
 # https://hub.docker.com/r/riftbit/yandex-odyssey
 test-odyssey: test-pg.el
-	${DOCKER} run --rm --name odyssey \
-           --pull=newer \
+	${DOCKER} run --rm --name pgsql --pull=newer \
+           --net host \
+           -e POSTGRES_DB=pgeltestdb \
+           -e POSTGRES_USER=pgeltestuser \
+           -e POSTGRES_PASSWORD=pgeltest \
+           -e PGPORT=5291 \
+           -d docker.io/library/postgres:18-alpine
+	sleep 1
+	${DOCKER} run --rm --name odyssey --pull=newer \
            -v $(shell pwd)/setup-odyssey.conf:/etc/odyssey/odyssey.conf \
            --net host \
            -d docker.io/riftbit/yandex-odyssey:latest
 	sleep 5
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5633/pgeltestdb $(MAKE) test
+	${DOCKER} stop pgsql
 	${DOCKER} stop odyssey
 
 
