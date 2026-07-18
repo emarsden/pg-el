@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+- Expose the latest `ReadyForQuery` transaction status on connections via
+  `pgcon-transaction-status`.
+
+
 ## [0.67] - 2026-06-07
 
 - Implement support for PostgreSQL variant Datahike with pg-datahike adapter.
