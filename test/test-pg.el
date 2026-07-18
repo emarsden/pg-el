@@ -342,16 +342,23 @@
       (message "Current schema: %s" (pg-current-schema con))
       (message "List of schemas in db: %s" (pg-schemas con))
       (message "List of tables in db: %s" (pg-tables con))
-      ;; Special testing for pg_duckdb
+      ;; Special setup for pg_duckdb
       (when (cl-find "duckdb" (pg-schemas con) :test #'string=)
         (message "Activating duckdb.force_execution")
-        (pg-exec con "SET duckdb.force_execution = true"))
+        (pg-exec con "SET duckdb.force_execution = true")
+        (pg-exec con "SET duckdb.convert_unsupported_numeric_to_double = true"))
+      (when (eq 'cockroachdb (pgcon-server-variant con))
+        (message "Enabling experimental temporary table support in CockroachDB")
+        (pg-exec con "SET experimental_enable_temp_tables = 'on'"))
       ;; Doltgres does not want to signal its variant status in its version string, despite multiple
       ;; differences in behaviour from PostgreSQL...
       (when (cl-find "dolt" (pg-schemas con) :test #'string=)
         (setf (pgcon-server-variant con) 'doltgres))
       (when (eq 'orioledb (pgcon-server-variant con))
         (pg-exec con "CREATE EXTENSION IF NOT EXISTS orioledb"))
+      ;; This is currently detected as the "pgwire" variant, but we have special exceptions for datafusion
+      (when (member "datafusion" (pg-tables con))
+        (setf (pgcon-server-variant con) 'datafusion))
       ;; Log the version number for the Timescale extension
       (when (eq 'timescaledb (pgcon-server-variant con))
         (let* ((res (pg-exec con "SELECT extversion FROM pg_extension WHERE extname='timescaledb'"))
@@ -1532,6 +1539,8 @@ bar$$"))))
              (fmt (format-time-string "%Y-%m-%dT%H:%M:%S.%3N%z" ts t)))
         (message "TZ test: encode-time 21 42 14 5 2 2010 nil -1 'wall => %s %s"
                  ts fmt))
+      (should (equal '(16756 53018) (scalar "SELECT TIMESTAMP WITH TIME ZONE '2004-10-19 10:23:54+02'")))
+      (scalar "SELECT TIME WITH TIME ZONE '16:55.33456+11'")
       (let ((pg-disable-type-coercion t))
         (message "TZ test: no-DST raw timestamp from PostgreSQL: %s"
                  (scalar "SELECT '2010-02-05 14:42:21'::timestamp")))
@@ -2802,6 +2811,9 @@ bar$$"))))
     (pg-exec con "ALTER TABLE cities DROP COLUMN region_name")
     (pg-exec con "ALTER TABLE cities DROP COLUMN region_geojson_name")
     (pg-exec con "ALTER TABLE cities DROP COLUMN label")
+    (let* ((res (pg-exec con "SELECT count(*) FROM cities WHERE city_code='toulouse' AND zip_code=31500"))
+           (row (pg-result res :tuple 0)))
+      (should (eql 1 (cl-first row))))
     (pg-exec con "DROP TABLE cities")))
 
 
@@ -3346,6 +3358,9 @@ bar$$"))))
   (should (eql 'ok (condition-case nil
                        (funcall scalar-fn "SELECT '2024-15-01'::date")
                      (pg-datetime-field-overflow 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (pg-exec-prepared con "SELECT $1 + $2" '((55 . "int4")))
+                     (pg-protocol-violation 'ok))))
   (should (eql 'ok (condition-case nil
                        (progn
                          (funcall scalar-fn "DEALLOCATE ALL")
