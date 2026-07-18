@@ -679,6 +679,7 @@ presented to the user."
                         ("22008" 'pg-datetime-field-overflow)
                         ("22012" 'pg-division-by-zero)
                         ("22P01" 'pg-floating-point-exception)
+                        ("22P04" 'pg-bad-copy-file-format)
                         ("2201E" 'pg-floating-point-exception)
                         ("2201F" 'pg-floating-point-exception)
                         ("22021" 'pg-character-not-in-repertoire)
