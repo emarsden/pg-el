@@ -806,7 +806,7 @@ test-odyssey: test-pg.el
 	${DOCKER} run --rm --name odyssey --pull=newer \
            -v $(shell pwd)/setup-odyssey.conf:/etc/odyssey/odyssey.conf \
            --net host \
-           -d docker.io/riftbit/yandex-odyssey:latest
+           -d ghcr.io/yandex/odyssey:latest
 	sleep 5
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5633/pgeltestdb $(MAKE) test
 	${DOCKER} stop pgsql
@@ -1504,8 +1504,8 @@ test-h2: test-pg.el
 test-datahike: test-pg.el
 	$(eval TESTDIR := $(shell mktemp -d -t datahike-runXXXX))
 	cd ${TESTDIR}
-	curl -fLO https://github.com/replikativ/pg-datahike/releases/latest/download/pg-datahike-0.1.46-standalone.jar
-	java -jar pg-datahike-0.1.46-standalone.jar --port 6167 --db pgeltestdb --memory &
+	curl -fLO https://github.com/replikativ/pg-datahike/releases/download/v0.1.48/pg-datahike-0.1.48-standalone.jar
+	java -jar pg-datahike-0.1.48-standalone.jar --port 6167 --db pgeltestdb --memory &
 	sleep 5
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:6167/pgeltestdb $(MAKE) test
 
