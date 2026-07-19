@@ -206,6 +206,7 @@ SQL queries. To avoid this overhead on establishing a connection, remove
 (define-error 'pg-disk-full "PostgreSQL disk full error" 'pg-operational-error)
 (define-error 'pg-too-many-connections "PostgreSQL too many connections" 'pg-operational-error)
 (define-error 'pg-plpgsql-error "PostgreSQL PL/pgSQL error" 'pg-programming-error)
+(define-error 'pg-dependent-objects-still-exist "PostgreSQL dependent objects still exist" 'pg-operational-error)
 
 (defun pg-signal-type-error (fmt &rest arguments)
   (let ((msg (apply #'format fmt arguments)))
@@ -703,6 +704,7 @@ presented to the user."
                         ((pred (lambda (v) (string-prefix-p "23" v))) 'pg-integrity-error)
                         ("25P01" 'pg-transaction-missing)
                         ("25P04" 'pg-transaction-timeout)
+                        ("2BP01" 'pg-dependent-objects-still-exist)
                         ((pred (lambda (v) (string-prefix-p "2F" v))) 'pg-programming-error)
                         ((pred (lambda (v) (string-prefix-p "38" v))) 'pg-programming-error)
                         ((pred (lambda (v) (string-prefix-p "39" v))) 'pg-programming-error)

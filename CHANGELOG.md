@@ -8,7 +8,8 @@
 - Expose the latest `ReadyForQuery` transaction status on connections via `pgcon-transaction-status`
   (patch from @LuciusChen).
 
-- New error types `pg-bad-copy-file-format` and `pg-protocol-violation`.
+- New error types `pg-bad-copy-file-format`, `pg-protocol-violation` and
+  `pg-dependent-objects-still-exist`.
 
 - The SQLSTATE value supplied by PostgreSQL is reported when an error is signaled, to help the user
   find documentation on the exact error type.
