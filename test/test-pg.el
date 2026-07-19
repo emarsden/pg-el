@@ -432,7 +432,7 @@
                   :skip-variants  '(risingwave ydb spanner clickhouse vertica))
       (pgtest-add #'pg-test-cursors
                   :skip-variants '(xata cratedb cockroachdb risingwave questdb greptimedb ydb materialize spanner octodb
-                                        cedardb yellowbrick datafusion picodata motherduck h2))
+                                        cedardb yellowbrick datafusion picodata motherduck h2 serenedb))
       ;; CrateDB does not support the BYTEA type (!), nor sequences. Spanner does not support the encode() function.
       (pgtest-add #'pg-test-bytea
                   :skip-variants '(cratedb risingwave spanner materialize picodata doltgres datahike))
@@ -1220,7 +1220,7 @@ bar$$"))))
     ;; Testing insert via UNNEST. YDB does not support unnest on _text,_float. 
     (unless (member (pgcon-server-variant con) '(ydb))
       (when-let* ((sql (pgtest-massage con "CREATE TABLE measurement(
-         id SERIAL PRIMARY KEY,
+         \"id\" SERIAL PRIMARY KEY,
          sensorid TEXT,
          value FLOAT8,
          ts TIMESTAMP DEFAULT current_timestamp)")))
@@ -1490,7 +1490,7 @@ bar$$"))))
       (pg-exec con "SET TimeZone = 'UTC-01:00'")
       (pg-exec con "DROP TABLE IF EXISTS date_test")
       (pg-exec con (pgtest-massage con "CREATE TABLE date_test(
-           id INTEGER PRIMARY KEY,
+           \"id\" INTEGER PRIMARY KEY,
            ts TIMESTAMP,
            tstz TIMESTAMPTZ,
            t TIME,
@@ -2212,7 +2212,7 @@ bar$$"))))
 ;; https://www.postgresql.org/docs/current/rowtypes.html
 (defun pg-test-rowtype (con)
   (cl-flet ((scalar (sql) (car (pg-result (pg-exec con sql) :tuple 0))))
-    (pg-exec con "DROP TYPE IF EXISTS pgel_complex")
+    (pg-exec con "DROP TYPE IF EXISTS pgel_complex CASCADE")
     (pg-exec con "DROP TABLE IF EXISTS pgeltest_rowtype")
     (pg-exec con "CREATE TYPE pgel_complex AS (r DOUBLE PRECISION, i DOUBLE PRECISION)")
     (pg-exec con "CREATE TABLE pgeltest_rowtype(item TEXT, price pgel_complex)")
@@ -2222,7 +2222,7 @@ bar$$"))))
            (rows (pg-result res :tuples)))
       (should (eql 1 (length rows)))
       (should (string= "one" (caar rows))))
-    (pg-exec con "DROP TABLE pgeltest_rowtype")
+    (pg-exec con "DROP TABLE pgeltest_rowtype CASCADE")
     (pg-exec con "DROP TYPE pgel_complex CASCADE")))
 
 
@@ -2446,7 +2446,7 @@ bar$$"))))
       (when (pg-function-p con "gen_random_uuid")
         (pg-exec con "DROP TABLE IF EXISTS items")
         (let ((sql (pgtest-massage con "CREATE TABLE items (
-               id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+               \"id\" UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
                embedding vector(4))")))
           (pg-exec con sql))
         (dotimes (_ 1000)
@@ -2574,7 +2574,7 @@ bar$$"))))
     (when (pg-function-p con "gen_random_uuid")
       (pg-exec con "DROP TABLE IF EXISTS with_point")
       (pg-exec con (pgtest-massage con "CREATE TABLE with_point(
-            id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+            \"id\" UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
             p POINT)"))
       (pg-exec con "INSERT INTO with_point(p) VALUES('(33,44)')")
       (pg-exec con "INSERT INTO with_point(p) VALUES('(33.1,4.4)')")
@@ -2601,7 +2601,7 @@ bar$$"))))
         (should (<= 45 (aref l1 0) 46)))
       (pg-exec con "DROP TABLE IF EXISTS with_line")
       (pg-exec con (pgtest-massage con "CREATE TABLE with_line(
-           id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+           \"id\" UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
            ln LINE)"))
       (pg-exec con "INSERT INTO with_line(ln) VALUES('{1,2,3}')")
       (pg-exec con "INSERT INTO with_line(ln) VALUES('{-1,2,-3}')")
@@ -2628,7 +2628,7 @@ bar$$"))))
         (should (pgtest-approx= 4e1 (cdr (aref lseg 1)))))
       (pg-exec con "DROP TABLE IF EXISTS with_lseg")
       (pg-exec con (pgtest-massage con "CREATE TABLE with_lseg(
-             id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+             \"id\" UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
              ls LSEG)"))
       (pg-exec con "INSERT INTO with_lseg(ls) VALUES('[(4,5), (6.6,7.7)]')")
       (let* ((ls (vector (cons 2 3) (cons 55.5 66.6)))
@@ -2643,7 +2643,7 @@ bar$$"))))
         (should (eql -66 (car (aref box 1)))))
       (pg-exec con "DROP TABLE IF EXISTS with_box")
       (pg-exec con (pgtest-massage con "CREATE TABLE with_box(
-              id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+              \"id\" UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
               bx BOX)"))
       (pg-exec con "INSERT INTO with_box(bx) VALUES('(33.3,5),(5,-67e1)')")
       (let* ((bx (vector (cons 2 3) (cons 55.6 -23.2)))
@@ -2661,7 +2661,7 @@ bar$$"))))
         (should (eql 7 (cdr (nth 1 points)))))
       (pg-exec con "DROP TABLE IF EXISTS with_path")
       (pg-exec con (pgtest-massage con "CREATE TABLE with_path(
-             id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+             \"id\" UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
              pt PATH)"))
       (pg-exec con "INSERT INTO with_path(pt) VALUES('[(22,33.3), (4.5,1)]')")
       (pg-exec con "INSERT INTO with_path(pt) VALUES('[(22,33.3), (4.5,1),(-66,-1)]')")
@@ -2684,7 +2684,7 @@ bar$$"))))
         (should (eql 0 (car (car (last points))))))
       (pg-exec con "DROP TABLE IF EXISTS with_polygon")
       (pg-exec con (pgtest-massage con "CREATE TABLE with_polygon(
-               id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+               \"id\" UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
                pg POLYGON)"))
       (pg-exec con "INSERT INTO with_polygon(pg) VALUES('((3,4),(5,6),(44.4,55.5))')")
       (let* ((pg (make-pg-geometry-polygon :points '((2 . 3) (3 . 4) (4 . 5) (6.6 . 7.77))))
@@ -3262,6 +3262,18 @@ bar$$"))))
   (should (eql 'ok (condition-case nil
                        (funcall scalar-fn "DROP TYPE nonexist_type")
                      (pg-programming-error 'ok))))
+  (should (eql 'ok (unwind-protect
+                       (progn
+                         (pg-exec con "DROP TABLE IF EXISTS pgeltest_dependent")
+                         (pg-exec con "DROP TYPE IF EXISTS pgeltest_newtype CASCADE")
+                         (pg-exec con "CREATE TYPE pgeltest_newtype AS (r DOUBLE PRECISION, i DOUBLE PRECISION)")
+                         (pg-exec con "CREATE TABLE pgeltest_dependent(item TEXT, price pgeltest_newtype)")
+                         (pg-exec con "INSERT INTO pgeltest_dependent VALUES('one', ROW(1.2,2.3))")
+                         (condition-case nil
+                             (pg-exec con "DROP TYPE pgeltest_newtype")
+                           (pg-dependent-objects-still-exist 'ok)))
+                     (pg-exec con "DROP TABLE IF EXISTS pgeltest_dependent")
+                     (pg-exec con "DROP TYPE IF EXISTS pgeltest_newtype CASCADE"))))
   (should (eql 'ok (condition-case nil
                        (funcall scalar-fn "DEALLOCATE nonexistent_prepared_statement")
                      (pg-invalid-sql-statement-name 'ok))))
