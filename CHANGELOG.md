@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.68] - Unreleased
+## [0.68] - 2026-06-19
 
 - Parse one-dimensional array values that PostgreSQL returns with explicit dimension bounds, such as
   `[-33:-31]={100,200,300}` (patch from @LuciusChen).
