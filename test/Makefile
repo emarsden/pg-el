@@ -818,8 +818,7 @@ test-odyssey: test-pg.el
 # https://github.com/gatewayd-io/gatewayd
 # https://hub.docker.com/r/gatewaydio/gatewayd
 test-gatewayd: test-pg.el
-	${DOCKER} run --rm --name gatewayd \
-          --pull=newer \
+	${DOCKER} run --rm --name gatewayd --pull=newer \
           --net=host \
           -e GATEWAYD_CLIENTS_DEFAULT_WRITES_ADDRESS=localhost:5432 \
           -e GATEWAYD_CLIENTS_DEFAULT_READS_ADDRESS=localhost:5432 \
@@ -957,9 +956,7 @@ test-supavisor: test-pg.el
 # https://readyset.io/docs/get-started/install-rs/docker/postgres
 # https://readyset.io/docs/reference/cli/readyset
 test-readyset: test-pg.el
-	${DOCKER} run --rm --name postgres18 \
-           --pull=newer \
-           --pull=newer \
+	${DOCKER} run --rm --name postgres18 --pull=newer \
            --publish 127.0.0.1:5488:5488 \
            -e POSTGRES_DB=pgeltestdb \
            -e POSTGRES_USER=pgeltestuser \
@@ -968,8 +965,7 @@ test-readyset: test-pg.el
            -e TZ=Asia/Tokyo \
            -d docker.io/library/postgres:18-alpine
 	sleep 5
-	${DOCKER} run --rm --name readyset \
-          --pull=newer --net=host \
+	${DOCKER} run --rm --name readyset --pull=newer --net=host \
           -e DISABLE_UPSTREAM_SSL_VERIFICATION=true \
           -e UPSTREAM_DB_URL=postgresql://pgeltestuser:pgeltest@127.0.0.1:5488/pgeltestdb \
           -e LISTEN_ADDRESS=127.0.0.1:5433 \
@@ -1081,8 +1077,8 @@ test-materialize: test-pg.el
 # https://docs.yellowbrick.com/7.1.0/platforms/cloud/ce/docker/ce_cloud_docker.html
 # https://hub.docker.com/r/yellowbrickdata/ybd-ce-k0s-amd64
 test-yellowbrick-ce: test-pg.el
-	${DOCKER} volume ls --format '{{ .Name }}' | grep -qw ybd-storage-rfs || podman volume create ybd-storage-rfs
-	${DOCKER} volume ls --format '{{ .Name }}' | grep -qw ybd-storage-lfs || podman volume create ybd-storage-lfs
+	${DOCKER} volume ls --format '{{ .Name }}' | grep -qw ybd-storage-rfs || ${DOCKER} volume create ybd-storage-rfs
+	${DOCKER} volume ls --format '{{ .Name }}' | grep -qw ybd-storage-lfs || ${DOCKER} volume create ybd-storage-lfs
 	mkdir -p /tmp/yellowbrick
 	${DOCKER} run --rm --name yellowbrick \
           --hostname yellowbrick \
@@ -1740,6 +1736,56 @@ test-pgmicro: test-pg.el
 	rm -rf ${TMPBDIR}
 
 
+# https://github.com/vul-os/basin
+# https://github.com/vul-os/basin/blob/main/docs/quickstart-docker.md
+# (Vibe-coded, does not build as of 202608
+test-basin: test-pg.el
+	$(eval TMPBDIR := $(shell mktemp -d -t basin-buildXXXX))
+	(cd ${TMPBDIR} && \
+         git clone --depth 1 https://github.com/vul-os/basin && \
+         cd basin && \
+         ${DOCKER} build -t basin-server . )
+	${DOCKER} run --rm --name=basin --publish 127.0.0.1:5421:5432 basin-server
+	sleep 10
+	PGURI=postgresql://dbadmin:pgeltest@127.0.0.1:5421/pgeltestdb $(MAKE) test
+	${DOCKER} stop basin
+	rm -rf ${TMPBDIR}
+
+
+# https://www.pgcache.com/docs/getting-started/
+# https://www.pgcache.com/docs/configuration/#docker-environment-variables
+test-pgcache: test-pg.el
+	${DOCKER} run --rm --name postgres18 --pull=newer \
+           --publish 5488:5488 \
+           --expose=5488 \
+           -e POSTGRES_DB=pgeltestdb \
+           -e POSTGRES_USER=pgeltestuser \
+           -e POSTGRES_PASSWORD=pgeltest \
+           -e PGPORT=5488 \
+           -e TZ=Asia/Tokyo \
+           -d docker.io/library/postgres:18-alpine \
+             -c wal_level=logical \
+             -c max_replication_slots=10 \
+             -c max_wal_senders=10
+	sleep 5
+	${DOCKER} run --rm --pull=newer --name pgcache \
+          --publish 127.0.0.1:5991:5991 \
+          -e PGCACHE_TELEMETRY=off \
+          -e PUBLICATION=pgcache_pub \
+          -e LISTEN_PORT=5991 \
+          -e UPSTREAM_URL=postgres://pgeltestuser:pgeltest@host.containers.internal:5488/pgeltestdb \
+          -d docker.io/pgcache/pgcache:latest
+	sleep 5
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5991/pgeltestdb $(MAKE) test
+	${DOCKER} stop pgcache
+	${DOCKER} stop postgres18
+
+
+
+# TODO: test https://github.com/OpenTenBase/OpenTenBase
+# https://www.opentenbase.org/en/blog/01-quickstart/
+
+
 # https://hub.docker.com/r/opentext/vertica-ce
 #
 # As of 2025-09 it seems that OpenText have deleted all references to their community edition from
@@ -1872,8 +1918,8 @@ test-failing-spacetimedb: test-pg.el
            --publish 127.0.0.1:3000:3000 \
            -d docker.io/clockworklabs/spacetime:latest start --listen-addr 127.0.0.1:3000 --pg-port 5981
 	sleep 2
-	podman exec spacetimedb spacetime init --lang rust my_module
-	podman exec spacetimedb spacetime publish --yes --project-path my_module pgeltestdb
+	${DOCKER} exec spacetimedb spacetime init --lang rust my_module
+	${DOCKER} exec spacetimedb spacetime publish --yes --project-path my_module pgeltestdb
 #        @json=$(shell curl -X POST http://localhost:3000/v1/identity);
 	curl http://localhost:3000/v1/ping  # check whether we can connect
 	curl -X POST http://localhost:3000/v1/identity
