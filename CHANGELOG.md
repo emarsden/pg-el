@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.69] - Unreleased
+
+- New error type `pg-invalid-function-definition`.
+
+
 ## [0.68] - 2026-06-19
 
 - Parse one-dimensional array values that PostgreSQL returns with explicit dimension bounds, such as
