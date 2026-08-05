@@ -1,9 +1,9 @@
 EMACS ?= emacs
 DOCKER ?= podman
-WORKDIR := $(shell mktemp -d)
+WORKDIR := $(shell mktemp -d -t pgeltestXXXX)
 
 # export DEPS_DIR = $(shell realpath .deps)
-export DEPS_DIR := $(shell mktemp -d -t emacsdepsXXXX)
+export DEPS_DIR := $(shell mktemp -d -t pgelemacsdepsXXXX)
 
 default: test
 
@@ -1498,10 +1498,10 @@ test-h2: test-pg.el
 # https://github.com/replikativ/pg-datahike/
 # Doesn't seem to be a public container image currently
 test-datahike: test-pg.el
-	$(eval TESTDIR := $(shell mktemp -d -t datahike-runXXXX))
+	$(eval TESTDIR := $(shell mktemp -d -t pgeldatahike-runXXXX))
 	cd ${TESTDIR}
-	curl -fLO https://github.com/replikativ/pg-datahike/releases/download/v0.1.48/pg-datahike-0.1.48-standalone.jar
-	java -jar pg-datahike-0.1.48-standalone.jar --port 6167 --db pgeltestdb --memory &
+	curl -fLO https://github.com/replikativ/pg-datahike/releases/download/v0.1.60/pg-datahike-0.1.60-standalone.jar
+	java -jar pg-datahike-0.1.60-standalone.jar --port 6167 --db pgeltestdb --memory &
 	sleep 5
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:6167/pgeltestdb $(MAKE) test
 
@@ -1539,7 +1539,7 @@ test-puzzledb: test-pg.el
 # This database does not implement primay keys, nor cursors, nor CREATE INDEX, nor insert-returning,
 # nor SQL types TIMETZ, BIT, BPCHAR.
 test-datafusion: test-pg.el
-	$(eval TMPBDIR := $(shell mktemp -d -t datafusion-buildXXXX))
+	$(eval TMPBDIR := $(shell mktemp -d -t pgeldatafusionXXXX))
 	(cd ${TMPBDIR} && \
          git clone --depth 1 https://github.com/datafusion-contrib/datafusion-postgres && \
          cd datafusion-postgres && \
@@ -1595,7 +1595,7 @@ test-arcadedb: test-pg.el
 #
 # https://github.com/sunng87/pgwire/blob/master/examples/gluesql.rs
 test-gluesql: test-pg.el
-	$(eval TMPBDIR := $(shell mktemp -d -t gluesql-buildXXXX))
+	$(eval TMPBDIR := $(shell mktemp -d -t pgelgluesqlXXXX))
 	(cd ${TMPBDIR} && \
          git clone --depth 1 https://github.com/sunng87/pgwire/ && \
          cd pgwire && cargo build )
@@ -1657,7 +1657,7 @@ test-picodata: test-pg.el
 # No public Docker image as of 2026-03
 # 2026-03: failing on "select version()" --> Execution error: InternalError("Table '' not found")
 test-vaultgres: test-pg.el
-	$(eval TMPBDIR := $(shell mktemp -d -t vaultgres-buildXXXX))
+	$(eval TMPBDIR := $(shell mktemp -d -t pgelvaultgresXXXX))
 	(cd ${TMPBDIR} && \
          git clone --depth 1 https://github.com/neoalienson/Vaultgres && \
          cd Vaultgres && \
@@ -1673,7 +1673,7 @@ test-vaultgres: test-pg.el
 # This educational database implementation is not very PostgreSQL compatible; it doesn't implement
 # version() for example as of v0.20.2 from 2025-12.
 test-risinglight: test-pg.el
-	$(eval TMPBDIR := $(shell mktemp -d -t risinglight-buildXXXX))
+	$(eval TMPBDIR := $(shell mktemp -d -t pgelrisinglightXXXX))
 	(cd ${TMPBDIR} && \
          git clone --depth 1 https://github.com/risinglightdb/risinglight && \
          cd risinglight && \
@@ -1700,7 +1700,7 @@ test-chrondb: test-pg.el
 
 # https://github.com/erans/pgsqlite -- a PostgreSQL protocol adapter for SQLite databases
 test-pgsqlite: test-pg.el
-	$(eval TMPBDIR := $(shell mktemp -d -t pgsqlite-buildXXXX))
+	$(eval TMPBDIR := $(shell mktemp -d -t pgelpgsqliteXXXX))
 	(cd ${TMPBDIR} && \
          git clone --depth 1 https://github.com/erans/pgsqlite && \
          cd pgsqlite && \
@@ -1725,7 +1725,7 @@ test-litesql: test-pg.el
 
 # https://github.com/glommer/pgmicro
 test-pgmicro: test-pg.el
-	$(eval TMPBDIR := $(shell mktemp -d -t pgmicro-buildXXXX))
+	$(eval TMPBDIR := $(shell mktemp -d -t pgelpgmicroXXXX))
 	(cd ${TMPBDIR} && \
          git clone --depth 1 https://github.com/glommer/pgmicro && \
          cd pgmicro && \
@@ -1740,7 +1740,7 @@ test-pgmicro: test-pg.el
 # https://github.com/vul-os/basin/blob/main/docs/quickstart-docker.md
 # (Vibe-coded, does not build as of 202608
 test-basin: test-pg.el
-	$(eval TMPBDIR := $(shell mktemp -d -t basin-buildXXXX))
+	$(eval TMPBDIR := $(shell mktemp -d -t pgelbasinXXXX))
 	(cd ${TMPBDIR} && \
          git clone --depth 1 https://github.com/vul-os/basin && \
          cd basin && \
