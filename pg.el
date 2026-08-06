@@ -1929,7 +1929,10 @@ Uses PostgreSQL connection CON."
            for typ in argument-types
            for v in argument-values
            for serializer = (gethash typ pg--serializers)
-           collect (cond ((gethash typ pg--textual-serializers)
+           collect (cond ((and (null v) (null typ))
+                          ;; an untyped nil argument value is bound as SQL NULL
+                          (cons nil 0))
+                         ((gethash typ pg--textual-serializers)
                           ;; this argument will be sent as text
                           (cons (funcall serializer v ce) 0))
                          (serializer
@@ -1946,7 +1949,8 @@ Uses PostgreSQL connection CON."
                  2
                  (* 2 (length argument-types))
                  2
-                 (cl-loop for v in (mapcar #'car serialized-values) sum (+ 4 (string-bytes v)))
+                 (cl-loop for v in (mapcar #'car serialized-values)
+                          sum (+ 4 (if v (string-bytes v) 0)))
                  2)))
     (when (> len (expt 2 32))
       (signal 'pg-user-error (list "Field is too large")))
@@ -1963,8 +1967,9 @@ Uses PostgreSQL connection CON."
     (cl-loop
      for (v . _) in serialized-values
      do (if (null v)
-            ;; for a null value, send -1 followed by zero octets for the value
-            (pg--send-uint con -1 4)
+            ;; for a null value, send the 32-bit NULL length (0xFFFFFFFF)
+            ;; followed by zero octets for the value
+            (pg--send-uint con #xffffffff 4)
           (let ((len (string-bytes v)))
             (when (> len (expt 2 32))
               (signal 'pg-user-error (list "Field is too large")))

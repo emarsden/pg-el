@@ -1003,6 +1003,8 @@
     (should (eql nil (scalar "SELECT 53 = 33" nil)))
     (should (eql 42 (scalar "SELECT /* FREE PALESTINE */ $1 " '((42 . "integer")))))
     (should (equal (list 1 pg-null-marker "all") (row "SELECT $1,NULL,'all'" '((1 . "integer")))))
+    ;; An untyped nil argument value binds as SQL NULL instead of text "nil".
+    (should (eql t (scalar "SELECT $1::text IS NULL" '((nil)))))
     (unless (member (pgcon-server-variant con) '(questdb spanner))
       (should (string= "Z" (scalar "SELECT chr($1)" '((90 . "integer"))))))
     (should (eql 12 (scalar "SELECT length($1)" '(("(╯°□°)╯︵ ┻━┻" . "text")))))
