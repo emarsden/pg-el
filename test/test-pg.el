@@ -322,19 +322,22 @@
                     (push fun tests)))))
       (when pgtest--enable-query-log
         (pg-enable-query-log con))
+      ;; This is currently detected as the "pgwire" variant, but we have special exceptions for datafusion
+      (when (member "datafusion" (pg-databases con))
+        (setf (pgcon-server-variant con) 'datafusion))
       (message "Backend major-version is %s" (pgcon-server-version-major con))
       (message "Detected backend variant: %s" (pgcon-server-variant con))
       (unless (member (pgcon-server-variant con)
                       '(cockroachdb cratedb yugabyte ydb xata greptimedb risingwave clickhouse octodb vertica arcadedb
                                     cedardb pgsqlite datafusion stoolap picodata serenedb motherduck pgwire pgmicro
-                                    datahike xtdb))
+                                    datahike xtdb umbra turso))
         (when (> (pgcon-server-version-major con) 11)
           (let* ((res (pg-exec con "SELECT current_setting('ssl_library')"))
                  (row (pg-result res :tuple 0)))
             (message "Backend compiled with SSL library %s" (cl-first row)))))
       (unless (member (pgcon-server-variant con)
                       '(questdb cratedb ydb xata greptimedb risingwave clickhouse materialize vertica arcadedb datafusion
-                                stoolap immudb serenedb picodata motherduck pgwire pgmicro xtdb))
+                                stoolap immudb serenedb picodata motherduck pgwire pgmicro xtdb umbra))
         (let* ((res (pg-exec con "SHOW ssl"))
                (row (pg-result res :tuple 0)))
           (message "PostgreSQL connection TLS: %s" (cl-first row))))
@@ -356,9 +359,6 @@
         (setf (pgcon-server-variant con) 'doltgres))
       (when (eq 'orioledb (pgcon-server-variant con))
         (pg-exec con "CREATE EXTENSION IF NOT EXISTS orioledb"))
-      ;; This is currently detected as the "pgwire" variant, but we have special exceptions for datafusion
-      (when (member "datafusion" (pg-tables con))
-        (setf (pgcon-server-variant con) 'datafusion))
       ;; Log the version number for the Timescale extension
       (when (eq 'timescaledb (pgcon-server-variant con))
         (let* ((res (pg-exec con "SELECT extversion FROM pg_extension WHERE extname='timescaledb'"))
@@ -432,7 +432,7 @@
                   :skip-variants  '(risingwave ydb spanner clickhouse vertica))
       (pgtest-add #'pg-test-cursors
                   :skip-variants '(xata cratedb cockroachdb risingwave questdb greptimedb ydb materialize spanner octodb
-                                        cedardb yellowbrick datafusion picodata motherduck h2 serenedb))
+                                        cedardb yellowbrick datafusion picodata motherduck h2 serenedb umbra))
       ;; CrateDB does not support the BYTEA type (!), nor sequences. Spanner does not support the encode() function.
       (pgtest-add #'pg-test-bytea
                   :skip-variants '(cratedb risingwave spanner materialize picodata doltgres datahike))
@@ -481,15 +481,15 @@
                   :skip-variants '(xata cratedb cockroachdb risingwave materialize octodb datafusion h2))
       (pgtest-add #'pg-test-copy
                   :skip-variants '(spanner ydb cratedb risingwave materialize questdb xata vertica yellowbrick
-                                           datafusion picodata serenedb motherduck doltgres datahike xtdb h2))
+                                           datafusion picodata serenedb motherduck doltgres datahike xtdb h2 turso))
       ;; QuestDB fails due to lack of support for the NUMERIC type
       (pgtest-add #'pg-test-copy-large
                   :skip-variants '(spanner ydb cratedb risingwave questdb materialize datafusion serenedb motherduck
-                                           datahike xtdb h2))
+                                           datahike xtdb h2 turso))
       (pgtest-add #'pg-test-clone-connection)
       ;; Apparently Xata does not support CREATE DATABASE
       (pgtest-add #'pg-test-createdb
-                  :skip-variants '(xata cratedb questdb ydb vertica immudb picodata h2))
+                  :skip-variants '(xata cratedb questdb ydb vertica immudb picodata h2 turso))
       ;; Many PostgreSQL variants only support UTF8 as the client encoding.
       (pgtest-add #'pg-test-client-encoding
                   :skip-variants '(cratedb cockroachdb ydb risingwave materialize spanner greptimedb questdb xata
@@ -511,11 +511,11 @@
       (pgtest-add #'pg-test-notify
                   :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb ydb questdb spanner vertica cedardb
                                            yellowbrick opengauss datafusion picodata serenedb doltgres motherduck datahike
-                                           h2 xtdb))
+                                           h2 xtdb turso))
       (pgtest-add #'pg-test-lo
                   :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb ydb questdb spanner vertica greenplum
                                            cedardb yellowbrick opengauss datafusion picodata serenedb doltgres motherduck
-                                           datahike h2))
+                                           datahike h2 cloudberry turso))
       (dolist (test (reverse tests))
         (message "== Running test %s" test)
         (condition-case err
@@ -881,6 +881,7 @@
     (should (eql t (scalar "SELECT true or false")))
     (should (equal (list "hey" "Jude") (row "SELECT 'hey', 'Jude'")))
     (should (eql pg-null-marker (scalar "SELECT NULL")))
+    (should (eql pg-null-marker (scalar "SELECT NULL / 0")))
     (unless (member (pgcon-server-variant con) '(cratedb risingwave yugabyte xata))
       (when (> (pgcon-server-version-major con) 15)
         (should (eql #x1eeeffff (scalar "SELECT int8 '0x1EEE_FFFF'")))))
@@ -892,6 +893,7 @@
       (should (string= "Z" (scalar "SELECT chr(90)"))))
     (should (eql 12 (scalar "SELECT length('(╯°□°)╯︵ ┻━┻')")))
     (should (eql 37 (scalar "SELECT length('Text Line إلا بسم الله 🥝 𒐫  a⃰⃰⃰⃰⃰⃰⃰ ')")))
+    (should (eql 2 (scalar "SELECT length('\x26a1\xfe0f')")))
     (should (string= "::!!::" (scalar "SELECT '::!!::'::varchar")))
     (should (string= "éàç⟶∪" (scalar "SELECT 'éàç⟶∪'")))
     ;; Note that we need to escape the ?\ character in an elisp string by repeating it.
@@ -1067,7 +1069,8 @@
         (should (string-equal-ignore-case (pg-result res :status) "EMPTY")))
       (let ((res (pg-exec con ";;;")))
         (should (string-equal-ignore-case (pg-result res :status) "EMPTY"))))
-   (unless (member (pgcon-server-variant con) '(cratedb clickhouse))
+    (should (eql -56 (scalar "SELECT -56;;")))
+    (unless (member (pgcon-server-variant con) '(cratedb clickhouse))
       (should (eql t (scalar "SELECT bool 'f' < bool 't' AS true")))
       (should (eql t (scalar "SELECT bool 'f' <= bool 't' AS true"))))
     ;; Empty strings are equal
@@ -1626,14 +1629,16 @@ bar$$"))))
     ;; CrateDB doesn't support the OID type, nor casting integers to bits.
     (unless (member (pgcon-server-variant con) '(cratedb risingwave materialize octodb yellowbrick datafusion))
       (should (eql 123 (scalar "SELECT 123::oid")))
-      (should (equal (make-bool-vector 1 nil) (scalar "SELECT 0::bit")))
-      (should (equal (make-bool-vector 1 t) (scalar "SELECT 1::bit")))
+      (should (equal nil (scalar "SELECT 0::bit")))
+      (should (equal t (scalar "SELECT 1::bit")))
       (should (equal (make-bool-vector 8 t) (scalar "SELECT CAST(255 as bit(8))")))
       (let ((bv (scalar "SELECT CAST(32 as BIT(16))")))
         (should (eql nil (aref bv 0)))
         (should (eql nil (aref bv 3)))
         (should (eql t (aref bv 10)))
-        (should (eql nil (aref bv 14)))))
+        (should (eql nil (aref bv 14))))
+      (should (eql 3 (scalar "SELECT length(b'101')")))
+      (should (eql 5 (scalar "SELECT length('10101'::varbit)"))))
     ;; Emacs version prior to 27 can't coerce to bool-vector type
     (when (> emacs-major-version 26)
       ;; RisingWave and DataFusion do not implement the bit type
@@ -1646,13 +1651,23 @@ bar$$"))))
       (unless (member (pgcon-server-variant con) '(cratedb risingwave materialize yellowbrick datafusion))
         (should (equal (cl-coerce (vector t nil t t t t) 'bool-vector)
                        (scalar "SELECT '101111'::varbit(6)")))))
-    ;; (should (eql 66 (scalar "SELECT 66::money")))
+    ;; The formatting of the money type is locale-dependent, so we don't attempt to validate the
+    ;; exact format here. The money type is not implemented by all variants.
+    (unless (member (pgcon-server-variant con) '(cratedb))
+      (should (stringp (scalar "SELECT 66::money")))
+      (should (cl-every #'stringp (scalar "SELECT '{45.0,56.0,67}'::money[]"))))
     (should (eql (scalar "SELECT floor(42.3)") 42))
+    ;; The numeric type is defined as rounding towards zero in PostgreSQL, and the default read
+    ;; format is numeric.
+    (should (eql -5 (scalar "SELECT round(-4.5)")))
     (unless (member (pgcon-server-variant con) '(ydb))
       (should (eql (scalar "SELECT trunc(43.3)") 43))
       (should (eql (scalar "SELECT trunc(-42.3)") -42)))
     (unless (member (pgcon-server-variant con) '(cockroachdb))
       (should (pgtest-approx= (scalar "SELECT log(100)") 2))
+      (should (pgtest-approx= (scalar "SELECT log(10, 100)") 2))
+      (should (pgtest-approx= (scalar "SELECT log(2, 5)") (log 5 2)))
+      (should (pgtest-approx= (scalar "SELECT ln(5)") 1.60944))
       ;; bignums only supported from Emacs 27.2 onwards
       (unless (member (pgcon-server-variant con) '(cratedb risingwave materialize))
         (when (fboundp 'bignump)
@@ -1940,6 +1955,7 @@ bar$$"))))
     (should (equal (vector 9987) (scalar "SELECT ARRAY[9987::int8]")))
     (should (equal (vector 2 8) (scalar "SELECT ARRAY[2,8]")))
     (should (equal (vector) (scalar "SELECT ARRAY[]::integer[]")))
+    (should (equal (vector) (scalar "SELECT ARRAY[]::float[]")))
     (should (equal (vector) (scalar "SELECT '{}'::int2[]")))
     (should (equal (vector) (scalar "SELECT '{}'::int4[]")))
     (should (equal (vector) (scalar "SELECT '{}'::int8[]")))
@@ -1963,9 +1979,14 @@ bar$$"))))
       (should (equal pg-null-marker (aref vec 1))))
     (unless (member (pgcon-server-variant con) '(cratedb cockroachdb cedardb spanner))
       (should (equal (vector "AB1234" "4321BA") (scalar "SELECT '{\"AB1234\",\"4321BA\"}'::bpchar[]"))))
+    (should (equal (vector "AB1234" "4321BA" "bizzle") (scalar "SELECT '{\"AB1234\",\"4321BA\", \"bizzle\"}'::text[]")))
     (let ((vec (scalar "SELECT ARRAY[3.14::float]")))
       (should (floatp (aref vec 0)))
       (should (pgtest-approx= 3.14 (aref vec 0))))
+    (let ((vec (scalar "SELECT ARRAY[1.2, 2.3, 3.4, 5.9999]::float8[]")))
+      (should (cl-every #'floatp vec))
+      (should (pgtest-approx= 3.4 (aref vec 2)))
+      (should (pgtest-approx= 5.9999 (aref vec 3))))
     (let ((vec (scalar "SELECT ARRAY[CAST(3.14 AS DOUBLE PRECISION)]")))
       (should (floatp (aref vec 0)))
       (should (pgtest-approx= 3.14 (aref vec 0))))
@@ -1989,6 +2010,10 @@ bar$$"))))
       (should (equal (vector ?a ?b ?c) (scalar "SELECT CAST('{a,b,c}' AS CHAR[])"))))
     (should (equal (vector "foo" "bar") (scalar "SELECT '{foo, bar}'::text[]")))
     (should (equal (vector 1 pg-null-marker 3) (scalar "SELECT ARRAY[1, NULL, 3]")))
+    (should (eql 20 (scalar "SELECT (ARRAY[10,20,30])[2]")))
+    ;; Array indexes start at 1
+    (should (equal pg-null-marker (scalar "SELECT (ARRAY[4,5,77])[0]")))
+    (should (equal pg-null-marker (scalar "SELECT (ARRAY[4,5,77])[98]")))
     (let ((res (scalar "SELECT ARRAY[4.5, NULL, 6.0, 7.99999]")))
       (should (vectorp res))
       (should (eql 4 (length res)))
@@ -2010,9 +2035,15 @@ bar$$"))))
       (should (equal 2 (length vec)))
       (should (pgtest-approx= 44.3 (aref vec 0)))
       (should (pgtest-approx= 8999.5 (aref vec 1))))
+    (let* ((floats (cl-loop for i from 50 to 5000 collect (format "%s" (+ i 0.34))))
+           (seq (string-join floats ","))
+           (vec (scalar (format "SELECT ARRAY[%s]" seq))))
+      (should (eql 4951 (length vec)))
+      (should (pgtest-approx= 5000.34 (aref vec (1- 4500)))))
     (should (equal 42 (scalar "SELECT unnest(ARRAY[42])")))
     (should (equal pg-null-marker (scalar "SELECT (ARRAY[1,2,3])[42]")))
     (should (equal (vector) (scalar "SELECT (ARRAY[10,11,12])[5:42]")))
+    (should (eql t (scalar "SELECT ARRAY[1,2,3,4] @> ARRAY[2,3]")))
     (let* ((res (pg-exec con "SELECT generate_subscripts('[-33:-31]={100,200,300}'::int[], 1)"))
            (row (pg-result res :tuples)))
       (should (equal row '((-33) (-32) (-31)))))
@@ -3145,6 +3176,12 @@ bar$$"))))
                        (funcall scalar-fn "SELECT log(-2.1)")
                      (pg-floating-point-exception 'ok))))
   (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT power(0, -1)")
+                     (pg-floating-point-exception 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "SELECT exp(20000.0)")
+                     (pg-numeric-value-out-of-range 'ok))))
+  (should (eql 'ok (condition-case nil
                        (funcall scalar-fn "SELECT asin(2.0)")
                      (pg-numeric-value-out-of-range 'ok))))
   (should (eql 'ok (condition-case nil
@@ -3184,6 +3221,18 @@ bar$$"))))
   (should (eql 'ok (condition-case nil
                        ;; numerical overflow on smallint
                        (funcall scalar-fn "SELECT (-32768)::int2 / (-1)::int2")
+                     (pg-numeric-value-out-of-range 'ok))))
+;;   (should (eql 'ok (condition-case nil
+;;                        ;; numerical underflow
+;;                        (funcall scalar-fn "SELECT exp(-1000::numeric)")
+;;                      (pg-numeric-value-out-of-range 'ok))))
+  (should (eql 'ok (condition-case nil
+                       ;; numerical underflow
+                       (funcall scalar-fn "SELECT exp(-1000::float4)")
+                     (pg-numeric-value-out-of-range 'ok))))
+  (should (eql 'ok (condition-case nil
+                       ;; numerical underflow
+                       (funcall scalar-fn "SELECT exp(-1000::float8)")
                      (pg-numeric-value-out-of-range 'ok))))
   (should (eql 'ok (condition-case nil
                        (funcall scalar-fn "SELECT  -2147483647::integer - 2::integer")
@@ -3340,6 +3389,9 @@ bar$$"))))
   (should (eql 'ok (condition-case nil
                        (funcall scalar-fn "SELECT banana(42)")
                      (pg-undefined-function 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (funcall scalar-fn "CREATE FUNCTION invalid_func() RETURNS bool AS $$ $$ LANGUAGE SQL")
+                     (pg-invalid-function-definition 'ok))))
   ;; insufficient arguments means operator does not exist
   (should (eql 'ok (condition-case nil
                        (funcall scalar-fn "SELECT mod(42)")
