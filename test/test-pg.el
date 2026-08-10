@@ -3427,15 +3427,23 @@ bar$$"))))
   (should (eql 'ok (condition-case nil
                        (funcall scalar-fn "PREPARE pgeltestq1(text, int, float, boolean, smallint) AS SELECT 42")
                      (pg-duplicate-prepared-statement 'ok))))
+  (pg-exec con "DROP TABLE IF EXISTS pgtest_duplicate")
   (should (eql 'ok (condition-case nil
                        (progn
-                         (funcall scalar-fn "CREATE TABLE test_duplicate(a INTEGER)")
-                         (funcall scalar-fn "CREATE TABLE test_duplicate(a INTEGER)"))
+                         (funcall scalar-fn "CREATE TABLE pgtest_duplicate(a INTEGER)")
+                         (funcall scalar-fn "CREATE TABLE pgtest_duplicate(a INTEGER)"))
                      (pg-duplicate-table 'ok))))
-  (pg-exec con "DROP TABLE test_duplicate")
+  (pg-exec con "DROP TABLE pgtest_duplicate")
   (should (eql 'ok (condition-case nil
-                       (funcall scalar-fn "CREATE TABLE duplicate_column(a INTEGER, a INTEGER)")
+                       (funcall scalar-fn "CREATE TABLE pgtest_duplicate_column(a INTEGER, a INTEGER)")
                      (pg-duplicate-column 'ok))))
+  (pg-exec con "DROP SEQUENCE IF EXISTS pgtest_existingseq")
+  (should (eql 'ok (condition-case nil
+                       (progn
+                         (funcall scalar-fn "CREATE SEQUENCE IF NOT EXISTS pgtest_existingseq")
+                         (funcall scalar-fn "CREATE SEQUENCE pgtest_existingseq"))
+                     (pg-duplicate-table 'ok))))
+  (pg-exec con "DROP SEQUENCE IF EXISTS pgtest_existingseq")
   (should (eql 'ok (condition-case nil
                        (progn
                          (funcall scalar-fn "PREPARE pgeltestq2(text, int, float, boolean, smallint) AS SELECT 42")
