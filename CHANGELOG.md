@@ -2,7 +2,20 @@
 
 ## [0.69] - Unreleased
 
+- Incompatible change: single items of type `bit` are now parsed as an Emacs Lisp boolean (`t` or
+  `nil`), instead of as a boolean vector of dimension 1. Items of type `varbit` and `bit(n)` are
+  still parsed as Emacs Lisp bool-vector objects.
+
+- Add parsing support for arrays of bits (`_bit` type), which are parsed as vectors of Emacs Lisp
+  booleans.
+
+- Add parsing and serialization support for arrays of hstore objects (`_hstore` type), which are
+  represented in Emacs Lisp as vectors of hashtables.
+
 - New error type `pg-invalid-function-definition`.
+
+- Support for detecting PostgreSQL variants Turso (the experimental tursopg frontend) and Umbra
+  (a research database developed at TU München).
 
 
 ## [0.68] - 2026-06-19
