@@ -513,8 +513,7 @@ test-timescale: test-pg.el
 # or by the presence of "citus_internal" in the pg-schemas list, but since we don't see any
 # behavioural difference from standard PostgreSQL, we don't report this as a variant.
 test-citus: test-pg.el
-	${DOCKER} run --rm --name citus \
-           --pull=newer \
+	${DOCKER} run --rm --name citus --pull=newer \
            --publish 127.0.0.1:5409:5409 \
            -e POSTGRES_DB=pgeltestdb \
            -e POSTGRES_USER=pgeltestuser \
@@ -535,8 +534,7 @@ test-citus: test-pg.el
 # Note: the documentation states that we can use -c default_table_access_method=orioledb in
 # INITDB_ARGS, but that leads to a fatal error "access method "orioledb" does not exist".
 test-orioledb: test-pg.el
-	${DOCKER} run --rm --name orioledb \
-           --pull=newer \
+	${DOCKER} run --rm --name orioledb --pull=newer \
            --publish 127.0.0.1:5317:5317 \
            -e POSTGRES_DB=pgeltestdb \
            -e POSTGRES_USER=pgeltestuser \
@@ -569,15 +567,15 @@ test-ivorysql: test-pg.el
 	PGEL_PORT=5437 $(MAKE) test
 	${DOCKER} stop ivorydb
 
+
 # An ElasticSearch alternative, built as a PostgreSQL extension. Works fine with pg.el.
 # https://docs.paradedb.com/introduction#get-started
 #
 # As of 2025-05, the paradedb docker image is built on a Debian PostgreSQL 17.4. It has some TIGER
 # data preloaded.
 test-paradedb: test-pg.el
-	${DOCKER} run --rm --name paradedb \
-          --pull=newer \
-	  --publish 127.0.0.1:5441:5441 \
+	${DOCKER} run --rm --name paradedb --pull=newer \
+          --publish 127.0.0.1:5441:5441 \
           -e POSTGRES_DB=pgeltestdb \
           -e POSTGRESQL_PORT_NUMBER=5441 \
           -e PGPORT=5441 \
@@ -595,8 +593,7 @@ test-paradedb: test-pg.el
 #
 # https://github.com/tensorchord/VectorChord-bm25/
 test-vectorchord: test-pg.el
-	${DOCKER} run --rm --name vectorchord \
-          --pull=newer \
+	${DOCKER} run --rm --name vectorchord --pull=newer \
           --publish 127.0.0.1:5778:5432 \
           -e POSTGRES_DB=pgeltestdb \
           -e POSTGRES_USER=pgeltestuser \
@@ -612,8 +609,7 @@ test-vectorchord: test-pg.el
 #
 # This behaves exactly like PostgreSQL (which it is forked from).
 test-babelfish: test-pg.el
-	${DOCKER} run --rm --name babelfish \
-          --pull=newer \
+	${DOCKER} run --rm --name babelfish --pull=newer \
           --publish 127.0.0.1:5410:5432 \
           -e POSTGRES_USER=pgeltestuser \
           -e POSTGRES_PASSWORD=pgeltest \
@@ -628,8 +624,7 @@ test-babelfish: test-pg.el
 #
 # https://age.apache.org/getstarted/quickstart
 test-age: test-pg.el
-	${DOCKER} run --rm --name age \
-          --pull=newer \
+	${DOCKER} run --rm --name age --pull=newer \
           -p 127.0.0.1:5455:5432 \
           -e POSTGRES_USER=pgeltestuser \
           -e POSTGRES_PASSWORD=pgeltest \
@@ -645,8 +640,7 @@ test-age: test-pg.el
 #
 # https://github.com/skaiworldwide-oss/agensgraph
 test-agensgraph: test-pg.el
-	${DOCKER} run --rm --name agensgraph \
-          --pull=newer \
+	${DOCKER} run --rm --name agensgraph --pull=newer \
           --publish 127.0.0.1:5455:5432 \
           -e POSTGRES_USER=pgeltestuser \
           -e POSTGRES_PASSWORD=pgeltest \
@@ -671,6 +665,16 @@ test-pgduckdb: test-pg.el
 	sleep 5
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5317/pgeltestdb $(MAKE) test
 	${DOCKER} stop pgduckdb
+
+
+# https://hub.docker.com/r/umbradb/umbra is the research database that was spun off as CedarDB
+test-umbra: test-pg.el
+	${DOCKER} run --rm --name umbra --pull=newer \
+           --publish 127.0.0.1:5319:5432 \
+           -d docker.io/umbradb/umbra:latest
+	sleep 5
+	PGURI=postgresql://postgres:postgres@127.0.0.1:5319/postgres $(MAKE) test
+	${DOCKER} stop umbra
 
 
 # https://cedardb.com/docs/
@@ -719,8 +723,7 @@ test-pgedge: test-pg.el
 # initialization of the pg_cron extension. Likewise for the POSTGRES_USER because that changes the
 # default database name.
 test-documentdb: test-pg.el
-	${DOCKER} run --rm --name documentdb \
-           --pull=newer \
+	${DOCKER} run --rm --name documentdb --pull=newer \
            --publish 127.0.0.1:5488:5488 \
            -e POSTGRES_PASSWORD=pgeltest \
            -e PGPORT=5488 \
@@ -736,8 +739,7 @@ test-documentdb: test-pg.el
 # https://github.com/icoretech/pgbouncer-docker/pkgs/container/pgbouncer-docker
 # (Could also try the mini.dev image, https://images.minimus.io/gallery/images/pgbouncer/quick-start)
 test-pgbouncer: test-pg.el
-	${DOCKER} run --rm --name pgbouncer \
-          --pull=newer \
+	${DOCKER} run --rm --name pgbouncer --pull=newer \
           -v ./pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini \
           -v ./pgbouncer-auth-file.txt:/etc/pgbouncer/pgbouncer-auth-file.txt \
           --net host \
@@ -1142,11 +1144,23 @@ test-immudb: test-pg.el
 # https://hub.docker.com/r/andruche/greenplum
 # https://github.com/greenplum-db/gpdb-archive
 test-greenplum: test-pg.el
-	${DOCKER} run --rm --name greenplum \
-          --pull=newer \
+	${DOCKER} run --rm --name greenplum --pull=newer \
           --publish 127.0.0.1:5433:5432 \
           -e PGPORT=5433 \
           -d docker.io/andruche/greenplum:7
+	sleep 10
+	PGURI=postgresql://gpadmin@localhost:5433/postgres $(MAKE) test
+	${DOCKER} stop greenplum
+
+
+# https://github.com/GreengageDB/greengage (based on Greenplum)
+# 202608: the docker image does not seem to be working
+test-greengage: test-pg.el
+	${DOCKER} run --rm --name greengage --pull=newer \
+          --cap-add=NET_RAW \
+          --publish 127.0.0.1:5433:5432 \
+          -e PGPORT=5433 \
+          ghcr.io/greengagedb/greengage/ggdb8_ubuntu:latest
 	sleep 10
 	PGURI=postgresql://gpadmin@localhost:5433/postgres $(MAKE) test
 	${DOCKER} stop greenplum
@@ -1218,15 +1232,14 @@ test-gpdb: test-pg.el
 # https://github.com/woblerr/docker-cloudberry
 # https://hub.docker.com/r/woblerr/cloudberry/tags
 test-cloudberry: test-pg.el
-	${DOCKER} run --rm --name cloudberry \
+	${DOCKER} run --rm --name cloudberry --pull=newer \
           --cap-add=NET_RAW \
-          --pull=newer \
           --publish 127.0.0.1:5661:5432 \
           -h cdw \
           -e CLOUDBERRY_DATABASE_NAME=pgeltestdb \
           -e CLOUDBERRY_USER=pgeltestuser \
           -e CLOUDBERRY_PASSWORD=pgeltest \
-          -d docker.io/woblerr/cloudberry:2.1.0-incubating-rc2
+          -d docker.io/woblerr/cloudberry:2.1.0-incubating
 	sleep 40
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5661/pgeltestdb $(MAKE) test
 	${DOCKER} stop cloudberry
@@ -1347,8 +1360,7 @@ test-opengauss: test-pg.el
 # AntDB fork of PostgreSQL
 # https://hub.docker.com/r/falconia/antdb-ce
 test-antdb: test-pg.el
-	${DOCKER} run --rm --name antdb \
-           --pull=newer \
+	${DOCKER} run --rm --name antdb --pull=newer \
            --publish 127.0.0.1:5677:5432 \
            -e ANTDB_DB=pgeltestdb \
            -e ANTDB_USER=pgeltestuser \
@@ -1369,10 +1381,7 @@ test-antdb: test-pg.el
 # https://github.com/ClickHouse/ClickHouse/blob/c7996d54536492ebd4f436672e466464e8474ff9/programs/server/config.xml
 test-clickhouse: test-pg.el
 	echo '<clickhouse><postgresql_port>5491</postgresql_port><core_dump><size_limit>0</size_limit></core_dump><tcp_connection_close>0</tcp_connection_close></clickhouse>' > /tmp/pgel-config.xml
-	${DOCKER} run --rm --name clickhouse \
-           --pull=newer \
-	   --ulimit nofile=62144:62144 \
-	   --ulimit core=234567:234567 \
+	${DOCKER} run --rm --name clickhouse --pull=newer \
 	   -v /tmp/pgel-config.xml:/etc/clickhouse-server/config.d/pgel-config.xml \
 	   --publish 127.0.0.1:5491:5491 \
 	   --publish 127.0.0.1:18123:8123 \
@@ -1458,8 +1467,7 @@ test-risingwave: test-pg.el
 # https://cloud.google.com/alloydb/docs/reference/database-flags
 # Seems to ignore the PGPORT environment variable
 test-alloydb: test-pg.el
-	${DOCKER} run --rm --name alloydb \
-          --pull=newer \
+	${DOCKER} run --rm --name alloydb --pull=newer \
           --publish 127.0.0.1:4481:5432 \
           -e POSTGRES_DB=pgeltestdb \
           -e POSTGRES_USER=pgeltestuser \
@@ -1480,6 +1488,7 @@ test-doltgres: test-pg.el
            -e DOLTGRES_PASSWORD=pgeltest \
            -e DOLTGRES_DB=pgeltestdb \
            -d docker.io/dolthub/doltgresql:latest
+	sleep 2
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5489/pgeltestdb $(MAKE) test
 	${DOCKER} stop doltgres
 
@@ -1500,8 +1509,8 @@ test-h2: test-pg.el
 test-datahike: test-pg.el
 	$(eval TESTDIR := $(shell mktemp -d -t pgeldatahike-runXXXX))
 	cd ${TESTDIR}
-	curl -fLO https://github.com/replikativ/pg-datahike/releases/download/v0.1.60/pg-datahike-0.1.60-standalone.jar
-	java -jar pg-datahike-0.1.60-standalone.jar --port 6167 --db pgeltestdb --memory &
+	curl -fLO https://github.com/replikativ/pg-datahike/releases/download/v0.1.61/pg-datahike-0.1.61-standalone.jar
+	java -jar pg-datahike-0.1.61-standalone.jar --port 6167 --db pgeltestdb --memory &
 	sleep 5
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:6167/pgeltestdb $(MAKE) test
 
@@ -1621,16 +1630,17 @@ test-kinetica: test-pg.el
 # https://docs.serenedb.com/reference/configuration
 # https://hub.docker.com/r/serenedb/serenedb/tags
 #
-# This should but does not work with --publish 127.0.0.1:7890:7890
-#
 # Limited PostgreSQL compatibility: no ALTER TABLE, no foreign keys, no privilege functions, no
 # SERIAL, no BIT, no TIME types. https://docs.serenedb.com/compatibility/core-sql-compatibility
+#
+# POSTGRES_USER and POSTGRES_DB are currently ignored
 test-serenedb: test-pg.el
 	${DOCKER} run --rm --name serenedb --pull=newer \
-          --net=host \
+          -e POSTGRES_PASSWORD=pgeltest \
+          --publish 127.0.0.1:7890:7890 \
           -d docker.io/serenedb/serenedb:latest
 	sleep 5
-	PGURI=postgresql://postgres@127.0.0.1:7890/postgres $(MAKE) test
+	PGURI=postgresql://postgres:pgeltest@127.0.0.1:7890/postgres $(MAKE) test
 	${DOCKER} stop serenedb
 
 
@@ -1724,6 +1734,8 @@ test-litesql: test-pg.el
 
 
 # https://github.com/glommer/pgmicro
+#
+# This experiment was replaced by pgturso below
 test-pgmicro: test-pg.el
 	$(eval TMPBDIR := $(shell mktemp -d -t pgelpgmicroXXXX))
 	(cd ${TMPBDIR} && \
@@ -1736,9 +1748,22 @@ test-pgmicro: test-pg.el
 	rm -rf ${TMPBDIR}
 
 
+# https://github.com/tursodatabase/turso/blob/main/postgres/CONTRIBUTING.md
+test-turso: test-pg.el
+	$(eval TMPBDIR := $(shell mktemp -d -t pgelpgtursoXXXX))
+	(cd ${TMPBDIR} && \
+         git clone --depth 1 https://github.com/tursodatabase/turso && \
+         cd turso && \
+         cargo build -p tursopg)
+	(cd ${TMPBDIR}/turso && cargo run -p tursopg -- --server 127.0.0.1:5287 ${TMPBDIR}/pgeltest.db & )
+	sleep 5
+	PGURI=postgresql://pgeltestuser@127.0.0.1:5287/pgeltestdb $(MAKE) test
+	rm -rf ${TMPBDIR}
+
+
 # https://github.com/vul-os/basin
 # https://github.com/vul-os/basin/blob/main/docs/quickstart-docker.md
-# (Vibe-coded, does not build as of 202608
+# (Vibe-coded, does not build as of 202608)
 test-basin: test-pg.el
 	$(eval TMPBDIR := $(shell mktemp -d -t pgelbasinXXXX))
 	(cd ${TMPBDIR} && \
@@ -1784,6 +1809,18 @@ test-pgcache: test-pg.el
 
 # TODO: test https://github.com/OpenTenBase/OpenTenBase
 # https://www.opentenbase.org/en/blog/01-quickstart/
+
+
+# TODO: test Firebolt https://docs.firebolt.io/self-managed (needs Kubernetes)
+
+# TODO: test https://github.com/BemiHQ/BemiDB (but needs AWS bucket)
+
+# TODO: test Hyrise research database https://github.com/hyrise/hyrise
+
+# TODO: test PostgreSQL extensions pg_ducklate and pg_mooncake
+
+# TODO: test experimental Turso pg compat mode, https://github.com/tursodatabase/turso/blob/main/postgres/CONTRIBUTING.md
+
 
 
 # https://hub.docker.com/r/opentext/vertica-ce
