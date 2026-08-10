@@ -632,13 +632,13 @@
     (unless (member (pgcon-server-variant con) '(cratedb risingwave materialize ydb yellowbrick datafusion))
       (let ((bv1 (make-bool-vector 1 nil))
             (bv2 (make-bool-vector 1 t)))
-        (should (equal bv1 (scalar "SELECT $1::bit" `((,bv1 . "bit")))))
+        (should (equal t (scalar "SELECT $1::bit" '((t . "bit")))))
         (should (equal bv1 (scalar "SELECT $1::varbit" `((,bv1 . "varbit")))))
-        (should (equal bv2 (scalar "SELECT $1::bit" `((,bv2 . "bit")))))
+        (should (equal nil (scalar "SELECT $1::bit" '((nil . "bit")))))
         (should (equal bv2 (scalar "SELECT $1::varbit" `((,bv2 . "varbit")))))
-        (should (equal bv1 (scalar "SELECT $1" `((,bv1 . "bit")))))
+        (should (equal t (scalar "SELECT $1" '((t . "bit")))))
         (should (equal bv1 (scalar "SELECT $1" `((,bv1 . "varbit")))))
-        (should (equal bv2 (scalar "SELECT $1" `((,bv2 . "bit")))))
+        (should (equal nil (scalar "SELECT $1" '((nil . "bit")))))
       (should (equal bv2 (scalar "SELECT $1" `((,bv2 . "varbit"))))))
       ;; Now some bitvectors of length > 1, so shouldn't use the "bit" type which is interpreted as
       ;; bit(1).
