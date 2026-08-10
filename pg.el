@@ -4158,6 +4158,7 @@ Uses database connection CON."
     ('immudb nil)
     ('picodata nil)
     ('pgmicro nil)
+    ('turso nil)
     ((or 'serenedb 'datahike)
      (let ((res (pg-exec con "SELECT DISTINCT nspname FROM pg_namespace")))
        (apply #'append (pg-result res :tuples))))
@@ -4303,6 +4304,7 @@ Only tables to which the current user has access are listed."
     ('octodb (pg--tables-legacy con))
     ('h2 (pg--tables-information-schema con))
     ('pgmicro (list))
+    ('turso (list))
     (_
      (if (> (pgcon-server-version-major con) 11)
            (pg--tables-information-schema con)
@@ -4498,8 +4500,12 @@ COLUMN is in TABLE. Uses connection to PostgreSQL CON."
 Concerns the backend that we are connected to over connection CON.
 PostgreSQL returns the version as a string. CrateDB returns it as an integer."
   (pcase (pgcon-server-variant con)
-    ;; 202604 pgwire does not implement function version()
-    ('pgwire "pgwire-unknown")
+    ;; 202604 pgwire does not implement function version(), but some implementations building on it (eg Turso) do
+    ('pgwire
+     (or (ignore-errors
+           (let ((res (pg-exec con "SELECT version()")))
+             (cl-first (pg-result res :tuple 0))))
+         "pgwire-unknown"))
     ('pgmicro "pgmicro-unknown")
     (_
      (let ((res (pg-exec con "SELECT version()")))
