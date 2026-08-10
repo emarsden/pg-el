@@ -2208,7 +2208,13 @@ connection CON. Preparing a statement once then reusing it
 multiple times with different argument values allows you avoid
 the overhead of sending and parsing the SQL query and calculating
 the query plan."
-  (let* ((portal-name (pg-bind con ps-name typed-arguments :portal "pgmacs"))
+  (when (pgcon-query-log con)
+    (with-current-buffer (pgcon-query-log con)
+      (insert "fetch-prepared %s %s\n" ps-name typed-arguments)
+    (when noninteractive
+      (message "fetch-prepared> %s %s" ps-name typed-arguments))))
+  (pg--trim-connection-buffers con)
+  (let* ((portal-name (pg-bind con ps-name typed-arguments :portal "pg-el"))
          (result (make-pgresult :connection con :portal portal-name)))
     (pg-describe-portal con portal-name)
     (prog1
