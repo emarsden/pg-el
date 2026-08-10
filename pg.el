@@ -2961,9 +2961,23 @@ the PostgreSQL connection CON."
              (signal 'pg-protocol-error (list msg))))))
 
 (pg-register-parser "bool" #'pg-bool-parser)
+(pg-register-parser "_bool" (pg--make-array-parser "bool" #'pg-bool-parser))
 
-(defun pg-bit-parser (str _encoding)
-  "Parse STR as a PostgreSQL bit to an Emacs bool-vector."
+;; PostgreSQL uses the same oid for bit and for bit(n) values.
+(defun pg-bit-parser (str encoding)
+  "Parse STR as a PostgreSQL bit to an Emacs boolean."
+  (declare (speed 3))
+  (cond ((> (string-bytes str) 1) (pg-varbit-parser str encoding))
+        ((eql ?0 (aref str 0)) nil)
+        ((eql ?1 (aref str 0)) t)
+        (t (let ((msg (format "Badly format bit from backend: %s" str)))
+             (signal 'pg-protocol-error (list msg))))))
+
+(pg-register-parser "bit" #'pg-bit-parser)
+(pg-register-parser "_bit" (pg--make-array-parser "bit" #'pg-bit-parser))
+
+(defun pg-varbit-parser (str _encoding)
+  "Parse STR as a PostgreSQL varbit to an Emacs bool-vector."
   (declare (speed 3))
   (if (string= "NULL" str)
       pg-null-marker
