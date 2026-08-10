@@ -2950,6 +2950,29 @@ the PostgreSQL connection CON."
 (defun pg-lookup-parser (type-name)
   (gethash type-name pg--parser-by-typname))
 
+(defun pg--array-contents (str error-message)
+  "Return the contents of a PostgreSQL array value STR.
+ERROR-MESSAGE is used if STR does not have the expected array syntax."
+  (when (string-match "\\`\\(?:\\[[+-]?[0-9]+:[+-]?[0-9]+\\]\\)+=" str)
+    (setq str (substring str (match-end 0))))
+  (let ((len (string-bytes str)))
+    (unless (and (> len 1)
+                 (eql (aref str 0) ?{)
+                 (eql (aref str (1- len)) ?}))
+      (signal 'pg-protocol-error (list error-message)))
+    (cl-subseq str 1 (- len 1))))
+
+(defun pg--make-array-parser (item-name item-parser)
+  (lambda (str encoding)
+    (if (string= "NULL" str)
+        pg-null-marker
+      (let* ((msg (format "Unexpected format for %s array" item-name))
+             (maybe-items (pg--array-contents str msg)))
+        (if (zerop (string-bytes maybe-items))
+            (vector)
+          (let ((items (split-string maybe-items "," t "\s+")))
+            (apply #'vector (mapcar (lambda (item) (funcall item-parser item encoding)) items))))))))
+
 (defun pg-bool-parser (str _encoding)
   (cond ((string= "t" str) t)
         ;; This syntax used by ArcadeDB
@@ -2987,16 +3010,7 @@ the PostgreSQL connection CON."
         (setf (aref bv i) (eql ?1 (aref str i))))
       bv)))
 
-(pg-register-parser "bit" #'pg-bit-parser)
-(pg-register-parser "varbit" #'pg-bit-parser)
-
-(defun pg-text-parser (str encoding)
-  "Parse PostgreSQL value STR as text using ENCODING."
-  (if encoding
-      (if (string= "NULL" str)
-          pg-null-marker
-        (decode-coding-string str encoding))
-    str))
+(pg-register-parser "varbit" #'pg-varbit-parser)
 
 ;; STR could be either a single character (char datatype) or a character sequence for the PostgreSQL
 ;; character(n) datatype specifier, which is fixed-length and blank-padded. Note that we return
@@ -3014,28 +3028,63 @@ the PostgreSQL connection CON."
 
 (pg-register-parser "char" #'pg-char-parser)
 (pg-register-parser "bpchar" #'pg-char-parser)
+
+(pg-register-parser "_char" (pg--make-array-parser "char" #'pg-char-parser))
+(pg-register-parser "_bpchar" (pg--make-array-parser "bpchar" #'pg-char-parser))
+
+(defun pg-text-parser (str encoding)
+  "Parse PostgreSQL value STR as text using ENCODING."
+  (if encoding
+      (if (string= "NULL" str)
+          pg-null-marker
+        (decode-coding-string str encoding))
+    str))
+
 (pg-register-parser "name" #'pg-text-parser)
 (pg-register-parser "text" #'pg-text-parser)
 (pg-register-parser "varchar" #'pg-text-parser)
 (pg-register-parser "xml" #'pg-text-parser)
 
+(pg-register-parser "_text" (pg--make-array-parser "text" #'pg-text-parser))
+(pg-register-parser "_varchar" (pg--make-array-parser "varchar" #'pg-text-parser))
+(pg-register-parser "_xml" (pg--make-array-parser "xml" #'pg-text-parser))
+
 ;; TODO; could verify the UUID syntax here, but it seems unnecessary to double guess PostgreSQL.
 (pg-register-parser "uuid" #'pg-text-parser)
+(pg-register-parser "_uuid" (pg--make-array-parser "uuid" #'pg-text-parser))
 
-(pg-register-parser "bytea"
-  ;; BYTEA binary strings (sequence of octets), that use hex escapes. Note
-  ;; PostgreSQL setting variable bytea_output which selects between hex escape
-  ;; format (the default in recent version) and traditional escape format. We
-  ;; assume that hex format is selected.
-  ;;
-  ;; https://www.postgresql.org/docs/current/datatype-binary.html
-  (lambda (str _encoding)
-    "Parse PostgreSQL value STR as a binary string using hex escapes."
+;; BYTEA binary strings (sequence of octets), that use hex escapes. Note
+;; PostgreSQL setting variable bytea_output which selects between hex escape
+;; format (the default in recent version) and traditional escape format. We
+;; assume that hex format is selected.
+;;
+;; https://www.postgresql.org/docs/current/datatype-binary.html
+(defun pg-bytea-parser (str _encoding)
+  "Parse PostgreSQL value STR as a binary string using hex escapes."
+  (if (string= "NULL" str)
+      pg-null-marker
     (unless (and (eql 92 (aref str 0))   ; \ character
                  (eql ?x (aref str 1)))
       (signal 'pg-protocol-error
               (list "Unexpected format for BYTEA binary string")))
     (decode-hex-string (substring str 2))))
+
+;; In arrays, bytea elements are serialized in stringified format like \"\\\\x784545\"
+(defun pg-byteastr-parser (str encoding)
+  (let ((last-pos (1- (string-bytes str))))
+    (if (string= "NULL" str)
+        pg-null-marker
+      (unless (and (string-prefix-p (string 34 92 92) str) ; "\\
+                   (eql 34 (aref str last-pos)))
+        (signal 'pg-protocol-error
+                (list (format "Unexpected format for BYTEA array element %s" str))))
+      (pg-bytea-parser (substring str 2 last-pos) encoding))))
+
+(pg-register-parser "bytea" #'pg-bytea-parser)
+
+;; Wire format: "{\"\\\\x784445414442454546\",\"\\\\x784545\"}"
+(pg-register-parser "_bytea" (pg--make-array-parser "bytea" #'pg-byteastr-parser))
+
 
 (declare-function json-read-from-string "json.el")
 
@@ -3055,8 +3104,11 @@ the PostgreSQL connection CON."
 
 (pg-register-parser "json" #'pg-json-parser)
 (pg-register-parser "jsonb" #'pg-json-parser)
+(pg-register-parser "_json" (pg--make-array-parser "json" #'pg-json-parser))
+(pg-register-parser "_jsonb" (pg--make-array-parser "jsonb" #'pg-json-parser))
 
 (pg-register-parser "jsonpath" #'pg-text-parser)
+(pg-register-parser "_jsonpath" (pg--make-array-parser "jsonpath" #'pg-text-parser))
 
 ;; This function must be called before using the HSTORE extension. It loads the extension if
 ;; necessary, and sets up the parsing support for HSTORE datatypes. This is necessary because
@@ -3077,7 +3129,26 @@ Return nil if the extension could not be loaded."
       (when parser
         (puthash oid parser parser-by-oid))
       (puthash "hstore" oid oid-by-typname))
+    (let* ((res (pg-exec con "SELECT oid FROM pg_catalog.pg_type WHERE typname='_hstore'"))
+           (oid (car (pg-result res :tuple 0)))
+           (parser (pg-lookup-parser "_hstore"))
+           (parser-by-oid (pgcon-parser-by-oid con))
+           (oid-by-typname (pgcon-oid-by-typname con)))
+      (when parser
+        (puthash oid parser parser-by-oid))
+      (puthash "_hstore" oid oid-by-typname))
     (pg-register-textual-serializer "hstore"
+      (lambda (ht encoding)
+        (unless (hash-table-p ht)
+          (pg-signal-type-error "Expecting a hash-table, got %s" ht))
+        (let ((kv (list)))
+          ;; FIXME should escape \" characters in k and v
+          (maphash (lambda (k v) (push (format "\"%s\"=>\"%s\""
+                                          (pg--serialize-text k encoding)
+                                          (pg--serialize-text v encoding)) kv))
+                   ht)
+          (string-join kv ","))))
+    (pg-register-textual-serializer "_hstore"
       (lambda (ht encoding)
         (unless (hash-table-p ht)
           (pg-signal-type-error "Expecting a hash-table, got %s" ht))
@@ -3089,28 +3160,64 @@ Return nil if the extension could not be loaded."
                    ht)
           (string-join kv ","))))))
 
+
+;; We receive something like "\"a\"=>\"1\", \"b\"=>\"2\""
+(defun pg-hstore-parser (str encoding)
+  "Parse PostgreSQL value STR as HSTORE content."
+  (cl-flet ((parse (v)
+              (if (string= "NULL" v)
+                  pg-null-marker
+                (unless (and (eql ?\" (aref v 0))
+                             (eql ?\" (aref v (1- (string-bytes v)))))
+                  (signal 'pg-protocol-error
+                          (list (format "Unexpected format for hstore content: %s (element %s)" str v))))
+                (pg-text-parser (substring v 1 (1- (string-bytes v))) encoding))))
+    (let ((hstore (make-hash-table :test #'equal)))
+      (dolist (segment (split-string str "," t "\s+"))
+        (let* ((kv (split-string segment "=>" t "\s+")))
+          (puthash (parse (car kv)) (parse (cadr kv)) hstore)))
+      hstore)))
+
+;; Format: {"\"a\"=>\"1\", \"b\"=>\"42\"","\"42\"=>\"-55\", \"fooble\"=>\"bizzle\""}
+;;
+;; Note that we can't just split on "," here. We first need to read each string
+(defun pg-hstore-array-parser (str encoding)
+  (cl-flet ((unescape (v)
+              (with-temp-buffer
+                (insert v)
+                (goto-char (point-min))
+                (while (search-forward "\\\"" nil t)
+                  (replace-match "\"" nil t))
+                (buffer-string))))
+    (let* ((escaped-hstores
+            (with-temp-buffer
+              (insert str)
+              (goto-char (point-min))
+              (with-peg-rules
+                  ((hsarray (bol) "{" (* (and qhs "," ws)) qhs "}" (eob))
+                   (qhs "\"" (substring hs) "\"")
+                   (hs (+ (or escaped-char ordinary-char)))
+                   (escaped-char (and "\\" (any)))
+                   (ordinary-char (and (not "\"") (any)))
+                   (ws (* (or " " (char ?\t) (char ?\r) (char ?\n)))))
+                (reverse (peg-run (peg hsarray))))))
+           ;; Unescape all quote characters in each of the hstore strings, to match the format used
+           ;; by PostgreSQL for hstores outside of arrays.
+           (hstores (mapcar #'unescape escaped-hstores))
+           (parsed (mapcar (lambda (val) (pg-hstore-parser val encoding)) hstores)))
+      (cl-coerce parsed 'vector))))
+
 ;; Note however that the hstore type is generally not present in the pg_type table
 ;; upon startup, so we need to call `pg-hstore-setup' before using HSTORE datatypes.
-(pg-register-parser "hstore"
-  ;; We receive something like "\"a\"=>\"1\", \"b\"=>\"2\""
-  (lambda (str encoding)
-    "Parse PostgreSQL value STR as HSTORE content."
-    (cl-flet ((parse (v)
-                (if (string= "NULL" v)
-                    nil
-                  (unless (and (eql ?\" (aref v 0))
-                               (eql ?\" (aref v (1- (string-bytes v)))))
-                    (signal 'pg-protocol-error '("Unexpected format for HSTORE content")))
-                  (pg-text-parser (substring v 1 (1- (string-bytes v))) encoding))))
-      (let ((hstore (make-hash-table :test #'equal)))
-        (dolist (segment (split-string str "," t "\s+"))
-          (let* ((kv (split-string segment "=>" t "\s+")))
-            (puthash (parse (car kv)) (parse (cadr kv)) hstore)))
-        hstore))))
+(pg-register-parser "hstore" #'pg-hstore-parser)
+;; (pg-register-parser "_hstore" (pg--make-array-parser "hstore" #'pg-hstore-parser))
+(pg-register-parser "_hstore" #'pg-hstore-array-parser)
 
 (defun pg-number-parser (str _encoding)
   "Parse PostgreSQL value STR as a number."
-  (cl-parse-integer str))
+  (if (string= "NULL" str)
+      pg-null-marker
+    (cl-parse-integer str)))
 
 (pg-register-parser "count" #'pg-number-parser)
 (pg-register-parser "smallint" #'pg-number-parser)
@@ -3120,6 +3227,12 @@ Return nil if the extension could not be loaded."
 (pg-register-parser "int4" #'pg-number-parser)
 (pg-register-parser "int8" #'pg-number-parser)
 (pg-register-parser "oid" #'pg-number-parser)
+
+(pg-register-parser "_int2" (pg--make-array-parser "int2" #'pg-number-parser))
+(pg-register-parser "_int2vector" (pg--make-array-parser "int2vector" #'pg-number-parser))
+(pg-register-parser "_int4" (pg--make-array-parser "int4" #'pg-number-parser))
+(pg-register-parser "_int8" (pg--make-array-parser "int8" #'pg-number-parser))
+(pg-register-parser "_oid" (pg--make-array-parser "oid" #'pg-number-parser))
 
 ;; We need to handle +Inf, -Inf, NaN specially because the Emacs Lisp reader uses a specific format
 ;; for them.
@@ -3142,84 +3255,15 @@ Return nil if the extension could not be loaded."
 (pg-register-parser "float4" #'pg-float-parser)
 (pg-register-parser "float8" #'pg-float-parser)
 
+(pg-register-parser "_float4" (pg--make-array-parser "float4" #'pg-float-parser))
+(pg-register-parser "_float8" (pg--make-array-parser "float8" #'pg-float-parser))
+(pg-register-parser "_numeric" (pg--make-array-parser "numeric" #'pg-float-parser))
+
+
 ;; FIXME we are not currently handling multidimensional arrays correctly. They are serialized by
 ;; PostgreSQL using the same typid as a unidimensional array, with only the presence of additional
 ;; levels of {} marking the extra dimensions.
 ;; See https://www.postgresql.org/docs/current/arrays.html
-
-(defun pg--array-contents (str error-message)
-  "Return the contents of a PostgreSQL array value STR.
-ERROR-MESSAGE is used if STR does not have the expected array syntax."
-  (when (string-match "\\`\\(?:\\[[+-]?[0-9]+:[+-]?[0-9]+\\]\\)+=" str)
-    (setq str (substring str (match-end 0))))
-  (let ((len (string-bytes str)))
-    (unless (and (> len 1)
-                 (eql (aref str 0) ?{)
-                 (eql (aref str (1- len)) ?}))
-      (signal 'pg-protocol-error (list error-message)))
-    (cl-subseq str 1 (- len 1))))
-
-(defun pg-intarray-parser (str _encoding)
-  "Parse PostgreSQL value STR as an array of integers."
-  (cl-flet ((parse-int (str)
-              (if (string= "NULL" str)
-                  pg-null-marker
-                (cl-parse-integer str))))
-    (let ((maybe-items (pg--array-contents str "Unexpected format for int array")))
-      (if (zerop (string-bytes maybe-items))
-          (vector)
-        (let ((items (split-string maybe-items ",")))
-          (apply #'vector (mapcar #'parse-int items)))))))
-
-(pg-register-parser "_int2" #'pg-intarray-parser)
-(pg-register-parser "_int2vector" #'pg-intarray-parser)
-(pg-register-parser "_int4" #'pg-intarray-parser)
-(pg-register-parser "_int8" #'pg-intarray-parser)
-
-(defun pg-floatarray-parser (str _encoding)
-  "Parse PostgreSQL value STR as an array of floats."
-  (let ((maybe-items (pg--array-contents str "Unexpected format for float array")))
-    (if (zerop (string-bytes maybe-items))
-        (vector)
-      (let ((items (split-string maybe-items ",")))
-        (apply #'vector (mapcar (lambda (x) (pg-float-parser x nil)) items))))))
-
-(pg-register-parser "_float4" #'pg-floatarray-parser)
-(pg-register-parser "_float8" #'pg-floatarray-parser)
-(pg-register-parser "_numeric" #'pg-floatarray-parser)
-
-(defun pg-boolarray-parser (str _encoding)
-  "Parse PostgreSQL value STR as an array of boolean values."
-  (let ((maybe-items (pg--array-contents str "Unexpected format for bool array")))
-    (if (zerop (string-bytes maybe-items))
-        (vector)
-      (let ((items (split-string maybe-items ",")))
-        (apply #'vector (mapcar (lambda (x) (pg-bool-parser x nil)) items))))))
-
-(pg-register-parser "_bool" #'pg-boolarray-parser)
-
-(defun pg-chararray-parser (str encoding)
-  "Parse PostgreSQL value STR as an array of characters using ENCODING."
-  (let ((maybe-items (pg--array-contents str "Unexpected format for char array")))
-    (if (zerop (string-bytes maybe-items))
-        (vector)
-      (let ((items (split-string maybe-items ",")))
-        (apply #'vector (mapcar (lambda (x) (pg-char-parser x encoding)) items))))))
-
-(pg-register-parser "_char" #'pg-chararray-parser)
-(pg-register-parser "_bpchar" #'pg-chararray-parser)
-
-(defun pg-textarray-parser (str encoding)
-  "Parse PostgreSQL value STR as an array of TEXT values.
-Uses text encoding ENCODING."
-  (let ((maybe-items (pg--array-contents str "Unexpected format for text array")))
-    (if (zerop (string-bytes maybe-items))
-        (vector)
-      (let ((items (split-string maybe-items ",")))
-        (apply #'vector (mapcar (lambda (x) (pg-text-parser x encoding)) items))))))
-
-(pg-register-parser "_text" #'pg-textarray-parser)
-(pg-register-parser "_varchar" #'pg-textarray-parser)
 
 ;; Anonymouse records in PostgreSQL (oid = 2249) are little used in practice, and difficult to parse
 ;; because we receive no information concerning the types of the different record "columns".
@@ -3259,17 +3303,7 @@ Uses text encoding ENCODING."
 (pg-register-parser "numrange" #'pg-numrange-parser)
 
 (pg-register-parser "money" #'pg-text-parser)
-
-(defun pg-uuidarray-parser (str encoding)
-  "Parse PostgreSQL value STR as an array of UUID values.
-Uses text encoding ENCODING."
-  (let ((maybe-items (pg--array-contents str "Unexpected format for UUID array")))
-    (if (zerop (string-bytes maybe-items))
-        (vector)
-      (let ((items (split-string maybe-items ",")))
-        (apply #'vector (mapcar (lambda (x) (pg-text-parser x encoding)) items))))))
-
-(pg-register-parser "_uuid" #'pg-uuidarray-parser)
+(pg-register-parser "_money" (pg--make-array-parser "money" #'pg-text-parser))
 
 ;; format for ISO dates is "1999-10-24"
 (defun pg-date-parser (str _encoding)
@@ -3282,16 +3316,7 @@ Uses text encoding ENCODING."
       (encode-time (list 0 0 0 day month year)))))
 
 (pg-register-parser "date" #'pg-date-parser)
-
-(defun pg-datearr-parser (str _encoding)
-  "Parse PostgreSQL value STR as an array of date values."
-  (let ((maybe-items (pg--array-contents str "Unexpected format for array")))
-    (if (zerop (string-bytes maybe-items))
-        (vector)
-      (let ((items (split-string maybe-items ",")))
-        (apply #'vector (mapcar (lambda (x) (pg-date-parser x nil)) items))))))
-
-(pg-register-parser "_date" #'pg-datearr-parser)
+(pg-register-parser "_date" (pg--make-array-parser "date" #'pg-date-parser))
 
 
 (defconst pg--ISODATE_REGEX
@@ -3307,59 +3332,61 @@ Uses text encoding ENCODING."
 ;; handles)
 (defun pg-isodate-with-timezone-parser (str _encoding)
   "Parse PostgreSQL value STR as an ISO-formatted date."
-  (if (string-match pg--ISODATE_REGEX str)
-      (let ((iso (replace-match "T" nil nil str 4)))
-        ;; Use of parse-iso8601-time-string with a second argument is only supported from Emacs 29.1
-        ;; onwards. In earlier versions we call the function with a single argument, which loses
-        ;; sub-second precision (and will fail our test suite for this reason).
-        (if (>= emacs-major-version 29)
-            (parse-iso8601-time-string iso t)
-          (parse-iso8601-time-string iso)))
-    (let ((msg (format "Badly formed ISO timestamp from backend: %s" str)))
-      (signal 'pg-protocol-error (list msg)))))
+  ;; https://www.postgresql.org/docs/current/datatype-datetime.html
+  (cond ((string= "infinity" str)
+         (encode-time (list 0 0 0 0 0 999999999 nil -1 nil)))
+        ((string= "-infinity" str)
+         (encode-time (list 0 0 0 0 0 -999999999 nil -1 nil)))
+        ((string-match pg--ISODATE_REGEX str)
+         (let ((iso (replace-match "T" nil nil str 4)))
+           ;; Use of parse-iso8601-time-string with a second argument is only supported from Emacs 29.1
+           ;; onwards. In earlier versions we call the function with a single argument, which loses
+           ;; sub-second precision (and will fail our test suite for this reason).
+           (if (>= emacs-major-version 29)
+               (parse-iso8601-time-string iso t)
+             (parse-iso8601-time-string iso))))
+        (t
+         (let ((msg (format "Badly formed ISO timestamp from backend: %s" str)))
+           (signal 'pg-protocol-error (list msg))))))
 
 (defun pg-isodate-without-timezone-parser (str _encoding)
   "Parse PostgreSQL value STR as an ISO-formatted date."
-  (if (string-match pg--ISODATE_REGEX str)
-      (let ((year    (string-to-number (match-string 1 str)))
-            (month   (string-to-number (match-string 2 str)))
-            (day     (string-to-number (match-string 3 str)))
-            (hours   (string-to-number (match-string 5 str)))
-            (minutes (string-to-number (match-string 6 str)))
-            (seconds (string-to-number (match-string 7 str)))
-            (tz      nil))
-        ;; a tz of nil means that we are parsing into Emacs' local time, which is dependent on the
-        ;; setting of the TZ environment variable.
-        (encode-time (list seconds minutes hours day month year nil -1 tz)))
-    (let ((msg (format "Badly formed ISO timestamp from backend: %s" str)))
-      (signal 'pg-protocol-error (list msg)))))
+  (cond ((string= "infinity" str)
+         (encode-time (list 0 0 0 0 0 999999999 nil -1 nil)))
+        ((string= "-infinity" str)
+         (encode-time (list 0 0 0 0 0 -999999999 nil -1 nil)))
+        ((string-match pg--ISODATE_REGEX str)
+         (let ((year    (string-to-number (match-string 1 str)))
+               (month   (string-to-number (match-string 2 str)))
+               (day     (string-to-number (match-string 3 str)))
+               (hours   (string-to-number (match-string 5 str)))
+               (minutes (string-to-number (match-string 6 str)))
+               (seconds (string-to-number (match-string 7 str)))
+               (tz      nil))
+           ;; a tz of nil means that we are parsing into Emacs' local time, which is dependent on the
+           ;; setting of the TZ environment variable.
+           (encode-time (list seconds minutes hours day month year nil -1 tz))))
+        (t
+         (let ((msg (format "Badly formed ISO timestamp from backend: %s" str)))
+           (signal 'pg-protocol-error (list msg))))))
 
-(pg-register-parser "timestamp"  #'pg-isodate-without-timezone-parser)
-(pg-register-parser "timestamptz" #'pg-isodate-with-timezone-parser)
-(pg-register-parser "datetime" #'pg-isodate-with-timezone-parser)
-
-;; FIXME TODO _timestamp _timestamptz _datetime
+(pg-register-parser "timestamp"     #'pg-isodate-without-timezone-parser)
+(pg-register-parser "_timestamp"    (pg--make-array-parser "timestamp" #'pg-isodate-without-timezone-parser))
+(pg-register-parser "timestamptz"   #'pg-isodate-with-timezone-parser)
+(pg-register-parser "_timestamptz"  (pg--make-array-parser "timestamptz" #'pg-isodate-with-timezone-parser))
+(pg-register-parser "datetime"      #'pg-isodate-with-timezone-parser)
+(pg-register-parser "_datetime"     (pg--make-array-parser "datetime" #'pg-isodate-with-timezone-parser))
 
 (pg-register-parser "time" #'pg-text-parser)     ; preparsed "15:32:45"
+(pg-register-parser "_time"  (pg--make-array-parser "time" #'pg-text-parser))
 (pg-register-parser "timetz" #'pg-text-parser)
+(pg-register-parser "_timetz"  (pg--make-array-parser "timetz" #'pg-text-parser))
 (pg-register-parser "reltime" #'pg-text-parser)     ; don't know how to parse these
+(pg-register-parser "_reltime"  (pg--make-array-parser "reltime" #'pg-text-parser))
 (pg-register-parser "timespan" #'pg-text-parser)
+(pg-register-parser "_timespan"  (pg--make-array-parser "timespan" #'pg-text-parser))
 (pg-register-parser "tinterval" #'pg-text-parser)
-
-;; This is usable for time, timespan etc. types that we currently parse as strings.
-(defun pg-timearr-parser (str _encoding)
-  "Parse PostgreSQL value STR as an array of time or date values."
-  (let ((maybe-items (pg--array-contents str "Unexpected format for array")))
-    (if (zerop (string-bytes maybe-items))
-        (vector)
-      (let ((items (split-string maybe-items ",")))
-        (apply #'vector (mapcar (lambda (x) (pg-text-parser x nil)) items))))))
-
-(pg-register-parser "_time" #'pg-timearr-parser)
-(pg-register-parser "_timetz" 'pg-timearr-parser)
-(pg-register-parser "_reltime" 'pg-timearr-parser)
-(pg-register-parser "_timespan" 'pg-timearr-parser)
-(pg-register-parser "_tinterval" 'pg-timearr-parser)
+(pg-register-parser "_tinterval"  (pg--make-array-parser "tinterval" #'pg-text-parser))
 
 
 ;; A tsvector is a type used by PostgreSQL to support full-text search in documents.
@@ -3494,6 +3521,14 @@ Return nil if the extension could not be set up."
 
 (pg-register-serializer "bool" (lambda (v _encoding) (if v (unibyte-string 1) (unibyte-string 0))))
 
+(defun pg--serialize-bit (bit _encoding)
+  (cond ((eq t bit) (make-string 1 ?1))
+        ((eq nil bit) (make-string 1 ?0))
+        (t
+         (pg-signal-type-error "Expecting a bit, got %s" bit))))
+
+(pg-register-textual-serializer "bit" #'pg--serialize-bit)
+
 (defun pg--serialize-boolvec (bv _encoding)
   (unless (bool-vector-p bv)
     (pg-signal-type-error "Expecting a bool-vector, got %s" bv))
@@ -3504,7 +3539,6 @@ Return nil if the extension could not be set up."
             (if (aref bv i) ?1 ?0)))
     out))
 
-(pg-register-textual-serializer "bit" #'pg--serialize-boolvec)
 (pg-register-textual-serializer "varbit" #'pg--serialize-boolvec)
 
 
