@@ -539,7 +539,7 @@ Uses PostgreSQL connection CON.")
 
 (cl-defmethod pg-do-variant-specific-setup ((con pgcon) (variant t))
   ;; This statement fails on ClickHouse (and the database immediately closes the connection!).
-  (unless (member variant '(clickhouse datafusion stoolap pgwire pgmicro))
+  (unless (member variant '(clickhouse datafusion stoolap pgwire pgmicro turso))
     (pg-exec con "SET datestyle = 'ISO'")))
 
 (defun pg-detect-server-variant (con)
@@ -590,6 +590,8 @@ Uses connection CON. The variant can be accessed by `pgcon-server-variant'."
               (setf (pgcon-server-variant con) 'picodata))
              ((cl-search " H2 " version)
               (setf (pgcon-server-variant con) 'h2))
+             ((cl-search "Turso " version)
+              (setf (pgcon-server-variant con) 'turso))
              ;; TODO: find a better detection method for ArcadeDB
              ((string-suffix-p "/main)" version)
               (setf (pgcon-server-variant con) 'arcadedb))
@@ -618,6 +620,13 @@ Uses connection CON. The variant can be accessed by `pgcon-server-variant'."
                             (pg-exec-prepared con sql '(("_timescaledb_catalog" . "text"))))))
                 (and res (pg-result res :tuples)))
               (setf (pgcon-server-variant con) 'timescaledb)))))
+    ('pgwire
+     ;; Some implementations using pgwire don't implement version(), but others (like Turso) do.
+     (ignore-errors
+       (let* ((res (pg-exec con "SELECT version()"))
+              (version (cl-first (pg-result res :tuple 0))))
+         (when (cl-search "Turso" version)
+           (setf (pgcon-server-variant con) 'turso)))))
     ('ydb
      (pg-exec con "SET search_path = 'public'")))
   (pg-do-variant-specific-setup con (pgcon-server-variant con)))
@@ -905,7 +914,9 @@ Uses database DBNAME, user USER and password PASSWORD."
                                  ((string= "150000" val)
                                   (throw 'found 'motherduck))
                                  ((cl-search "-pgwire-" val)
-                                  (throw 'found 'pgwire)))
+                                  (throw 'found 'pgwire))
+                                 ((cl-search "umbra " val)
+                                  (throw 'found 'umbra)))
                            ;; Now some somewhat ugly code to detect semi-compatible PostgreSQL
                            ;; variants, to allow us to work around some of their behaviour that is
                            ;; incompatible with real PostgreSQL.
