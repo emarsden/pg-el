@@ -890,16 +890,14 @@ test-xtdb: test-pg.el
 
 
 # https://github.com/multigres/multigres
-#
-# "Vitess for PostgreSQL", seems (202602) to require k8s
 test-multigres: test-pg.el
-	${DOCKER} run --rm --name multigres \
-          --pull=newer \
-          -v $(shell pwd)/multigres-minimal.yaml:/multigres/multigres_local/multigres.yaml \
-          --publish 127.0.0.1:65532:65532 \
-          ghcr.io/multigres/multigres:sha-efc9381 multigres cluster start
-	sleep 10
-	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:65532/pgeltestdb $(MAKE) test
+	${DOCKER} run --rm --name multigres --pull=newer \
+          -e MULTIGRES_NUM_CELLS=2 \
+          -e MULTIGRES_GATEWAY_PG_PORT=5233 \
+          --publish 127.0.0.1:5233:5233 \
+          -d ghcr.io/multigres/multigres-cluster:nightly
+	sleep 40
+	PGURI=postgresql://postgres:postgres@127.0.0.1:5233/postgres $(MAKE) test
 	${DOCKER} stop multigres
 
 
