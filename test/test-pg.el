@@ -624,6 +624,9 @@
       (should (or (string= "integer" typ)
                   (string= "int4" typ)
                   (string= "bigint" typ))))
+    ;; A nil argument is sent as the PostgreSQL NULL
+    (should (equal (list 45 pg-null-marker 66) (row "SELECT 45,$1,2*$2" (list nil (cons 33 "int8")))))
+    (should (equal pg-null-marker (scalar "SELECT sin($1)*2" (list nil))))
     (let ((typs (row "SELECT pg_typeof($1)::text, $1::text" '(("foobles" . "text")))))
       (should (string= "foobles" (cl-second typs)))
       (should (or (string= "text" (cl-first typs))
