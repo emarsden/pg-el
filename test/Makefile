@@ -1114,28 +1114,18 @@ test-yellowbrick: test-pg.el
 
 # https://docs.immudb.io/master/running/download.html
 # https://hub.docker.com/r/codenotary/immudb
+# https://github.com/codenotary/immudb
 #
-# immadmin doesn't seem to provide a useful way to provide password via environment
-# not to be used in a non-interactive manner
-#
-# We see a protocol error "database name not provided" after the StartupMessage
-# whereas psql is able to connect when disabling TLS
-#   psql "sslmode=disable host=localhost port=5667 dbname=pgeltestdb user=pgeltestuser password=pgeltest"
-# though few SQL commands work.
+# This implementation has a very low level of SQL compatibility with PostgreSQL. 
 test-immudb: test-pg.el
-	${DOCKER} run --rm --name immudb \
+	${DOCKER} run --rm --name immudb --pull=newer \
           --net host \
           -e IMMUDB_PGSQL_SERVER=true \
-          -e IMMUDB_ADMIN_PASSWORD=pgeltest \
-          -e USER=pgeltestuser \
-          -d docker.io/codenotary/immudb:latest \
+          -d docker.io/codenotary/immudb:dev-bullseye-slim \
             --pgsql-server --pgsql-server-port 5667 \
             --admin-password pgeltest --force-admin-password
-	sleep 2
-	echo pgeltest|${DOCKER} exec -ti immudb immuadmin login immudb
-	${DOCKER} exec -ti immudb immuadmin database create pgeltestdb
-	expect -c 'spawn ${DOCKER} exec -ti immudb immuadmin user create pgeltestuser readwrite pgeltestdb;sleep 0.1;expect "Choose a password for";sleep 0.1;send "pgeltest\r";expect "continue with your password instead.*Y/n";sleep 0.1;send "Y\r";expect "Confirm password";sleep 0.1;send "pgeltest\r";sleep 0.1;exit'
-	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5667/pgeltestdb $(MAKE) test
+	sleep 5
+	PGURI=postgresql://immudb:pgeltest@127.0.0.1:5667/defaultdb $(MAKE) test
 	${DOCKER} stop immudb
 
 
@@ -1470,7 +1460,10 @@ test-alloydb: test-pg.el
           -e POSTGRES_DB=pgeltestdb \
           -e POSTGRES_USER=pgeltestuser \
           -e POSTGRES_PASSWORD=pgeltest \
-          -d docker.io/google/alloydbomni:latest -c google_columnar_engine.enabled=on
+          -d docker.io/google/alloydbomni:latest \
+             -c google_columnar_engine.enabled=on \
+             -c google_columnar_engine.enable_vectorized_join=on \
+             -c google_ml_integration.enable_ai_function_acceleration=on
 	sleep 10
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:4481/pgeltestdb $(MAKE) test
 	${DOCKER} stop alloydb
@@ -1747,6 +1740,7 @@ test-pgmicro: test-pg.el
 
 
 # https://github.com/tursodatabase/turso/blob/main/postgres/CONTRIBUTING.md
+# https://github.com/tursodatabase/turso/blob/main/postgres/COMPAT.md
 test-turso: test-pg.el
 	$(eval TMPBDIR := $(shell mktemp -d -t pgelpgtursoXXXX))
 	(cd ${TMPBDIR} && \
