@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.69] - Unreleased
+## [0.69] - 2026-08-12
 
 - Incompatible change: single items of type `bit` are now parsed as an Emacs Lisp boolean (`t` or
   `nil`), instead of as a boolean vector of dimension 1. Items of type `varbit` and `bit(n)` are
@@ -14,8 +14,8 @@
 
 - New error type `pg-invalid-function-definition`.
 
-- Support for detecting PostgreSQL variants Turso (the experimental tursopg frontend) and Umbra
-  (a research database developed at TU München).
+- Add support for detecting PostgreSQL variants Turso (the experimental tursopg frontend), Umbra
+  (a research database developed at TU München) and Immudb.
 
 
 ## [0.68] - 2026-06-19
