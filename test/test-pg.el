@@ -26,8 +26,8 @@
 
 
 ;; for performance testing
-(setq process-adaptive-read-buffering t)
-(setq read-process-output-max (* 4 1024 1024)) ; 4MB
+;; (setq process-adaptive-read-buffering t)
+;; (setq read-process-output-max (* 4 1024 1024)) ; 4MB
 
 
 ;; https://www.reidatcheson.com/floating%20point/comparison/2019/03/20/floating-point-comparison.html
@@ -515,7 +515,7 @@
       (pgtest-add #'pg-test-lo
                   :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb ydb questdb spanner vertica greenplum
                                            cedardb yellowbrick opengauss datafusion picodata serenedb doltgres motherduck
-                                           datahike h2 cloudberry turso))
+                                           datahike h2 cloudberry turso immudb))
       (dolist (test (reverse tests))
         (message "== Running test %s" test)
         (condition-case err
@@ -529,10 +529,11 @@
               (pg-enable-query-log con)))))
       (message "At end of tests, list of schemas in db: %s" (pg-schemas con))
       (message "At end of tests, list of tables in db: %s" (pg-tables con))
-      (message "== Tests finished; producing a report on memory usage")
-      (memory-report)
-      (with-current-buffer "*Memory Report*"
-        (message "%s" (buffer-string))))))
+      ;; (message "== Tests finished; producing a report on memory usage")
+      ;; (memory-report)
+      ;; (with-current-buffer "*Memory Report*"
+      ;;  (message "%s" (buffer-string)))
+      )))
 
 
 (defun pg-test-note-param-change (_con name value)
@@ -1658,7 +1659,7 @@ bar$$"))))
                        (scalar "SELECT '101111'::varbit(6)")))))
     ;; The formatting of the money type is locale-dependent, so we don't attempt to validate the
     ;; exact format here. The money type is not implemented by all variants.
-    (unless (member (pgcon-server-variant con) '(cratedb cockroachdb datafusion))
+    (unless (member (pgcon-server-variant con) '(cratedb cockroachdb datafusion cedardb))
       (should (stringp (scalar "SELECT 66::money")))
       (should (cl-every #'stringp (scalar "SELECT '{45.0,56.0,67}'::money[]"))))
     (should (eql (scalar "SELECT floor(42.3)") 42))
