@@ -700,6 +700,8 @@ presented to the user."
                         ("2201E" 'pg-floating-point-exception)
                         ("2201F" 'pg-floating-point-exception)
                         ("22021" 'pg-character-not-in-repertoire)
+                        ("22023" 'pg-invalid-parameter-value)
+                        ("22025" 'pg-invalid-escape-sequence)
                         ((pred (lambda (v) (string-prefix-p "2203" v))) 'pg-json-error)
                         ("2200H" 'pg-sequence-limit-exceeded)
                         ("2200L" 'pg-xml-error)
