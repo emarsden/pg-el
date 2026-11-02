@@ -878,11 +878,11 @@ Uses database DBNAME, user USER and password PASSWORD."
 
          ;; AUTH_REQ_MD5
          (5
-          (pg-do-md5-authentication con user password))
+          (pg--do-md5-authentication con user password))
 
          ;; AuthenticationSASL request
          (10
-          (pg-do-sasl-authentication con user password))
+          (pg--do-sasl-authentication con user password))
 
          (t
           (let ((msg (format "Can't do that type of authentication: %s" areq)))
@@ -3732,7 +3732,7 @@ Respects floating-point infinities and NaN."
 
 ;; pwdhash = md5(password + username).hexdigest()
 ;; hash = ′md5′ + md5(pwdhash + salt).hexdigest()
-(defun pg-do-md5-authentication (con user password)
+(defun pg--do-md5-authentication (con user password)
   "Attempt MD5 authentication with PostgreSQL database over connection CON.
 Authenticate as USER with PASSWORD, which is either a string or a
 zero-argument function that returns a string."
@@ -3749,7 +3749,7 @@ zero-argument function that returns a string."
 
 
 ;; TODO: implement stringprep for user names and passwords, as per RFC4013.
-(defun pg-sasl-prep (string)
+(defun pg--sasl-prep (string)
   string)
 
 
@@ -3777,13 +3777,13 @@ zero-argument function that returns a string."
 
 ;; Implement PBKDF2 by calling out to the nettle-pbkdf2 application (typically available in the
 ;; "nettle-bin" package) as a subprocess.
-(defun pg-pbkdf2-hash-sha256-nettle (password salt iterations)
+(defun pg--pbkdf2-hash-sha256-nettle (password salt iterations)
   "Return the PBKDF2 hash of PASSWORD using SALT and ITERATIONS, with nettle."
   ;; ITERATIONS is a integer
   ;; the hash function in nettle-pbkdf2 is hard coded to HMAC-SHA256
   (require 'hex-util)
   (with-temp-buffer
-    (insert (pg-sasl-prep password))
+    (insert (pg--sasl-prep password))
     (call-process-region
      (point-min) (point-max)
      "nettle-pbkdf2"
@@ -3855,7 +3855,7 @@ Authenticate as USER with PASSWORD, a string."
                   (client-key (gnutls-hash-mac 'SHA256 (cl-copy-seq salted-password) "Client Key"))
                   (server-key (gnutls-hash-mac 'SHA256 (cl-copy-seq salted-password) "Server Key"))
                   (stored-key (secure-hash 'sha256 client-key nil nil t))
-                  (client-first-bare (concat "n=" (pg-sasl-prep user) ",r=" client-nonce))
+                  (client-first-bare (concat "n=" (pg--sasl-prep user) ",r=" client-nonce))
                   (client-final-bare (concat "c=biws,r=" r))
                   (auth-message (concat client-first-bare "," server-first-msg "," client-final-bare))
                   (client-sig (gnutls-hash-mac 'SHA256 stored-key auth-message))
@@ -3905,7 +3905,7 @@ Authenticate as USER with PASSWORD, a string."
          (let ((msg (format "Unexpected response to SASLInitialResponse message: %s" c)))
            (signal 'pg-protocol-error (list msg))))))))
 
-(defun pg-do-sasl-authentication (con user password)
+(defun pg--do-sasl-authentication (con user password)
   "Attempt SASL authentication with PostgreSQL over connection CON.
 Authenticate as USER with PASSWORD, which is either a string or a
 zero-argument function that returns a string."
