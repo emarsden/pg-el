@@ -596,7 +596,9 @@ Uses connection CON. The variant can be accessed by `pgcon-server-variant'."
               (setf (pgcon-server-variant con) 'turso))
              ((cl-search "immudb " version)
               (setf (pgcon-server-variant con) 'immudb))
-             ;; TODO: find a better detection method for ArcadeDB
+             ((cl-search "ArcadeDB " version)
+              (setf (pgcon-server-variant con) 'arcadedb))
+             ;; This detection method is necessary for older (pre-2026) versions of ArcadeDB
              ((string-suffix-p "/main)" version)
               (setf (pgcon-server-variant con) 'arcadedb))
              ;; A more expensive test is needed for Google AlloyDB. If the `omni_disk_cache_enabled'
