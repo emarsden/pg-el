@@ -184,6 +184,8 @@ SQL queries. To avoid this overhead on establishing a connection, remove
 (define-error 'pg-numeric-value-out-of-range "PostgreSQL numeric value out of range" 'pg-data-error)
 (define-error 'pg-division-by-zero "PostgreSQL division by zero" 'pg-data-error)
 (define-error 'pg-floating-point-exception "PostgreSQL floating point exception" 'pg-data-error)
+(define-error 'pg-invalid-parameter-value "PostgreSQL invalid parameter value" 'pg-data-error)
+(define-error 'pg-invalid-escape-sequence "PostgreSQL invalid escape sequence" 'pg-data-error)
 (define-error 'pg-array-subscript-error "PostgreSQL array subscript error" 'pg-data-error)
 (define-error 'pg-datetime-field-overflow "PostgreSQL datetime field overflow" 'pg-data-error)
 (define-error 'pg-character-not-in-repertoire "PostgreSQL character not in repertoire" 'pg-data-error)
