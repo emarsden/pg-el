@@ -197,7 +197,7 @@ test-postgresql19: test-pg.el
            -e POSTGRES_PASSWORD=pgeltest \
            -e PGPORT=5418 \
            -e TZ=Asia/Tokyo \
-           -d docker.io/library/postgres:19beta2
+           -d docker.io/library/postgres:19rc1
 	sleep 5
 	PGEL_PORT=5418 $(MAKE) test
 	${DOCKER} stop pgsql
