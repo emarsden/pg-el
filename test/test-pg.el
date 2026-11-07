@@ -1656,15 +1656,19 @@ bar$$"))))
                        (scalar "SELECT '1010'::bit(4)"))))
       (unless (member (pgcon-server-variant con) '(cockroachdb risingwave materialize yellowbrick datafusion))
         (should (equal (cl-coerce (vector t nil nil t nil nil nil) 'bool-vector)
-                       (scalar "SELECT b'1001000'"))))
+                       (scalar "SELECT b'1001000'")))
+        (should (equal (cl-coerce (vector t nil nil t t nil nil nil t) 'bool-vector)
+                       (scalar "SELECT b'1001' || b'10001'")))
+        (should (equal (cl-coerce (vector t nil nil t) 'bool-vector)
+                       (scalar "SELECT b'1001' || b''"))))
       (unless (member (pgcon-server-variant con) '(cratedb risingwave materialize yellowbrick datafusion))
         (should (equal (cl-coerce (vector t nil t t t t) 'bool-vector)
                        (scalar "SELECT '101111'::varbit(6)")))))
     ;; The formatting of the money type is locale-dependent, so we don't attempt to validate the
     ;; exact format here. The money type is not implemented by all variants.
-    (unless (member (pgcon-server-variant con) '(cratedb cockroachdb datafusion cedardb))
+    (unless (member (pgcon-server-variant con) '(cratedb cockroachdb datafusion cedardb materialize))
       (should (stringp (scalar "SELECT 66::money")))
-      (should (cl-every #'stringp (scalar "SELECT '{45.0,56.0,67}'::money[]"))))
+      (should (cl-every #'stringp (scalar "SELECT '{45,56,67}'::money[]"))))
     (should (eql (scalar "SELECT floor(42.3)") 42))
     ;; The numeric type is defined as rounding towards zero in PostgreSQL, and the default read
     ;; format is numeric.
