@@ -4121,7 +4121,7 @@ Uses database connection CON."
             (rows (pg-result res :tuples)))
        (not (null rows))))
     ;; The routines table only includes user-defined functions (created with CREATE ALIAS), not builtins
-    ('h2
+    ((or 'h2 'pgsqlite)
      (let* ((sql "SELECT 1 FROM information_schema.routines WHERE routine_name=$1")
             (res (pg-exec-prepared con sql `((,name . "text"))))
             (rows (pg-result res :tuples)))
@@ -4207,7 +4207,7 @@ Uses database connection CON."
     ((or 'serenedb 'datahike)
      (let ((res (pg-exec con "SELECT DISTINCT nspname FROM pg_namespace")))
        (apply #'append (pg-result res :tuples))))
-    ((or 'risingwave 'octodb 'pgsqlite)
+    ((or 'risingwave 'octodb 'pgsqlite 'umbra)
      (let ((res (pg-exec con "SELECT DISTINCT table_schema FROM information_schema.tables")))
        (apply #'append (pg-result res :tuples))))
     ('vertica
