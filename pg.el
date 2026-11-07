@@ -1327,6 +1327,7 @@ keywords are `host', `hostaddr', `port', `dbname', `user', `password',
                      (error "verify-full sslmode not implemented"))
                     ((cdr (assoc "requiressl" params)) t)
                     (t nil)))
+         (ssl-negotiate (alist-get "sslnegotiation" params "postgres" nil #'string=))
          (connect-timeout-str (cadr (assoc "connect_timeout" params)))
          (connect-timeout (and connect-timeout-str (cl-parse-integer connect-timeout-str)))
          (pg-connect-timeout (or connect-timeout pg-connect-timeout))
@@ -1353,7 +1354,8 @@ keywords are `host', `hostaddr', `port', `dbname', `user', `password',
                                  :password password
                                  :host host
                                  :port port
-                                 :tls-options tls)))
+                                 :tls-options tls
+                                 :direct-tls (string= ssl-negotiate "direct"))))
       (when client-encoding
         (setf (pgcon-client-encoding con) client-encoding))
       (when options
@@ -1511,6 +1513,7 @@ paramspec keywords are `sslmode' (partial support), `connect_timeout',
                        (signal 'pg-error '("verify-full sslmode not implemented")))
                       ((cdr (assoc "requiressl" params)) t)
                       (t nil)))
+           (ssl-negotiate (alist-get "sslnegotiation" params "postgres" nil #'string=))
            ;; Should be a decimal integer designating a number of seconds
            (connect-timeout-str (cadr (assoc "connect_timeout" params)))
            (connect-timeout (and connect-timeout-str (cl-parse-integer connect-timeout-str)))
@@ -1534,7 +1537,8 @@ paramspec keywords are `sslmode' (partial support), `connect_timeout',
                                      :password password
                                      :host host
                                      :port port
-                                     :tls-options tls))))
+                                     :tls-options tls
+                                     :direct-tls (string= ssl-negotiate "direct")))))
         (when client-encoding
           (setf (pgcon-client-encoding con) client-encoding))
         (when options
