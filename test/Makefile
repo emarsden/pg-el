@@ -836,13 +836,27 @@ test-gatewayd: test-pg.el
 #
 # https://hub.docker.com/r/apache/shardingsphere-proxy
 # https://shardingsphere.apache.org/
+#
+# Currently failing with an error "java.lang.IllegalArgumentException: Cannot find PostgreSQL type
+# 'TEXT' in column type when process binary protocol value", with SQLSTATE=58000.
 test-shardingsphere: test-pg.el
+	${DOCKER} run --rm --name pgsql --pull=newer \
+           --net host \
+           -e POSTGRES_DB=pgeltestdb \
+           -e POSTGRES_USER=pgeltestuser \
+           -e POSTGRES_PASSWORD=pgeltest \
+           -e PGPORT=5295 \
+           -d docker.io/library/postgres:18-alpine
+	sleep 5
 	${DOCKER} run --rm --name shardingsphere --pull=newer \
            --net=host \
            -v $(shell pwd)/shardingsphere-server.yaml:/opt/shardingsphere-proxy/conf/global.yaml \
-           -v $(shell pwd)/shardingsphere-sharding.yaml:/opt/shardingsphere-proxy/conf/database-pgeltestdb.yaml \
-           docker.io/apache/shardingsphere-proxy:latest 5902
+           -v $(shell pwd)/shardingsphere-pgeltestdb.yaml:/opt/shardingsphere-proxy/conf/database-pgeltestdb.yaml \
+           -d docker.io/apache/shardingsphere-proxy:latest
 	sleep 5
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:3307/pgeltestdb $(MAKE) test
+	${DOCKER} stop pgsql
+	${DOCKER} stop shardingsphere
 
 
 # https://github.com/hasirciogluhq/xdatabase-proxy
@@ -872,7 +886,9 @@ test-xdatabase: test-pg.el
 # TODO: add test recipes for
 #
 # - Hoop.dev security-scanning proxy, https://github.com/hoophq/hoop
-# - ProxySQL (https://proxysql.com/) and pgagroal (https://github.com/pgagroal/pgagroal) proxies.
+# - ProxySQL (https://proxysql.com/)
+# - pgagroal proxy (https://github.com/pgagroal/pgagroal)
+# - https://github.com/eterdb/eterdb
 
 
 # An open-source immutable database with time-travel features. https://www.xtdb.com/
