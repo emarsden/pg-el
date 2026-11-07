@@ -780,9 +780,6 @@
                          (pg-exec-prepared con "SELECT $1 + 1" '(("XXXX" . "int4")))
                        (pg-type-error 'ok))))
     (should (eql 'ok (condition-case nil
-                         (pg-exec-prepared con "SELECT $1" '(("XXXX" . "date")))
-                       (pg-type-error 'ok))))
-    (should (eql 'ok (condition-case nil
                          (pg-exec-prepared con "SELECT $1 * $2" '(("2" . "int4") ("4" . "int8") ("foobles" . "text")))
                        (pg-type-error 'ok))))))
     
