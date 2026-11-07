@@ -898,6 +898,37 @@ test-multigres: test-pg.el
 	${DOCKER} stop multigres
 
 
+# https://github.com/eterdb/eterdb
+# https://github.com/eterdb/eterdb/blob/main/docker-compose.yml
+#
+# FIXME is refusing to start up with these LANG settings...
+test-eterdb: test-pg.el
+	${DOCKER} run --rm --name eterdb --pull=newer \
+          -e LANG=en_US.UTF8 \
+          -e LC_CTYPE=en_US.UTF8 \
+          -e POSTGRES_USER=pgeltestuser \
+          -e POSTGRES_PASSWORD=pgeltest \
+          -e POSTGRES_DB=pgeltestdb \
+          -e ETER_WAL_ARCHIVE=/var/lib/eter/wal-archive \
+          --publish 127.0.0.1:5487:5432 \
+          -d ghcr.io/eterdb/engine:pg18
+	sleep 2
+	${DOCKER} run --rm --name eterdbcontrol --pull=newer \
+          -e LANG=en_US.UTF8 \
+          -e LC_CTYPE=en_US.UTF8 \
+          -e ENGINE_IMAGE=ghcr.io/eterdb/engine:pg18 \
+          -e POSTGRES_USER=pgeltestuser \
+          -e POSTGRES_PASSWORD=pgeltest \
+          -e DATABASE_URL=postgres://pgeltestuser:pgeltest@engine:5487/pgeltestdb \
+          -e ETER_META_URL=postgres://pgeltestuser:pgeltest@localhost:5487/eter_meta \
+          -e ETER_WAL_ARCHIVE=/var/lib/eter/wal-archive \
+          -d ghcr.io/eterdb/control-plane:pg18
+	sleep 5
+	PGURI=postgresql://pgeltestuser:pgelteset@127.0.0.1:5487/pgeltestdb $(MAKE) test
+	${DOCKER} stop eterdbcontrol
+	${DOCKER} stop eterdb
+
+
 # https://supabase.github.io/supavisor/
 #
 # Using it in session mode because this is the only mode which supports prepared statements.
