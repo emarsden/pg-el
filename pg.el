@@ -3652,10 +3652,6 @@ Respects floating-point infinities and NaN."
 (pg-register-textual-serializer "jsonb" #'pg--serialize-json)
 
 (defun pg--serialize-encoded-time-date (encoded-time _encoding)
-  (unless (and (listp encoded-time)
-               (integerp (car encoded-time))
-               (integerp (cadr encoded-time)))
-    (pg-signal-type-error "Expecting an encoded time-date (a . b), got %s" encoded-time))
   (format-time-string "%Y-%m-%d" encoded-time))
 
 (pg-register-textual-serializer "date" #'pg--serialize-encoded-time-date)
@@ -3663,10 +3659,6 @@ Respects floating-point infinities and NaN."
 ;; We parse these into an Emacs Lisp "encoded-time", which is represented as a list of two integers.
 ;; Serialize them back to an ISO timestamp.
 (defun pg--serialize-encoded-time (encoded-time _encoding)
-  (unless (and (listp encoded-time)
-               (integerp (car encoded-time))
-               (or (listp (cdr encoded-time))(integerp (cdr encoded-time))))
-    (pg-signal-type-error "Expecting an encoded time-date (a . b), got %s" encoded-time))
   (format-time-string "%Y-%m-%dT%T.%N%z" encoded-time "UTC"))
 
 (pg-register-textual-serializer "timestamp"  #'pg--serialize-encoded-time)
