@@ -741,7 +741,7 @@ test-pgbouncer: test-pg.el
           -v ./pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini \
           -v ./pgbouncer-auth-file.txt:/etc/pgbouncer/pgbouncer-auth-file.txt \
           --net host \
-          -d ghcr.io/icoretech/pgbouncer-docker:1.25.1
+          -d ghcr.io/icoretech/pgbouncer-docker:1.26.1
 	sleep 5
 	PGEL_PORT=6432 $(MAKE) test
 	${DOCKER} stop pgbouncer
@@ -816,6 +816,9 @@ test-odyssey: test-pg.el
 # https://docs.gatewayd.io/using-gatewayd/configuration/
 # https://github.com/gatewayd-io/gatewayd
 # https://hub.docker.com/r/gatewaydio/gatewayd
+#
+# As of 202611 this is failing because the proxy seems to be attempting to connect to PostgreSQL
+# with the postgres user, despite the setting of POSTGRES_USER.
 test-gatewayd: test-pg.el
 	${DOCKER} run --rm --name gatewayd --pull=newer \
           --net=host \
@@ -898,7 +901,7 @@ test-xtdb: test-pg.el
            -e XTDB_PASSWORD=pgeltest \
            -d ghcr.io/xtdb/xtdb:latest
 	sleep 10
-	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5439/xtdb $(MAKE) test
+	PGURI=postgresql://xtdb:pgeltest@127.0.0.1:5439/xtdb $(MAKE) test
 	${DOCKER} stop xtdb
 
 
