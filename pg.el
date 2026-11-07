@@ -2229,9 +2229,9 @@ the overhead of sending and parsing the SQL query and calculating
 the query plan."
   (when (pgcon-query-log con)
     (with-current-buffer (pgcon-query-log con)
-      (insert "fetch-prepared %s %s\n" ps-name typed-arguments)
+      (insert (format "fetch-prepared %s %s\n" ps-name typed-arguments)))
     (when noninteractive
-      (message "fetch-prepared> %s %s" ps-name typed-arguments))))
+      (message "fetch-prepared> %s %s" ps-name typed-arguments)))
   (pg--trim-connection-buffers con)
   (let* ((portal-name (pg-bind con ps-name typed-arguments :portal "pg-el"))
          (result (make-pgresult :connection con :portal portal-name)))
