@@ -337,7 +337,7 @@
             (message "Backend compiled with SSL library %s" (cl-first row)))))
       (unless (member (pgcon-server-variant con)
                       '(questdb cratedb ydb xata greptimedb risingwave clickhouse materialize vertica arcadedb datafusion
-                                stoolap immudb serenedb picodata motherduck pgwire pgmicro xtdb umbra))
+                                stoolap immudb serenedb picodata motherduck pgwire pgmicro xtdb umbra turso))
         (let* ((res (pg-exec con "SHOW ssl"))
                (row (pg-result res :tuple 0)))
           (message "PostgreSQL connection TLS: %s" (cl-first row))))
@@ -401,7 +401,7 @@
       (pgtest-add #'pg-test-numeric-range
                   :skip-variants '(xata cratedb cockroachdb ydb risingwave questdb clickhouse greptimedb spanner octodb
                                         vertica cedardb datafusion immudb stoolap pgsqlite serenedb picodata motherduck
-                                        doltgres datahike xtdb h2))
+                                        doltgres datahike xtdb h2 turso))
       (pgtest-add #'pg-test-prepared
                   :skip-variants '(ydb cratedb picodata serenedb)
                   :need-emacs "28")
@@ -432,7 +432,7 @@
                   :skip-variants  '(risingwave ydb spanner clickhouse vertica))
       (pgtest-add #'pg-test-cursors
                   :skip-variants '(xata cratedb cockroachdb risingwave questdb greptimedb ydb materialize spanner octodb
-                                        cedardb yellowbrick datafusion picodata motherduck h2 serenedb umbra))
+                                        cedardb yellowbrick datafusion picodata motherduck h2 serenedb umbra turso))
       ;; CrateDB does not support the BYTEA type (!), nor sequences. Spanner does not support the encode() function.
       (pgtest-add #'pg-test-bytea
                   :skip-variants '(cratedb risingwave spanner materialize picodata doltgres datahike))
@@ -495,7 +495,7 @@
                   :skip-variants '(cratedb cockroachdb ydb risingwave materialize spanner greptimedb questdb xata
                                            vertica datafusion picodata xtdb))
       (pgtest-add #'pg-test-unicode-names
-                  :skip-variants '(xata cratedb risingwave questdb ydb spanner vertica immudb h2 xtdb))
+                  :skip-variants '(xata cratedb risingwave questdb ydb spanner vertica immudb h2 xtdb umbra))
       (pgtest-add #'pg-test-returning
                   :skip-variants '(risingwave questdb datafusion immudb picodata h2))
       (pgtest-add #'pg-test-parameter-change-handlers
@@ -515,7 +515,7 @@
       (pgtest-add #'pg-test-lo
                   :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb ydb questdb spanner vertica greenplum
                                            cedardb yellowbrick opengauss datafusion picodata serenedb doltgres motherduck
-                                           datahike h2 cloudberry turso immudb))
+                                           datahike h2 cloudberry turso immudb umbra))
       (dolist (test (reverse tests))
         (message "== Running test %s" test)
         (condition-case err
