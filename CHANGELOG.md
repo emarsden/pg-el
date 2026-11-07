@@ -1,10 +1,36 @@
 # Changelog
 
+## [0.70] - 2026-11-07
+
+- New error types `pg-invalid-parameter-value` and `pg-invalid-escape-sequence`, subtypes of
+  `pg-data-error`.
+
+- Support the `sslnegotiation` [parameter
+  keyword](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-PARAMKEYWORDS) in
+  `pg-connect/uri` and `pg-connect/string`. When combined with a value of `sslmode` that enables
+  TLS, a value of `direct` means that a direct TLS connection will be etablished, rather than using
+  the traditional PostgreSQL protocol negotiation procedure.
+
+- Internal functions `pg-do-md5-authentication`, `pg-do-sasl-authentication`, `pg-sasl-prep` have
+  been renamed to use the `pg--` prefix instead of `pg-`.
+
+- Improved detection of the PostgreSQL variant Multigres.
+
+- A bug in the logging of values used for fetch requests in extended query mode has been fixed.
+
+- Adjust for changes to the internal representation of times in Emacs 31.x.
+
+- Improve compatibility with PostgreSQL variants pgsqlite and Umbra.
+
+
 ## [0.69] - 2026-08-12
 
 - Incompatible change: single items of type `bit` are now parsed as an Emacs Lisp boolean (`t` or
   `nil`), instead of as a boolean vector of dimension 1. Items of type `varbit` and `bit(n)` are
   still parsed as Emacs Lisp bool-vector objects.
+
+- The value `NULL` can be passed as an argument in the extended query protocol (use `nil` as the
+  value). Patch from @LuciusChen.
 
 - Add parsing support for arrays of bits (`_bit` type), which are parsed as vectors of Emacs Lisp
   booleans.
