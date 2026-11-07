@@ -924,7 +924,9 @@ Uses database DBNAME, user USER and password PASSWORD."
                                  ((cl-search "-pgwire-" val)
                                   (throw 'found 'pgwire))
                                  ((cl-search "umbra " val)
-                                  (throw 'found 'umbra)))
+                                  (throw 'found 'umbra))
+                                 ((cl-search " (multigres)" val)
+                                  (throw 'found 'multigres)))
                            ;; Now some somewhat ugly code to detect semi-compatible PostgreSQL
                            ;; variants, to allow us to work around some of their behaviour that is
                            ;; incompatible with real PostgreSQL.
