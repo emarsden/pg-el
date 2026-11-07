@@ -460,8 +460,7 @@ test-neon: test-pg.el
 # need docker-compose / podman-compose
 # https://github.com/neondatabase/neon/blob/main/docker-compose/docker-compose.yml
 test-neon-local: test-pg.el
-	${DOCKER} run --rm --name neon \
-          --pull=newer \
+	${DOCKER} run --rm --name neon --pull=newer \
           --publish 127.0.0.1:5662:5432 \
           docker.io/neondatabase/neon
 	sleep 5
@@ -479,29 +478,29 @@ test-xata: test-pg.el
 # schemas named _timescaledb_cache, _timescaledb_catalog, timescaledb_internal and so on. We have
 # code in pg-el to remove these from the list of tables returned by pg-tables.
 test-timescaleha: test-pg.el
-	${DOCKER} run --rm --name timescale \
-           --pull=newer \
+	${DOCKER} run --rm --name timescale --pull=newer \
            --publish 127.0.0.1:5981:5981 \
            -e POSTGRES_DB=pgeltestdb \
            -e POSTGRES_USER=pgeltestuser \
            -e POSTGRES_PASSWORD=pgeltest \
            -e PGPORT=5981 \
+           -e LANG=en_US.UTF8 \
            -d docker.io/timescale/timescaledb-ha:pg18-ts2.24-oss
 	sleep 5
 	PGEL_PORT=5981 $(MAKE) test
 	${DOCKER} stop timescale
 
 test-timescale: test-pg.el
-	${DOCKER} run --rm --name timescale \
-           --pull=newer \
+	${DOCKER} run --rm --name timescale --pull=newer \
            --publish 127.0.0.1:5981:5981 \
            -e POSTGRES_DB=pgeltestdb \
            -e POSTGRES_USER=pgeltestuser \
            -e POSTGRES_PASSWORD=pgeltest \
            -e PGPORT=5981 \
+           -e LANG=en_US.UTF8 \
            -d docker.io/timescale/timescaledb:latest-pg18
-	sleep 5
-	PGEL_PORT=5981 $(MAKE) test
+	sleep 10
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5981/pgeltestdb $(MAKE) test
 	${DOCKER} stop timescale
 
 
@@ -543,7 +542,7 @@ test-orioledb: test-pg.el
            -e POSTGRES_INITDB_ARGS="--locale-provider=icu --icu-locale=en" \
            -e LANG=en_US.UTF8 \
            -e LC_CTYPE=en_US.UTF8 \
-           -d docker.io/orioledb/orioledb:latest-pg17
+           -d docker.io/orioledb/orioledb:pg18-nightly-ubuntu
 	sleep 5
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5317/pgeltestdb $(MAKE) test
 	${DOCKER} stop orioledb
@@ -554,15 +553,14 @@ test-orioledb: test-pg.el
 # https://docs.ivorysql.org/en/ivorysql-doc/v3.4/v3.4/6#Docker-installation
 # https://registry.hub.docker.com/r/ivorysql/ivorysql/tags
 test-ivorysql: test-pg.el
-	${DOCKER} run --rm --name ivorydb \
-          --pull=newer \
+	${DOCKER} run --rm --name ivorydb --pull=newer \
 	  --publish 127.0.0.1:5437:5432 \
 	  -e LANG=C.UTF8 \
 	  -e LC_CTYPE=C.UTF8 \
 	  -e IVORYSQL_DB=pgeltestdb \
 	  -e IVORYSQL_USER=pgeltestuser \
 	  -e IVORYSQL_PASSWORD=pgeltest \
-	  -d docker.io/ivorysql/ivorysql:5.4-ubi8
+	  -d docker.io/ivorysql/ivorysql:5.6-ubi8
 	sleep 5
 	PGEL_PORT=5437 $(MAKE) test
 	${DOCKER} stop ivorydb
@@ -761,10 +759,9 @@ test-pgcat: test-pg.el
            -e POSTGRES_USER=pgeltestuser \
            -e POSTGRES_PASSWORD=pgeltest \
            -e PGPORT=5437 \
-           -d docker.io/library/postgres:17-alpine
+           -d docker.io/library/postgres:18-alpine
 	sleep 5
-	${DOCKER} run --rm --name pgcat \
-           --pull=newer \
+	${DOCKER} run --rm --name pgcat --pull=newer \
            -v ./pgcat-config.toml:/etc/pgcat/pgcat.toml \
            --net host \
            -d ghcr.io/postgresml/pgcat:latest
@@ -804,7 +801,7 @@ test-odyssey: test-pg.el
            -e POSTGRES_PASSWORD=pgeltest \
            -e PGPORT=5291 \
            -d docker.io/library/postgres:18-alpine
-	sleep 1
+	sleep 5
 	${DOCKER} run --rm --name odyssey --pull=newer \
            -v $(shell pwd)/setup-odyssey.conf:/etc/odyssey/odyssey.conf \
            --net host \
@@ -994,7 +991,10 @@ test-cratedb: test-pg.el
 	${DOCKER} run --rm --name cratedb --pull=newer \
           --net host \
           -e CRATE_HEAP_SIZE=1g \
-          -d docker.io/crate/crate:nightly -Cnetwork.host=127.0.0.1 -Cdiscovery.type=single-node -Cpsql.port=5789
+          -d docker.io/crate/crate:nightly \
+            -Cnetwork.host=127.0.0.1 \
+            -Cdiscovery.type=single-node \
+            -Cpsql.port=5789
 	sleep 5
 	PGURI="postgresql://crate@127.0.0.1:5789/postgres?read_timeout=1000" $(MAKE) test
 	${DOCKER} stop cratedb
@@ -1142,7 +1142,8 @@ test-greenplum: test-pg.el
 
 
 # https://github.com/GreengageDB/greengage (based on Greenplum)
-# 202608: the docker image does not seem to be working
+# 202608: the docker image does not seem to be working (its intended for building binaries?)
+# or https://hub.docker.com/r/greengagedb/ggdb8_ubuntu/ 
 test-greengage: test-pg.el
 	${DOCKER} run --rm --name greengage --pull=newer \
           --cap-add=NET_RAW \
@@ -1188,7 +1189,7 @@ test-warehousepg: test-pg.el
           -e GREENPLUM_DATABASE_NAME=pgeltestdb \
           -e GREENPLUM_USER=pgeltestuser \
           -e GREENPLUM_PASSWORD=pgeltest \
-          -d ghcr.io/woblerr/warehousepg:6.27.3-WHPG
+          -d ghcr.io/woblerr/warehousepg:6.27.5-WHPG
 	sleep 40
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5299/pgeltestdb $(MAKE) test
 	${DOCKER} stop warehousepg
@@ -1201,15 +1202,14 @@ test-warehousepg: test-pg.el
 #
 # The NET_RAW capability is needed to be able to run ping6 in the rootless container.
 test-gpdb: test-pg.el
-	${DOCKER} run --rm --name gpdb \
+	${DOCKER} run --rm --name gpdb --pull=newer \
           --cap-add=NET_RAW \
-          --pull=newer \
           --publish 127.0.0.1:5433:5432 \
           -e GREENPLUM_DEPLOYMENT=singlenode \
           -e GREENPLUM_DATABASE_NAME=pgeltestdb \
           -e GREENPLUM_USER=pgeltestuser \
           -e GREENPLUM_PASSWORD=pgeltest \
-          -d ghcr.io/woblerr/opengpdb:6.29.5
+          -d ghcr.io/woblerr/opengpdb:6.29.11
 	sleep 40
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5433/pgeltestdb $(MAKE) test
 	${DOCKER} stop gpdb
@@ -1496,12 +1496,13 @@ test-h2: test-pg.el
 
 # https://datahike.io/notes/datahike-speaks-postgres/
 # https://github.com/replikativ/pg-datahike/
-# Doesn't seem to be a public container image currently
+# There doesn't currently seem to be a public container image
 test-datahike: test-pg.el
 	$(eval TESTDIR := $(shell mktemp -d -t pgeldatahike-runXXXX))
-	cd ${TESTDIR}
-	curl -fLO https://github.com/replikativ/pg-datahike/releases/download/v0.1.61/pg-datahike-0.1.61-standalone.jar
-	java -jar pg-datahike-0.1.61-standalone.jar --port 6167 --db pgeltestdb --memory &
+	$(eval LAST_RELEASE := $(shell curl -s https://api.github.com/repos/replikativ/pg-datahike/releases/latest | jq '.assets | map(select(.name | endswith("-standalone.jar")))[0] | .browser_download_url'))
+	echo Retrieving ${LAST_RELEASE}
+	curl -s -L ${LAST_RELEASE} -o ${TESTDIR}/pg-datahike-latest.jar
+	java -jar ${TESTDIR}/pg-datahike-latest.jar --port 6167 --db pgeltestdb --memory &
 	sleep 5
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:6167/pgeltestdb $(MAKE) test
 
