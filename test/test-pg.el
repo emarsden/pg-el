@@ -850,6 +850,7 @@
     (should (eql nil (scalar "SELECT '0'::boolean")))
     (should (eql t (scalar "SELECT '1'::boolean")))
     (should (eql -6 (scalar "SELECT -(6)")))
+    (should (eql ?H (scalar "SELECT 'H'::bpchar")))
     (should (eql ?Z (scalar "SELECT 'Z'::char")))
     (should (eql ?@ (scalar "SELECT '@'::char(1)")))
     (should (eql 97 (scalar "SELECT ascii('a')")))
