@@ -3197,15 +3197,20 @@ bar$$"))))
                      (pg-floating-point-exception 'ok))))
   (should (eql 'ok (condition-case nil
                        (funcall scalar-fn "SELECT log(-2.1)")
+                     ;; invalid-parameter-value is signalled by Materialize
+                     (pg-invalid-parameter-value 'ok)
                      (pg-floating-point-exception 'ok))))
   (should (eql 'ok (condition-case nil
                        (funcall scalar-fn "SELECT power(0, -1)")
+                     ;; invalid-parameter-value is signalled by Materialize
+                     (pg-invalid-parameter-value 'ok)
                      (pg-floating-point-exception 'ok))))
   (should (eql 'ok (condition-case nil
                        (funcall scalar-fn "SELECT exp(20000.0)")
                      (pg-numeric-value-out-of-range 'ok))))
   (should (eql 'ok (condition-case nil
                        (funcall scalar-fn "SELECT asin(2.0)")
+                     (pg-invalid-parameter-value 'ok)
                      (pg-numeric-value-out-of-range 'ok))))
   (should (eql 'ok (condition-case nil
                        (funcall scalar-fn "SELECT abs(true)")
@@ -3392,6 +3397,11 @@ bar$$"))))
                      (pg-exec con "DROP TYPE IF EXISTS pgeltest_newtype CASCADE"))))
   (should (eql 'ok (condition-case nil
                        (funcall scalar-fn "DEALLOCATE nonexistent_prepared_statement")
+                     (pg-invalid-sql-statement-name 'ok))))
+  (should (eql 'ok (condition-case nil
+                       (progn
+                         (pg-bind con "inexistent_statement" nil)
+                         (pg-exec con "SELECT 67"))
                      (pg-invalid-sql-statement-name 'ok))))
   (should (eql 'ok (condition-case nil
                        (funcall scalar-fn "CLOSE nonexistent_cursor")
